@@ -1,0 +1,101 @@
+{
+  "roles": [
+    {
+      "name": "@everyone",
+      "color": 0,
+      "hoist": false,
+      "permissions": "106519588081217",
+      "position": 0,
+      "mentionable": false
+    },
+    {
+      "name": "Quarantine",
+      "color": 11765828,
+      "hoist": false,
+      "permissions": "0",
+      "position": 2,
+      "mentionable": false
+    },
+    {
+      "name": "権限",
+      "color": 0,
+      "hoist": false,
+      "permissions": "8",
+      "position": 4,
+      "mentionable": false
+    }
+  ],
+  "channels": [
+    {
+      "name": "wick-logs",
+      "type": 0,
+      "parentName": null,
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "bitrate": null,
+      "userLimit": null
+    },
+    {
+      "name": "wick-logs",
+      "type": 0,
+      "parentName": null,
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "bitrate": null,
+      "userLimit": null
+    },
+    {
+      "name": "テキストチャンネル",
+      "type": 4,
+      "parentName": null,
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "bitrate": null,
+      "userLimit": null
+    },
+    {
+      "name": "ボイスチャンネル",
+      "type": 4,
+      "parentName": null,
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "bitrate": null,
+      "userLimit": null
+    },
+    {
+      "name": "一般",
+      "type": 2,
+      "parentName": "ボイスチャンネル",
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "bitrate": 64000,
+      "userLimit": null
+    },
+    {
+      "name": "再建",
+      "type": 0,
+      "parentName": "テキストチャンネル",
+      "position": 0,
+      "topic": null,
+      "nsfw": false,
+      "bitrate": null,
+      "userLimit": null
+    },
+    {
+      "name": "ああ",
+      "type": 0,
+      "parentName": "テキストチャンネル",
+      "position": 1,
+      "topic": null,
+      "nsfw": false,
+      "bitrate": null,
+      "userLimit": null
+    }
+  ],
+  "timestamp": "2025-08-12T17:07:51.024Z"
+}
