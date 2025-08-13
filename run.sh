@@ -1,3 +1,2 @@
 git add .
-git commit -m "update"
-git push origin main
+git commit -m "Update code for env vars"
