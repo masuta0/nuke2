@@ -9,6 +9,7 @@ const translateApi = require('@vitalets/google-translate-api');
 const clientId = process.env.CLIENT_ID;
 const token = process.env.TOKEN;
 
+// ===== Discord Client =====
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
 });
@@ -18,6 +19,7 @@ const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+
 if (process.env.SELF_URL) {
   setInterval(() => {
     https.get(process.env.SELF_URL, res => console.log(`Keep-Alive ping status: ${res.statusCode}`))
@@ -27,8 +29,11 @@ if (process.env.SELF_URL) {
 
 // ===== Utilities =====
 const delay = ms => new Promise(res => setTimeout(res, ms));
-const BACKUP_DIR = path.join(process.cwd(), 'backups');
+
+// Railway対応: バックアップパス
+const BACKUP_DIR = process.env.BACKUP_PATH || '/mnt/backups';
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
 const msgCooldowns = new Map();
 
 function hasManageGuildPermission(member) {
@@ -107,9 +112,9 @@ function loadGuildBackup(guildId) {
 
 // ===== Restore Function =====
 async function restoreGuildFromBackup(guild, backup, interaction) {
-  // Clear channels
+  // チャンネル削除
   for (const ch of guild.channels.cache.values()) { try { await ch.delete('Restore: clear channels'); await delay(50); } catch {} }
-  // Clear roles
+  // ロール削除
   const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a, b) => a.position - b.position);
   for (const r of deletableRoles.values()) { try { await r.delete('Restore: clear roles'); await delay(50); } catch {} }
 
