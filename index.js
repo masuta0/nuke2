@@ -5,9 +5,11 @@ const { Client, GatewayIntentBits, PermissionsBitField, REST, Routes, SlashComma
 const fs = require('fs');
 const path = require('path');
 const translateApi = require('@vitalets/google-translate-api');
+const simpleGit = require('simple-git');
 
 const clientId = process.env.CLIENT_ID;
 const token = process.env.TOKEN;
+const git = simpleGit();
 
 // ===== Discord Client =====
 const client = new Client({
@@ -29,17 +31,13 @@ if (process.env.SELF_URL) {
 
 // ===== Utilities =====
 const delay = ms => new Promise(res => setTimeout(res, ms));
-
-// Railway対応: バックアップパス
-const BACKUP_DIR = process.env.BACKUP_PATH || '/mnt/backups';
+const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 const msgCooldowns = new Map();
-
 function hasManageGuildPermission(member) {
   return member.permissions.has(PermissionsBitField.Flags.ManageGuild);
 }
-
 async function translateWithRetry(text, options, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try { return await translateApi.translate(text, options); }
@@ -66,7 +64,6 @@ async function collectGuildBackup(guild) {
       mentionable: r.mentionable,
       permissions: r.permissions.bitfield.toString()
     }));
-
   const channels = guild.channels.cache.sort((a, b) => a.rawPosition - b.rawPosition).map(ch => {
     const base = {
       id: ch.id,
@@ -93,7 +90,6 @@ async function collectGuildBackup(guild) {
     }
     return { ...base, overwrites };
   });
-
   const meta = { guildId: guild.id, name: guild.name, iconURL: guild.iconURL({ size: 512 }) || null, savedAt: new Date().toISOString() };
   return { meta, roles, channels };
 }
@@ -110,11 +106,26 @@ function loadGuildBackup(guildId) {
   return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
+// ===== GitHub Push =====
+async function pushBackupToGitHub(guildId) {
+  const repoUrl = process.env.GITHUB_REPO_URL;
+  if (!repoUrl) return console.error('GITHUB_REPO_URL が設定されていません');
+
+  try {
+    await git.init();
+    await git.addRemote('origin', repoUrl).catch(() => {});
+    await git.add('./*');
+    await git.commit(`Backup update for guild ${guildId} at ${new Date().toISOString()}`);
+    await git.push('origin', 'main');
+    console.log('✅ GitHub にバックアップをプッシュしました');
+  } catch (err) {
+    console.error('❌ GitHub Push失敗:', err.message);
+  }
+}
+
 // ===== Restore Function =====
 async function restoreGuildFromBackup(guild, backup, interaction) {
-  // チャンネル削除
   for (const ch of guild.channels.cache.values()) { try { await ch.delete('Restore: clear channels'); await delay(50); } catch {} }
-  // ロール削除
   const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a, b) => a.position - b.position);
   for (const r of deletableRoles.values()) { try { await r.delete('Restore: clear roles'); await delay(50); } catch {} }
 
@@ -215,7 +226,6 @@ async function nukeChannel(channel) {
     deny: ow.deny.bitfield.toString(),
     type: ow.type
   })) || [];
-
   const payload = {
     name: channel.name,
     type: channel.type,
@@ -228,7 +238,6 @@ async function nukeChannel(channel) {
     userLimit: channel.userLimit || null,
     reason: 'Nuke: recreate channel'
   };
-
   const newCh = await channel.guild.channels.create(payload);
   if (overwrites.length) {
     try {
@@ -240,7 +249,6 @@ async function nukeChannel(channel) {
       })), 'Nuke: set overwrites');
     } catch {}
   }
-
   try { await channel.delete('Nuke: delete old channel'); } catch {}
   try { await newCh.send('✅ チャンネルをNukeしました'); } catch {}
   return newCh;
@@ -288,16 +296,13 @@ client.on('messageCreate', async msg => {
   if (msg.author.bot) return;
   const userId = msg.author.id;
   const now = Date.now();
-
   if (msg.content.startsWith('!')) {
     if (msgCooldowns.has(userId) && now - msgCooldowns.get(userId) < 10000) return;
     msgCooldowns.set(userId, now);
-
     const args = msg.content.slice(1).trim().split(/ +/);
     const targetLang = args.shift();
     const text = args.join(' ');
     if (!text) return;
-
     const langMap = { 英語: 'en', えいご: 'en', 日本語: 'ja', にほんご: 'ja', 中国語: 'zh-CN', ちゅうごくご: 'zh-CN', 韓国語: 'ko', かんこくご: 'ko', フランス語: 'fr', スペイン語: 'es', ドイツ語: 'de' };
     const to = langMap[targetLang];
     if (!to) return;
@@ -319,7 +324,8 @@ client.on('interactionCreate', async interaction => {
     if (commandName === 'backup') {
       const backup = await collectGuildBackup(guild);
       saveGuildBackup(guild.id, backup);
-      await interaction.followUp({ content: '✅ バックアップを保存しました', flags: 64 });
+      await pushBackupToGitHub(guild.id);
+      await interaction.followUp({ content: '✅ バックアップを保存してGitHubにプッシュしました', flags: 64 });
     }
 
     if (commandName === 'restore') {
@@ -343,9 +349,8 @@ client.on('interactionCreate', async interaction => {
       await interaction.channel.bulkDelete(filtered, true);
       await interaction.followUp({ content: `🧹 ${filtered.size}件のメッセージを削除しました`, flags: 64 });
     }
-  } catch (e) {
-    console.error('Interaction error:', e);
-  }
+
+  } catch (e) { console.error('Interaction error:', e); }
 });
 
 // ===== Error Handling =====
