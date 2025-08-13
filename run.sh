@@ -1,2 +1,3 @@
 git add .
-git commit -m "Update code for env vars"
+git commit -m "説明"
+git push origin main
