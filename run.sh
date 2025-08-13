@@ -1,1 +1,3 @@
-git remote add origin https://github.com/masuta0/nuke1.git
+git add .
+git commit -m "initial commit"
+git push origin main
