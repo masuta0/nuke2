@@ -1,101 +1,221 @@
 {
+  "meta": {
+    "guildId": "1404236535733158018",
+    "name": "ますまに共栄圏",
+    "iconURL": "https://cdn.discordapp.com/icons/1404236535733158018/42918bc0fb567db52d566f3361dcca82.webp?size=512",
+    "savedAt": "2025-08-13T15:45:21.980Z"
+  },
   "roles": [
     {
+      "id": "1404236535733158018",
       "name": "@everyone",
       "color": 0,
       "hoist": false,
-      "permissions": "106519588081217",
       "position": 0,
-      "mentionable": false
+      "mentionable": false,
+      "permissions": "106519588081217"
     },
     {
-      "name": "Quarantine",
-      "color": 11765828,
-      "hoist": false,
-      "permissions": "0",
-      "position": 2,
-      "mentionable": false
-    },
-    {
+      "id": "1405199849468461167",
       "name": "権限",
       "color": 0,
       "hoist": false,
-      "permissions": "8",
-      "position": 4,
-      "mentionable": false
+      "position": 1,
+      "mentionable": false,
+      "permissions": "8"
+    },
+    {
+      "id": "1405199847174311996",
+      "name": "Quarantine",
+      "color": 11765828,
+      "hoist": false,
+      "position": 2,
+      "mentionable": false,
+      "permissions": "0"
+    },
+    {
+      "id": "1405199845269962913",
+      "name": "権限",
+      "color": 0,
+      "hoist": false,
+      "position": 3,
+      "mentionable": false,
+      "permissions": "8"
+    },
+    {
+      "id": "1405192800919883776",
+      "name": "権限",
+      "color": 0,
+      "hoist": false,
+      "position": 8,
+      "mentionable": false,
+      "permissions": "8"
     }
   ],
   "channels": [
     {
-      "name": "wick-logs",
-      "type": 0,
-      "parentName": null,
-      "position": 0,
-      "topic": null,
-      "nsfw": false,
-      "bitrate": null,
-      "userLimit": null
-    },
-    {
-      "name": "wick-logs",
-      "type": 0,
-      "parentName": null,
-      "position": 1,
-      "topic": null,
-      "nsfw": false,
-      "bitrate": null,
-      "userLimit": null
-    },
-    {
+      "id": "1405199851507028108",
       "name": "テキストチャンネル",
       "type": 4,
-      "parentName": null,
+      "parentId": null,
       "position": 0,
-      "topic": null,
+      "rateLimitPerUser": 0,
       "nsfw": false,
+      "topic": null,
       "bitrate": null,
-      "userLimit": null
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405199847174311996",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
     },
     {
-      "name": "ボイスチャンネル",
-      "type": 4,
-      "parentName": null,
-      "position": 1,
-      "topic": null,
+      "id": "1405199859560091679",
+      "name": "wick-logs",
+      "type": 0,
+      "parentId": null,
+      "position": 0,
+      "rateLimitPerUser": 0,
       "nsfw": false,
+      "topic": null,
       "bitrate": null,
-      "userLimit": null
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405199847174311996",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        },
+        {
+          "id": "1404236535733158018",
+          "allow": "262144",
+          "deny": "1024",
+          "type": 0
+        }
+      ]
     },
     {
+      "id": "1405199864203055144",
       "name": "一般",
       "type": 2,
-      "parentName": "ボイスチャンネル",
+      "parentId": "1405199855663452170",
       "position": 0,
-      "topic": null,
+      "rateLimitPerUser": 0,
       "nsfw": false,
+      "topic": null,
       "bitrate": 64000,
-      "userLimit": null
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405199847174311996",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
     },
     {
+      "id": "1405199868603007128",
       "name": "再建",
       "type": 0,
-      "parentName": "テキストチャンネル",
+      "parentId": "1405199851507028108",
       "position": 0,
-      "topic": null,
+      "rateLimitPerUser": 0,
       "nsfw": false,
+      "topic": null,
       "bitrate": null,
-      "userLimit": null
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405199847174311996",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        },
+        {
+          "id": "1405199845269962913",
+          "allow": "633318697598976",
+          "deny": "0",
+          "type": 0
+        }
+      ]
     },
     {
+      "id": "1405199855663452170",
+      "name": "ボイスチャンネル",
+      "type": 4,
+      "parentId": null,
+      "position": 1,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405199847174311996",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1405199873015414794",
+      "name": "wick-logs",
+      "type": 0,
+      "parentId": null,
+      "position": 1,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405199845269962913",
+          "allow": "0",
+          "deny": "0",
+          "type": 0
+        },
+        {
+          "id": "1405199847174311996",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        },
+        {
+          "id": "1404236535733158018",
+          "allow": "0",
+          "deny": "1024",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1405199876962127882",
       "name": "ああ",
       "type": 0,
-      "parentName": "テキストチャンネル",
+      "parentId": "1405199851507028108",
       "position": 1,
-      "topic": null,
+      "rateLimitPerUser": 0,
       "nsfw": false,
+      "topic": null,
       "bitrate": null,
-      "userLimit": null
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405199847174311996",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
     }
-  ],
-  "timestamp": "2025-08-12T17:07:51.024Z"
+  ]
 }
