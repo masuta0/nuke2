@@ -1,8 +1,12 @@
 #!/bin/bash
-git config user.name "masuta0"
-git config user.email "kuntekitou96@gmail.com"
-git remote set-url origin https://$GH_TOKEN@github.com/masuta0/nuke2.git
 
+# GitHub情報
+USER=$GH_USER
+TOKEN=$GH_TOKEN
+REPO=$GH_REPO
+BRANCH=main  # ブランチ名
+
+# Git操作
 git add .
-git commit -m "auto update $(date +'%Y-%m-%d %H:%M:%S')" 2>/dev/null
-git push origin main
+git commit -m "Replit auto update" || echo "Nothing to commit"
+git push https://$USER:$TOKEN@github.com/$USER/$REPO.git $BRANCH
