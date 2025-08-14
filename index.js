@@ -3,9 +3,8 @@ const express = require('express');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { Dropbox } = require('dropbox');
 const translateApi = require('@vitalets/google-translate-api');
-
+const { Dropbox } = require('dropbox');
 const {
   Client,
   GatewayIntentBits,
@@ -17,16 +16,16 @@ const {
   ChannelType
 } = require('discord.js');
 
+// ===== 環境変数 =====
 const clientId = process.env.CLIENT_ID;
 const token = process.env.TOKEN;
+const DROPBOX_TOKEN = process.env.DROPBOX_TOKEN;
+const SELF_URL = process.env.SELF_URL;
+const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 
 // ===== Discord Client =====
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
 });
 
 // ===== Express Keep-Alive =====
@@ -35,18 +34,16 @@ app.get('/', (req, res) => res.send('Bot is running'));
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
-if (process.env.SELF_URL) {
+if (SELF_URL) {
   setInterval(() => {
-    https.get(process.env.SELF_URL, res => console.log(`Keep-Alive ping status: ${res.statusCode}`))
+    https.get(SELF_URL, res => console.log(`Keep-Alive ping status: ${res.statusCode}`))
       .on('error', err => console.error('Keep-Alive ping error:', err.message));
-  }, 4 * 60 * 1000);
+  }, 5 * 60 * 1000);
 }
 
 // ===== Utilities =====
 const delay = ms => new Promise(res => setTimeout(res, ms));
-const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
-
 const msgCooldowns = new Map();
 
 function hasManageGuildPermission(member) {
@@ -64,8 +61,20 @@ async function translateWithRetry(text, options, retries = 3) {
   throw new Error('翻訳APIが多すぎます');
 }
 
-// ===== Dropbox Setup =====
-const dropbox = new Dropbox({ accessToken: process.env.DROPBOX_TOKEN });
+// ===== Dropbox =====
+const dbx = DROPBOX_TOKEN ? new Dropbox({ accessToken: DROPBOX_TOKEN }) : null;
+
+async function uploadBackupToDropbox(filePath) {
+  if (!dbx) return console.warn('Dropbox トークン未設定');
+  const fileName = path.basename(filePath);
+  try {
+    const data = fs.readFileSync(filePath);
+    await dbx.filesUpload({ path: '/' + fileName, contents: data, mode: 'overwrite' });
+    console.log(`✅ Dropboxにアップロード完了: ${fileName}`);
+  } catch (e) {
+    console.error('✕ Dropboxアップロード失敗:', e);
+  }
+}
 
 // ===== Backup Functions =====
 async function collectGuildBackup(guild) {
@@ -111,44 +120,21 @@ async function collectGuildBackup(guild) {
     return { ...base, overwrites };
   });
 
-  const meta = {
-    guildId: guild.id,
-    name: guild.name,
-    iconURL: guild.iconURL({ size: 512 }) || null,
-    savedAt: new Date().toISOString()
-  };
+  const meta = { guildId: guild.id, name: guild.name, iconURL: guild.iconURL({ size: 512 }) || null, savedAt: new Date().toISOString() };
   return { meta, roles, channels };
 }
 
-function saveGuildBackup(guildId, data, customDir = BACKUP_DIR) {
-  if (!fs.existsSync(customDir)) fs.mkdirSync(customDir, { recursive: true });
-  const file = path.join(customDir, `${guildId}.json`);
+function saveGuildBackup(guildId, data) {
+  if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const file = path.join(BACKUP_DIR, `${guildId}.json`);
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
   return file;
 }
 
-function loadGuildBackup(guildId, customDir = BACKUP_DIR) {
-  const file = path.join(customDir, `${guildId}.json`);
+function loadGuildBackup(guildId) {
+  const file = path.join(BACKUP_DIR, `${guildId}.json`);
   if (!fs.existsSync(file)) return null;
   return JSON.parse(fs.readFileSync(file, 'utf-8'));
-}
-
-async function uploadBackupToDropbox(guildId, data) {
-  if (!process.env.DROPBOX_TOKEN) {
-    console.error('❌ DROPBOX_TOKEN が設定されていません');
-    return;
-  }
-  try {
-    const filePath = `/backups/${guildId}.json`;
-    await dropbox.filesUpload({
-      path: filePath,
-      contents: JSON.stringify(data, null, 2),
-      mode: 'overwrite'
-    });
-    console.log(`✅ Dropbox にバックアップをアップロードしました: ${filePath}`);
-  } catch (e) {
-    console.error('❌ Dropbox アップロード失敗:', e);
-  }
 }
 
 // ===== Restore Function =====
@@ -250,8 +236,6 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
 async function nukeChannel(channel, interaction){
   const backup = await collectGuildBackup(channel.guild);
   saveGuildBackup(channel.guild.id, backup);
-  await uploadBackupToDropbox(channel.guild.id, backup);
-
   const overwrites = channel.permissionOverwrites?.cache?.map(ow=>({
     id: ow.id,
     allow: ow.allow.bitfield.toString(),
@@ -326,13 +310,7 @@ client.on('messageCreate', async msg=>{
     const targetLang = args.shift();
     const text = args.join(' ');
     if(!text) return;
-    const langMap = {
-      英語:'en',えいご:'en',
-      日本語:'ja',にほんご:'ja',
-      中国語:'zh-CN',ちゅうごくご:'zh-CN',
-      韓国語:'ko',かんこくご:'ko',
-      フランス語:'fr',スペイン語:'es',ドイツ語:'de'
-    };
+    const langMap = {英語:'en',えいご:'en',日本語:'ja',にほんご:'ja',中国語:'zh-CN',ちゅうごくご:'zh-CN',韓国語:'ko',かんこくご:'ko',フランス語:'fr',スペイン語:'es',ドイツ語:'de'};
     const to = langMap[targetLang];
     if(!to) return;
     try{
@@ -357,8 +335,8 @@ client.on('interactionCreate', async interaction=>{
   try{
     if(cmd==='backup'){
       const backup = await collectGuildBackup(guild);
-      saveGuildBackup(guild.id, backup);
-      await uploadBackupToDropbox(guild.id, backup);
+      const filePath = saveGuildBackup(guild.id, backup);
+      await uploadBackupToDropbox(filePath);
       await interaction.followUp({content:'✅ バックアップを保存しました',flags:64}).catch(()=>{});
     }else if(cmd==='restore'){
       const backup = loadGuildBackup(guild.id);
@@ -386,7 +364,6 @@ client.once('ready',()=>{
   console.log(`Logged in as ${client.user.tag}`);
   const startTime = Date.now();
   const updateStatus = ()=>{
-    const timeStr = new Date().toLocaleTimeString('ja-JP',{hour12:false,timeZone:'Asia/Tokyo'});
     const elapsed = Date.now()-startTime;
     const hours = Math.floor(elapsed/1000/60/60);
     const minutes = Math.floor((elapsed/1000/60)%60);
