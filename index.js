@@ -94,7 +94,6 @@ async function collectGuildBackup(guild) {
     const overwrites = [];
     if (ch.permissionOverwrites?.cache?.size) {
       ch.permissionOverwrites.cache.forEach(ow => {
-        // only role/member type 0 recorded (role)
         if (ow.type === 0) overwrites.push({
           id: ow.id,
           allow: ow.allow.bitfield.toString(),
@@ -110,66 +109,53 @@ async function collectGuildBackup(guild) {
   return { meta, roles, channels };
 }
 
-function saveGuildBackup(guildId, data) {
-  const file = path.join(BACKUP_DIR, `${guildId}.json`);
+function saveGuildBackup(guildId, data, customDir = BACKUP_DIR) {
+  if (!fs.existsSync(customDir)) fs.mkdirSync(customDir, { recursive: true });
+  const file = path.join(customDir, `${guildId}.json`);
   fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
   return file;
 }
 
-function loadGuildBackup(guildId) {
-  const file = path.join(BACKUP_DIR, `${guildId}.json`);
+function loadGuildBackup(guildId, customDir = BACKUP_DIR) {
+  const file = path.join(customDir, `${guildId}.json`);
   if (!fs.existsSync(file)) return null;
   return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
 // ===== GitHub Push =====
-async function pushBackupToGitHub(guildId) {
-  const repoUrl = process.env.GITHUB_REPO_URL;
-  if (!repoUrl) {
-    console.error('GITHUB_REPO_URL が設定されていません');
-    return false;
-  }
-
+async function pushToGitHub(repoUrl, commitMsg = 'Update', branch = 'main') {
+  if (!repoUrl) return console.error('GitHub URL が設定されていません');
   try {
-    // initialize repo (safe if already initialized)
     await git.init();
     await git.addRemote('origin', repoUrl).catch(() => {});
     await git.add('./*');
-
-    // commit (if nothing to commit, simple-git may error — we catch below)
-    try {
-      await git.commit(`Backup update for guild ${guildId} at ${new Date().toISOString()}`);
-    } catch (commitErr) {
-      // 何も変更がなければここに来ることがある → 無視
-      console.log('commit skipped (no changes or commit error):', commitErr.message);
-    }
-
-    // push (might fail if auth is wrong)
-    await git.push('origin', 'main').catch(async pushErr => {
-      // try to force push branch creation
-      console.warn('初回 push に失敗しました。再試行します:', pushErr.message);
-      try {
-        await git.push('origin', 'HEAD:main', { '--force': null });
-      } catch (e) {
-        throw e;
-      }
+    try { await git.commit(commitMsg); } catch (e) { console.log('commit skipped:', e.message); }
+    await git.push('origin', branch).catch(async () => {
+      await git.push('origin', `HEAD:${branch}`, { '--force': null });
     });
-
-    console.log('✅ GitHub にバックアップをプッシュしました');
-    return true;
+    console.log(`✅ GitHub push (${branch}) 完了`);
   } catch (err) {
-    console.error('❌ GitHub Push失敗:', err.message || err);
-    return false;
+    console.error('❌ GitHub push 失敗:', err.message || err);
   }
+}
+
+// バックアップ用
+async function pushBackupToGitHub(guildId) {
+  await pushToGitHub(process.env.GITHUB_REPO_URL, `Backup update for guild ${guildId}`, 'main');
+}
+
+// コード更新用 (nuke2)
+async function pushMainUpdate() {
+  await pushToGitHub(process.env.GITHUB_REPO_URL_MAIN, 'Main code update', 'main');
 }
 
 // ===== Restore Function =====
 async function restoreGuildFromBackup(guild, backup, interaction) {
-  // remove channels
+  // channels削除
   for (const ch of guild.channels.cache.values()) { try { await ch.delete('Restore: clear channels'); await delay(50); } catch {} }
 
-  // remove roles (except @everyone and managed)
-  const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a, b) => a.position - b.position);
+  // roles削除
+  const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a,b)=>a.position-b.position);
   for (const r of deletableRoles.values()) { try { await r.delete('Restore: clear roles'); await delay(50); } catch {} }
 
   const roleIdMap = new Map();
@@ -190,9 +176,9 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
   }
 
   const channelIdMap = new Map();
-  const categories = backup.channels.filter(c => c.type === ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
-  for (const cat of categories) {
-    try {
+  const categories = backup.channels.filter(c=>c.type===ChannelType.GuildCategory).sort((a,b)=>a.position-b.position);
+  for(const cat of categories){
+    try{
       const created = await guild.channels.create({
         name: cat.name,
         type: ChannelType.GuildCategory,
@@ -200,224 +186,222 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
         reason: 'Restore: create category'
       });
       channelIdMap.set(cat.id, created.id);
-      if (cat.overwrites?.length) {
-        await created.permissionOverwrites.set(cat.overwrites.map(ow => ({
-          id: roleIdMap.get(ow.id) || guild.id,
+      if(cat.overwrites?.length){
+        await created.permissionOverwrites.set(cat.overwrites.map(ow=>({
+          id: roleIdMap.get(ow.id)||guild.id,
           allow: BigInt(ow.allow),
           deny: BigInt(ow.deny),
           type: ow.type
         })), 'Restore: set category overwrites');
       }
       await delay(60);
-    } catch (e) { console.error('Category create failed:', cat.name, e.message); }
+    } catch(e){ console.error('Category create failed:', cat.name, e.message); }
   }
 
-  const others = backup.channels.filter(c => c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
-  for (const ch of others) {
-    try {
+  const others = backup.channels.filter(c=>c.type!==ChannelType.GuildCategory).sort((a,b)=>a.position-b.position);
+  for(const ch of others){
+    try{
       const payload = {
         name: ch.name,
         type: ch.type,
-        parent: ch.parentId ? channelIdMap.get(ch.parentId) || null : null,
+        parent: ch.parentId?channelIdMap.get(ch.parentId)||null:null,
         position: ch.position,
-        reason: 'Restore: create channel'
+        reason:'Restore: create channel'
       };
-      if ([ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum].includes(ch.type)) {
-        payload.topic = ch.topic || null;
+      if([ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum].includes(ch.type)){
+        payload.topic = ch.topic||null;
         payload.nsfw = !!ch.nsfw;
-        payload.rateLimitPerUser = ch.rateLimitPerUser || 0;
+        payload.rateLimitPerUser = ch.rateLimitPerUser||0;
       }
-      if ([ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(ch.type)) {
-        payload.bitrate = ch.bitrate || null;
-        payload.userLimit = ch.userLimit || null;
+      if([ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(ch.type)){
+        payload.bitrate = ch.bitrate||null;
+        payload.userLimit = ch.userLimit||null;
       }
       const created = await guild.channels.create(payload);
       channelIdMap.set(ch.id, created.id);
-      if (ch.overwrites?.length) {
-        await created.permissionOverwrites.set(ch.overwrites.map(ow => ({
-          id: roleIdMap.get(ow.id) || guild.id,
+      if(ch.overwrites?.length){
+        await created.permissionOverwrites.set(ch.overwrites.map(ow=>({
+          id: roleIdMap.get(ow.id)||guild.id,
           allow: BigInt(ow.allow),
           deny: BigInt(ow.deny),
           type: ow.type
         })), 'Restore: set overwrites');
       }
       await delay(60);
-    } catch (e) { console.error('Channel create failed:', ch.name, e.message); }
+    } catch(e){ console.error('Channel create failed:', ch.name, e.message); }
   }
 
-  try {
-    if (backup.meta?.name && guild.name !== backup.meta.name) await guild.setName(backup.meta.name, 'Restore: guild name');
-    if (backup.meta?.iconURL) await guild.setIcon(backup.meta.iconURL, 'Restore: guild icon');
-  } catch (e) { console.warn('Guild meta restore failed:', e.message); }
+  try{
+    if(backup.meta?.name && guild.name!==backup.meta.name) await guild.setName(backup.meta.name,'Restore: guild name');
+    if(backup.meta?.iconURL) await guild.setIcon(backup.meta.iconURL,'Restore: guild icon');
+  }catch(e){ console.warn('Guild meta restore failed:',e.message); }
 
-  try {
-    const textChannels = guild.channels.cache.filter(c => c.isTextBased());
-    if (textChannels.size > 0) {
-      const randomCh = textChannels.random();
-      await randomCh.send('✅ バックアップを復元完了しました');
-    }
-  } catch {}
+  try{
+    const textChannels = guild.channels.cache.filter(c=>c.isTextBased());
+    if(textChannels.size>0) await textChannels.random().send('✅ バックアップを復元完了しました');
+  }catch{}
 
-  if (interaction) {
-    await interaction.followUp({ content: '✅ 完全復元が完了しました', flags: 64 }).catch(() => {});
-  }
+  if(interaction) await interaction.followUp({content:'✅ 完全復元が完了しました',flags:64}).catch(()=>{});
 }
 
 // ===== Nuke Function =====
-async function nukeChannel(channel, interaction) {
-  // create backup first
+async function nukeChannel(channel, interaction){
   const backup = await collectGuildBackup(channel.guild);
   saveGuildBackup(channel.guild.id, backup);
-
-  const overwrites = channel.permissionOverwrites?.cache?.map(ow => ({
+  const overwrites = channel.permissionOverwrites?.cache?.map(ow=>({
     id: ow.id,
     allow: ow.allow.bitfield.toString(),
     deny: ow.deny.bitfield.toString(),
     type: ow.type
-  })) || [];
+  }))||[];
 
   const payload = {
     name: channel.name,
     type: channel.type,
-    parent: channel.parentId ?? null,
+    parent: channel.parentId??null,
     position: channel.rawPosition,
-    rateLimitPerUser: channel.rateLimitPerUser ?? 0,
+    rateLimitPerUser: channel.rateLimitPerUser??0,
     nsfw: !!channel.nsfw,
-    topic: channel.topic || null,
-    bitrate: channel.bitrate || null,
-    userLimit: channel.userLimit || null,
-    reason: 'Nuke: recreate channel'
+    topic: channel.topic||null,
+    bitrate: channel.bitrate||null,
+    userLimit: channel.userLimit||null,
+    reason:'Nuke: recreate channel'
   };
 
   const newCh = await channel.guild.channels.create(payload);
-  if (overwrites.length) {
-    await newCh.permissionOverwrites.set(overwrites.map(ow => ({
+  if(overwrites.length){
+    await newCh.permissionOverwrites.set(overwrites.map(ow=>({
       id: ow.id,
       allow: BigInt(ow.allow),
       deny: BigInt(ow.deny),
       type: ow.type
-    })), 'Nuke: set overwrites');
+    })),'Nuke: set overwrites');
   }
 
-  try { await channel.delete('Nuke: delete old channel'); } catch {}
-  if (interaction) await interaction.followUp({ content: '💥 チャンネルをNukeしました', flags: 64 }).catch(() => {});
-  try { await newCh.send('✅ チャンネルをNukeしました'); } catch {}
+  try{ await channel.delete('Nuke: delete old channel'); }catch{}
+  if(interaction) await interaction.followUp({content:'💥 チャンネルをNukeしました',flags:64}).catch(()=>{});
+  try{ await newCh.send('✅ チャンネルをNukeしました'); }catch{}
   return newCh;
 }
 
-// ===== Clear Messages Function =====
-async function clearMessages(channel, amount, user, interaction) {
-  const msgs = await channel.messages.fetch({ limit: amount });
-  const filtered = user ? msgs.filter(m => m.author.id === user.id) : msgs;
-  await channel.bulkDelete(filtered, true);
-  if (interaction) await interaction.followUp({ content: `🧹 ${filtered.size}件のメッセージを削除しました`, flags: 64 }).catch(() => {});
+// ===== Clear Messages =====
+async function clearMessages(channel, amount, user, interaction){
+  const msgs = await channel.messages.fetch({limit:amount});
+  const filtered = user?msgs.filter(m=>m.author.id===user.id):msgs;
+  await channel.bulkDelete(filtered,true);
+  if(interaction) await interaction.followUp({content:`🧹 ${filtered.size}件のメッセージを削除しました`,flags:64}).catch(()=>{});
 }
 
 // ===== Slash Commands =====
-async function registerCommands() {
+async function registerCommands(){
   const commands = [
     new SlashCommandBuilder().setName('backup').setDescription('サーバーのバックアップを保存'),
     new SlashCommandBuilder().setName('restore').setDescription('バックアップからサーバーを復元'),
     new SlashCommandBuilder()
       .setName('clear')
       .setDescription('メッセージ一括削除')
-      .addIntegerOption(o => o.setName('amount').setDescription('1〜1000').setRequired(true))
-      .addUserOption(o => o.setName('user').setDescription('ユーザー指定').setRequired(false)),
-    new SlashCommandBuilder().setName('nuke').setDescription('このチャンネルを同設定で再作成（自動バックアップ付き）'),
+      .addIntegerOption(o=>o.setName('amount').setDescription('1〜1000').setRequired(true))
+      .addUserOption(o=>o.setName('user').setDescription('ユーザー指定').setRequired(false)),
+    new SlashCommandBuilder().setName('nuke').setDescription('このチャンネルを同設定で再作成（自動バックアップ付き）')
   ];
-  const rest = new REST({ version: '10' }).setToken(token);
-  await rest.put(Routes.applicationCommands(clientId), { body: commands.map(c => c.toJSON()) });
+  const rest = new REST({version:'10'}).setToken(token);
+  await rest.put(Routes.applicationCommands(clientId),{body:commands.map(c=>c.toJSON())});
   console.log('スラッシュコマンド登録完了');
 }
 registerCommands().catch(console.error);
 
 // ===== Client Events =====
-client.once('ready', () => {
+client.once('ready',()=>{
   console.log(`Logged in as ${client.user.tag}`);
   const startTime = Date.now();
-  const updateStatus = () => {
-    const timeStr = new Date().toLocaleTimeString('ja-JP', { hour12: false, timeZone: 'Asia/Tokyo' });
-    const elapsed = Date.now() - startTime;
-    const hours = Math.floor(elapsed / 1000 / 60 / 60);
-    const minutes = Math.floor((elapsed / 1000 / 60) % 60);
-    const seconds = Math.floor((elapsed / 1000) % 60);
+  const updateStatus = ()=>{
+    const timeStr = new Date().toLocaleTimeString('ja-JP',{hour12:false,timeZone:'Asia/Tokyo'});
+    const elapsed = Date.now()-startTime;
+    const hours = Math.floor(elapsed/1000/60/60);
+    const minutes = Math.floor((elapsed/1000/60)%60);
+    const seconds = Math.floor((elapsed/1000)%60);
     client.user.setPresence({
-      activities: [{ name: `起動から ${hours}h ${minutes}m ${seconds}s | 現在時刻 ${timeStr}`, type: ActivityType.Playing }],
-      status: 'online'
+      activities:[{name:`起動から ${hours}h ${minutes}m ${seconds}s | 現在時刻 ${timeStr}`,type:ActivityType.Playing}],
+      status:'online'
     });
   };
   updateStatus();
-  setInterval(updateStatus, 10000);
+  setInterval(updateStatus,10000);
 });
 
 // ===== Message Handling (Translation) =====
-client.on('messageCreate', async msg => {
-  if (msg.author.bot) return;
+client.on('messageCreate', async msg=>{
+  if(msg.author.bot) return;
   const userId = msg.author.id;
   const now = Date.now();
-  if (msg.content.startsWith('!')) {
-    if (msgCooldowns.has(userId) && now - msgCooldowns.get(userId) < 10000) return;
-    msgCooldowns.set(userId, now);
+  if(msg.content.startsWith('!')){
+    if(msgCooldowns.has(userId) && now-msgCooldowns.get(userId)<10000) return;
+    msgCooldowns.set(userId,now);
     const args = msg.content.slice(1).trim().split(/ +/);
     const targetLang = args.shift();
     const text = args.join(' ');
-    if (!text) return;
-    const langMap = { 英語: 'en', えいご: 'en', 日本語: 'ja', にほんご: 'ja', 中国語: 'zh-CN', ちゅうごくご: 'zh-CN', 韓国語: 'ko', かんこくご: 'ko', フランス語: 'fr', スペイン語: 'es', ドイツ語: 'de' };
+    if(!text) return;
+    const langMap = {英語:'en',えいご:'en',日本語:'ja',にほんご:'ja',中国語:'zh-CN',ちゅうごくご:'zh-CN',韓国語:'ko',かんこくご:'ko',フランス語:'fr',スペイン語:'es',ドイツ語:'de'};
     const to = langMap[targetLang];
-    if (!to) return;
-    try { const res = await translateWithRetry(text, { to }); await msg.reply(res.text); } catch (e) { console.error(e); }
+    if(!to) return;
+    try{ const res = await translateWithRetry(text,{to}); await msg.reply(res.text); }catch(e){ console.error(e); }
   }
 });
 
 // ===== Interaction Handling =====
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const { commandName: cmd } = interaction;
+client.on('interactionCreate', async interaction=>{
+  if(!interaction.isChatInputCommand()) return;
+  const {commandName:cmd} = interaction;
   const guild = interaction.guild;
-  if (!guild) return interaction.reply({ content: 'サーバー内で実行してください', flags: 64 }).catch(() => {});
-  if (!hasManageGuildPermission(interaction.member)) return interaction.reply({ content: '管理者権限が必要です', flags: 64 }).catch(() => {});
+  if(!guild) return interaction.reply({content:'サーバー内で実行してください',flags:64}).catch(()=>{});
+  if(!hasManageGuildPermission(interaction.member)) return interaction.reply({content:'管理者権限が必要です',flags:64}).catch(()=>{});
 
-  // 安全に deferReply を送る（既に deferred か replied の場合は無視）
-  if (!interaction.deferred && !interaction.replied) {
-    try { await interaction.deferReply({ flags: 64 }); } catch (e) { /* ignore */ }
+  if(!interaction.deferred && !interaction.replied){
+    try{ await interaction.deferReply({flags:64}); }catch{}
   }
 
-  try {
-    if (cmd === 'backup') {
+  try{
+    if(cmd==='backup'){
       const backup = await collectGuildBackup(guild);
       saveGuildBackup(guild.id, backup);
-      // GitHub push（失敗しても処理は続ける）
       await pushBackupToGitHub(guild.id);
-      await interaction.followUp({ content: '✅ バックアップを保存しました', flags: 64 }).catch(() => {});
-    }
-
-    else if (cmd === 'restore') {
+      await interaction.followUp({content:'✅ バックアップを保存しました',flags:64}).catch(()=>{});
+    }else if(cmd==='restore'){
       const backup = loadGuildBackup(guild.id);
-      if (!backup) return await interaction.followUp({ content: '⚠️ バックアップが見つかりません', flags: 64 }).catch(() => {});
+      if(!backup) return await interaction.followUp({content:'⚠️ バックアップが見つかりません',flags:64}).catch(()=>{});
       await restoreGuildFromBackup(guild, backup, interaction);
-    }
-
-    else if (cmd === 'nuke') {
+    }else if(cmd==='nuke'){
       await nukeChannel(interaction.channel, interaction);
-    }
-
-    else if (cmd === 'clear') {
+    }else if(cmd==='clear'){
       const amount = interaction.options.getInteger('amount');
       const user = interaction.options.getUser('user');
       await clearMessages(interaction.channel, amount, user, interaction);
     }
-  } catch (e) {
-    console.error('Interaction error:', e);
-    if (!interaction.replied && !interaction.deferred) {
-      try { await interaction.reply({ content: '❌ エラーが発生しました', flags: 64 }); } catch {}
-    } else {
-      try { await interaction.followUp({ content: '❌ エラーが発生しました', flags: 64 }); } catch {}
+  }catch(e){
+    console.error('Interaction error:',e);
+    if(!interaction.replied && !interaction.deferred){
+      try{ await interaction.reply({content:'❌ エラーが発生しました',flags:64}); }catch{}
+    }else{
+      try{ await interaction.followUp({content:'❌ エラーが発生しました',flags:64}); }catch{}
     }
   }
 });
 
 // ===== Error Handling =====
-client.on('error', console.error);
-console.log('Using GITHUB_REPO_URL:', process.env.GITHUB_REPO_URL);
+client.on('error',console.error);
+console.log('Using GITHUB_REPO_URL:',process.env.GITHUB_REPO_URL);
+console.log('Using GITHUB_REPO_URL_MAIN:',process.env.GITHUB_REPO_URL_MAIN);
+
+// ===== Auto Push Code Updates (nuke2) =====
+const WATCH_DIR = './';
+let pushTimeout = null;
+fs.watch(WATCH_DIR,{recursive:true},(eventType,filename)=>{
+  if(!filename) return;
+  if(pushTimeout) clearTimeout(pushTimeout);
+  pushTimeout = setTimeout(async ()=>{
+    console.log(`Detected changes in ${filename}, pushing to nuke2...`);
+    await pushMainUpdate();
+  },1000);
+});
+
 client.login(token);
