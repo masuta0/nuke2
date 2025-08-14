@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const translateApi = require('@vitalets/google-translate-api');
 const simpleGit = require('simple-git');
+const { Dropbox } = require('dropbox');
 
 const {
   Client,
@@ -20,6 +21,7 @@ const {
 const clientId = process.env.CLIENT_ID;
 const token = process.env.TOKEN;
 const git = simpleGit();
+const dropbox = new Dropbox({ accessToken: process.env.DROPBOX_TOKEN });
 
 // ===== Discord Client =====
 const client = new Client({
@@ -48,6 +50,7 @@ const msgCooldowns = new Map();
 function hasManageGuildPermission(member) {
   return member.permissions.has(PermissionsBitField.Flags.ManageGuild);
 }
+
 async function translateWithRetry(text, options, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try { return await translateApi.translate(text, options); }
@@ -120,6 +123,21 @@ function loadGuildBackup(guildId, customDir = BACKUP_DIR) {
   return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
+// ===== Dropbox Upload =====
+async function uploadBackupToDropbox(guildId, data) {
+  try {
+    const filePath = `/backups/${guildId}.json`;
+    await dropbox.filesUpload({
+      path: filePath,
+      contents: JSON.stringify(data, null, 2),
+      mode: 'overwrite'
+    });
+    console.log(`✅ Dropbox にバックアップをアップロードしました: ${filePath}`);
+  } catch (e) {
+    console.error('❌ Dropbox アップロード失敗:', e);
+  }
+}
+
 // ===== GitHub Push =====
 async function pushToGitHub(repoUrl, commitMsg = 'Update', branch = 'main') {
   if (!repoUrl) return console.error('GitHub URL が設定されていません');
@@ -142,12 +160,10 @@ async function pushToGitHub(repoUrl, commitMsg = 'Update', branch = 'main') {
   }
 }
 
-// バックアップ用
 async function pushBackupToGitHub(guildId) {
   await pushToGitHub(process.env.GITHUB_REPO_URL, `Backup update for guild ${guildId}`, 'main');
 }
 
-// コード更新用 (nuke2)
 async function pushMainUpdate() {
   await pushToGitHub(process.env.GITHUB_REPO_URL_MAIN, 'Main code update', 'main');
 }
@@ -163,11 +179,8 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
     if (r.id === guild.id) continue;
     try {
       const created = await guild.roles.create({
-        name: r.name,
-        color: r.color,
-        hoist: r.hoist,
-        mentionable: r.mentionable,
-        permissions: BigInt(r.permissions),
+        name: r.name, color: r.color, hoist: r.hoist,
+        mentionable: r.mentionable, permissions: BigInt(r.permissions),
         reason: 'Restore: create role'
       });
       roleIdMap.set(r.id, created.id);
@@ -180,10 +193,7 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
   for(const cat of categories){
     try{
       const created = await guild.channels.create({
-        name: cat.name,
-        type: ChannelType.GuildCategory,
-        position: cat.position,
-        reason: 'Restore: create category'
+        name: cat.name, type: ChannelType.GuildCategory, position: cat.position, reason: 'Restore: create category'
       });
       channelIdMap.set(cat.id, created.id);
       if(cat.overwrites?.length){
@@ -202,11 +212,8 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
   for(const ch of others){
     try{
       const payload = {
-        name: ch.name,
-        type: ch.type,
-        parent: ch.parentId?channelIdMap.get(ch.parentId)||null:null,
-        position: ch.position,
-        reason:'Restore: create channel'
+        name: ch.name, type: ch.type, parent: ch.parentId?channelIdMap.get(ch.parentId)||null:null,
+        position: ch.position, reason:'Restore: create channel'
       };
       if([ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum].includes(ch.type)){
         payload.topic = ch.topic||null;
@@ -248,33 +255,23 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
 async function nukeChannel(channel, interaction){
   const backup = await collectGuildBackup(channel.guild);
   saveGuildBackup(channel.guild.id, backup);
+  await uploadBackupToDropbox(channel.guild.id, backup);
   const overwrites = channel.permissionOverwrites?.cache?.map(ow=>({
-    id: ow.id,
-    allow: ow.allow.bitfield.toString(),
-    deny: ow.deny.bitfield.toString(),
-    type: ow.type
+    id: ow.id, allow: ow.allow.bitfield.toString(), deny: ow.deny.bitfield.toString(), type: ow.type
   }))||[];
 
   const payload = {
-    name: channel.name,
-    type: channel.type,
-    parent: channel.parentId??null,
-    position: channel.rawPosition,
-    rateLimitPerUser: channel.rateLimitPerUser??0,
-    nsfw: !!channel.nsfw,
-    topic: channel.topic||null,
-    bitrate: channel.bitrate||null,
-    userLimit: channel.userLimit||null,
+    name: channel.name, type: channel.type, parent: channel.parentId??null,
+    position: channel.rawPosition, rateLimitPerUser: channel.rateLimitPerUser??0,
+    nsfw: !!channel.nsfw, topic: channel.topic||null,
+    bitrate: channel.bitrate||null, userLimit: channel.userLimit||null,
     reason:'Nuke: recreate channel'
   };
 
   const newCh = await channel.guild.channels.create(payload);
   if(overwrites.length){
     await newCh.permissionOverwrites.set(overwrites.map(ow=>({
-      id: ow.id,
-      allow: BigInt(ow.allow),
-      deny: BigInt(ow.deny),
-      type: ow.type
+      id: ow.id, allow: BigInt(ow.allow), deny: BigInt(ow.deny), type: ow.type
     })),'Nuke: set overwrites');
   }
 
@@ -328,9 +325,7 @@ client.on('messageCreate', async msg=>{
     try{
       const res = await translateWithRetry(text,{to});
       await msg.reply(res.text);
-    }catch(e){
-      console.error(e);
-    }
+    }catch(e){ console.error(e); }
   }
 });
 
@@ -350,6 +345,7 @@ client.on('interactionCreate', async interaction=>{
     if(cmd==='backup'){
       const backup = await collectGuildBackup(guild);
       saveGuildBackup(guild.id, backup);
+      await uploadBackupToDropbox(guild.id, backup);
       await pushBackupToGitHub(guild.id);
       await interaction.followUp({content:'✅ バックアップを保存しました',flags:64}).catch(()=>{});
     }else if(cmd==='restore'){
@@ -390,15 +386,14 @@ client.once('ready',()=>{
 });
 
 // ===== Auto Push Code Updates (nuke2) =====
-// Bot起動時にpushしない仕様。手動でpushMainUpdate()を呼ぶ
 const WATCH_DIR = './';
 let pushTimeout = null;
 fs.watch(WATCH_DIR,{recursive:true},(eventType,filename)=>{
   if(!filename) return;
   if(pushTimeout) clearTimeout(pushTimeout);
   pushTimeout = setTimeout(async ()=>{
-    console.log(`Detected changes in ${filename}, code changed (manual push required).`);
-    // 自動pushはしない
+    console.log(`Detected changes in ${filename}, pushing to nuke2...`);
+    await pushMainUpdate();
   },1000);
 });
 
