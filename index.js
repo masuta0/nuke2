@@ -124,6 +124,7 @@ async function pushBackupToGitHub(guildId) {
 }
 
 // ===== Restore Function =====
+// restore, nuke関数も同様に deferReply と followUp 対応済み
 async function restoreGuildFromBackup(guild, backup, interaction) {
   for (const ch of guild.channels.cache.values()) { try { await ch.delete('Restore: clear channels'); await delay(50); } catch {} }
   const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a, b) => a.position - b.position);
@@ -207,14 +208,16 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
     if (backup.meta?.iconURL) await guild.setIcon(backup.meta.iconURL, 'Restore: guild icon');
   } catch (e) { console.warn('Guild meta restore failed:', e.message); }
 
-  const textChannels = guild.channels.cache.filter(c => c.isTextBased());
-  if (textChannels.size > 0) {
-    const randomCh = textChannels.random();
-    try { await randomCh.send('✅ バックアップを復元完了しました'); } catch {}
-  }
+  try {
+    const textChannels = guild.channels.cache.filter(c => c.isTextBased());
+    if (textChannels.size > 0) {
+      const randomCh = textChannels.random();
+      await randomCh.send('✅ バックアップを復元完了しました');
+    }
+  } catch {}
 
   if (interaction) {
-    try { await interaction.followUp({ content: '✅ 完全復元が完了しました', flags: 64 }); } catch {}
+    try { await interaction.followUp({ content: '✅ 完全復元が完了しました', ephemeral: true }); } catch {}
   }
 }
 
@@ -313,24 +316,28 @@ client.on('messageCreate', async msg => {
 // ===== Interaction Handling =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
+
   const { commandName } = interaction;
   const guild = interaction.guild;
-  if (!guild) return interaction.reply({ content: 'サーバー内で実行してください', flags: 64 });
-  if (!hasManageGuildPermission(interaction.member)) return interaction.reply({ content: '管理者権限が必要です', flags: 64 });
+  if (!guild) return interaction.reply({ content: 'サーバー内で実行してください', ephemeral: true });
+  if (!hasManageGuildPermission(interaction.member)) return interaction.reply({ content: '管理者権限が必要です', ephemeral: true });
+
+  // deferReply を即時に安全呼び出し
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  }
 
   try {
-    await interaction.deferReply({ flags: 64 });
-
     if (commandName === 'backup') {
       const backup = await collectGuildBackup(guild);
       saveGuildBackup(guild.id, backup);
       await pushBackupToGitHub(guild.id);
-      await interaction.followUp({ content: '✅ バックアップを保存してGitHubにプッシュしました', flags: 64 });
+      await interaction.followUp({ content: '✅ バックアップを保存してGitHubにプッシュしました', ephemeral: true });
     }
 
     if (commandName === 'restore') {
       const backup = loadGuildBackup(guild.id);
-      if (!backup) return await interaction.followUp({ content: '⚠️ バックアップが見つかりません', flags: 64 });
+      if (!backup) return await interaction.followUp({ content: '⚠️ バックアップが見つかりません', ephemeral: true });
       await restoreGuildFromBackup(guild, backup, interaction);
     }
 
@@ -338,7 +345,7 @@ client.on('interactionCreate', async interaction => {
       const backup = await collectGuildBackup(guild);
       saveGuildBackup(guild.id, backup);
       await nukeChannel(interaction.channel);
-      await interaction.followUp({ content: '💥 チャンネルをNukeしました', flags: 64 });
+      await interaction.followUp({ content: '💥 チャンネルをNukeしました', ephemeral: true });
     }
 
     if (commandName === 'clear') {
@@ -347,13 +354,17 @@ client.on('interactionCreate', async interaction => {
       const msgs = await interaction.channel.messages.fetch({ limit: amount });
       const filtered = user ? msgs.filter(m => m.author.id === user.id) : msgs;
       await interaction.channel.bulkDelete(filtered, true);
-      await interaction.followUp({ content: `🧹 ${filtered.size}件のメッセージを削除しました`, flags: 64 });
+      await interaction.followUp({ content: `🧹 ${filtered.size}件のメッセージを削除しました`, ephemeral: true });
     }
 
-  } catch (e) { console.error('Interaction error:', e); }
+  } catch (e) {
+    console.error('Interaction error:', e);
+    if (!interaction.replied && !interaction.deferred) {
+      try { await interaction.reply({ content: '❌ エラーが発生しました', ephemeral: true }); } catch {}
+    }
+  }
 });
 
-// ===== Error Handling =====
 client.on('error', console.error);
 
 client.login(token);
