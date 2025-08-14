@@ -125,9 +125,16 @@ function loadGuildBackup(guildId, customDir = BACKUP_DIR) {
 // ===== GitHub Push =====
 async function pushToGitHub(repoUrl, commitMsg = 'Update', branch = 'main') {
   if (!repoUrl) return console.error('GitHub URL が設定されていません');
+
+  let authedUrl = repoUrl;
+  if (process.env.GITHUB_TOKEN) {
+    const parts = repoUrl.split('https://');
+    authedUrl = `https://${process.env.GITHUB_TOKEN}@${parts[1]}`;
+  }
+
   try {
     await git.init();
-    await git.addRemote('origin', repoUrl).catch(() => {});
+    await git.addRemote('origin', authedUrl).catch(() => {});
     await git.add('./*');
     try { await git.commit(commitMsg); } catch (e) { console.log('commit skipped:', e.message); }
     await git.push('origin', branch).catch(async () => {
@@ -225,7 +232,7 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
           allow: BigInt(ow.allow),
           deny: BigInt(ow.deny),
           type: ow.type
-        })), 'Restore: set overwrites');
+        })),'Restore: set overwrites');
       }
       await delay(60);
     } catch(e){ console.error('Channel create failed:', ch.name, e.message); }
@@ -310,25 +317,6 @@ async function registerCommands(){
 }
 registerCommands().catch(console.error);
 
-// ===== Client Events =====
-client.once('ready',()=>{
-  console.log(`Logged in as ${client.user.tag}`);
-  const startTime = Date.now();
-  const updateStatus = ()=>{
-    const timeStr = new Date().toLocaleTimeString('ja-JP',{hour12:false,timeZone:'Asia/Tokyo'});
-    const elapsed = Date.now()-startTime;
-    const hours = Math.floor(elapsed/1000/60/60);
-    const minutes = Math.floor((elapsed/1000/60)%60);
-    const seconds = Math.floor((elapsed/1000)%60);
-    client.user.setPresence({
-      activities:[{name:`起動から ${hours}h ${minutes}m ${seconds}s | 現在時刻 ${timeStr}`,type:ActivityType.Playing}],
-      status:'online'
-    });
-  };
-  updateStatus();
-  setInterval(updateStatus,10000);
-});
-
 // ===== Message Handling (Translation) =====
 client.on('messageCreate', async msg=>{
   if(msg.author.bot) return;
@@ -344,7 +332,12 @@ client.on('messageCreate', async msg=>{
     const langMap = {英語:'en',えいご:'en',日本語:'ja',にほんご:'ja',中国語:'zh-CN',ちゅうごくご:'zh-CN',韓国語:'ko',かんこくご:'ko',フランス語:'fr',スペイン語:'es',ドイツ語:'de'};
     const to = langMap[targetLang];
     if(!to) return;
-    try{ const res = await translateWithRetry(text,{to}); await msg.reply(res.text); }catch(e){ console.error(e); }
+    try{
+      const res = await translateWithRetry(text,{to});
+      await msg.reply(res.text);
+    }catch(e){
+      console.error(e);
+    }
   }
 });
 
@@ -387,10 +380,21 @@ client.on('interactionCreate', async interaction=>{
   }
 });
 
-// ===== Error Handling =====
-client.on('error',console.error);
-console.log('Using GITHUB_REPO_URL:',process.env.GITHUB_REPO_URL);
-console.log('Using GITHUB_REPO_URL_MAIN:',process.env.GITHUB_REPO_URL_MAIN);
+// ===== Client Ready =====
+client.once('ready',()=>{
+  console.log(`Logged in as ${client.user.tag}`);
+  const startTime = Date.now();
+  const updateStatus = ()=>{
+    const timeStr = new Date().toLocaleTimeString('ja-JP',{hour12:false,timeZone:'Asia/Tokyo'});
+    const elapsed = Date.now()-startTime;
+    const hours = Math.floor(elapsed/1000/60/60);
+    const minutes = Math.floor((elapsed/1000/60)%60);
+    const secs = Math.floor((elapsed/1000)%60);
+    client.user.setActivity(`稼働中 | ${hours}h${minutes}m${secs}s`, {type:ActivityType.Watching});
+  };
+  updateStatus();
+  setInterval(updateStatus,15000);
+});
 
 // ===== Auto Push Code Updates (nuke2) =====
 const WATCH_DIR = './';
