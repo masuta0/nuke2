@@ -419,5 +419,5 @@ client.on('interactionCreate', async interaction => {
 
 // ===== Error Handling =====
 client.on('error', console.error);
-
+console.log('Using GITHUB_REPO_URL:', process.env.GITHUB_REPO_URL);
 client.login(token);
