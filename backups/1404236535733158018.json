@@ -2,8 +2,8 @@
   "meta": {
     "guildId": "1404236535733158018",
     "name": "ますまに共栄圏",
-    "iconURL": "https://cdn.discordapp.com/icons/1404236535733158018/42918bc0fb567db52d566f3361dcca82.webp?size=512",
-    "savedAt": "2025-08-14T20:07:08.379Z"
+    "iconURL": "https://cdn.discordapp.com/icons/1404236535733158018/1aca7cff3518b92dfc0368ba953c042a.webp?size=512",
+    "savedAt": "2025-08-14T20:21:57.537Z"
   },
   "roles": [
     {
@@ -16,7 +16,7 @@
       "permissions": "106519588081217"
     },
     {
-      "id": "1405199849468461167",
+      "id": "1405644036320133252",
       "name": "権限",
       "color": 0,
       "hoist": false,
@@ -25,20 +25,29 @@
       "permissions": "8"
     },
     {
-      "id": "1405199847174311996",
+      "id": "1405644033669464214",
+      "name": "権限",
+      "color": 0,
+      "hoist": false,
+      "position": 2,
+      "mentionable": false,
+      "permissions": "8"
+    },
+    {
+      "id": "1405644031568117942",
       "name": "Quarantine",
       "color": 11765828,
       "hoist": false,
-      "position": 2,
+      "position": 3,
       "mentionable": false,
       "permissions": "0"
     },
     {
-      "id": "1405199845269962913",
+      "id": "1405644029881749504",
       "name": "権限",
       "color": 0,
       "hoist": false,
-      "position": 3,
+      "position": 4,
       "mentionable": false,
       "permissions": "8"
     },
@@ -47,14 +56,27 @@
       "name": "権限",
       "color": 0,
       "hoist": false,
-      "position": 8,
+      "position": 9,
       "mentionable": false,
       "permissions": "8"
     }
   ],
   "channels": [
     {
-      "id": "1405199859560091679",
+      "id": "1405644039457476759",
+      "name": "共栄圏",
+      "type": 4,
+      "parentId": null,
+      "position": 0,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": []
+    },
+    {
+      "id": "1405644050027253850",
       "name": "wick-logs",
       "type": 0,
       "parentId": null,
@@ -66,7 +88,7 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
+          "id": "1405644031568117942",
           "allow": "0",
           "deny": "377957125121",
           "type": 0
@@ -80,10 +102,10 @@
       ]
     },
     {
-      "id": "1405199864203055144",
+      "id": "1405644053101674690",
       "name": "📞｜雑談",
       "type": 2,
-      "parentId": "1405199855663452170",
+      "parentId": "1405644046315159552",
       "position": 0,
       "rateLimitPerUser": 0,
       "nsfw": false,
@@ -92,7 +114,7 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
+          "id": "1405644031568117942",
           "allow": "0",
           "deny": "377957125121",
           "type": 0
@@ -100,20 +122,7 @@
       ]
     },
     {
-      "id": "1405470374178848893",
-      "name": "共栄圏",
-      "type": 4,
-      "parentId": null,
-      "position": 0,
-      "rateLimitPerUser": 0,
-      "nsfw": false,
-      "topic": null,
-      "bitrate": null,
-      "userLimit": null,
-      "overwrites": []
-    },
-    {
-      "id": "1405199851507028108",
+      "id": "1405644041823191222",
       "name": "chat",
       "type": 4,
       "parentId": null,
@@ -125,7 +134,7 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
+          "id": "1405644031568117942",
           "allow": "0",
           "deny": "377957125121",
           "type": 0
@@ -133,7 +142,7 @@
       ]
     },
     {
-      "id": "1405199873015414794",
+      "id": "1405644057065291869",
       "name": "wick-logs",
       "type": 0,
       "parentId": null,
@@ -145,13 +154,7 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
-          "allow": "0",
-          "deny": "377957125121",
-          "type": 0
-        },
-        {
-          "id": "1405199845269962913",
+          "id": "1405644033669464214",
           "allow": "0",
           "deny": "0",
           "type": 0
@@ -161,11 +164,17 @@
           "allow": "0",
           "deny": "1024",
           "type": 0
+        },
+        {
+          "id": "1405644031568117942",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
         }
       ]
     },
     {
-      "id": "1405199855663452170",
+      "id": "1405644046315159552",
       "name": "通話",
       "type": 4,
       "parentId": null,
@@ -177,7 +186,7 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
+          "id": "1405644031568117942",
           "allow": "0",
           "deny": "377957125121",
           "type": 0
@@ -185,10 +194,10 @@
       ]
     },
     {
-      "id": "1405215665111040143",
+      "id": "1405644060563079381",
       "name": "再建",
       "type": 0,
-      "parentId": "1405199851507028108",
+      "parentId": "1405644041823191222",
       "position": 2,
       "rateLimitPerUser": 0,
       "nsfw": false,
@@ -197,24 +206,24 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
-          "allow": "0",
-          "deny": "377957125121",
+          "id": "1405644033669464214",
+          "allow": "633318697598976",
+          "deny": "0",
           "type": 0
         },
         {
-          "id": "1405199845269962913",
-          "allow": "633318697598976",
-          "deny": "0",
+          "id": "1405644031568117942",
+          "allow": "0",
+          "deny": "377957125121",
           "type": 0
         }
       ]
     },
     {
-      "id": "1405292376054038613",
+      "id": "1405644064023642133",
       "name": "💬｜雑談",
       "type": 0,
-      "parentId": "1405199851507028108",
+      "parentId": "1405644041823191222",
       "position": 3,
       "rateLimitPerUser": 0,
       "nsfw": false,
@@ -223,7 +232,7 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
+          "id": "1405644031568117942",
           "allow": "0",
           "deny": "377957125121",
           "type": 0
@@ -231,10 +240,10 @@
       ]
     },
     {
-      "id": "1405470740584726539",
+      "id": "1405644067940864011",
       "name": "💬｜聞き専",
       "type": 0,
-      "parentId": "1405199855663452170",
+      "parentId": "1405644046315159552",
       "position": 4,
       "rateLimitPerUser": 0,
       "nsfw": false,
@@ -243,7 +252,7 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405199847174311996",
+          "id": "1405644031568117942",
           "allow": "0",
           "deny": "377957125121",
           "type": 0
@@ -251,10 +260,10 @@
       ]
     },
     {
-      "id": "1405470866476896326",
+      "id": "1405644071762002090",
       "name": "📬｜お知らせ",
       "type": 0,
-      "parentId": "1405470374178848893",
+      "parentId": "1405644039457476759",
       "position": 5,
       "rateLimitPerUser": 0,
       "nsfw": false,
