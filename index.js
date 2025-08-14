@@ -45,11 +45,9 @@ const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 const msgCooldowns = new Map();
-
 function hasManageGuildPermission(member) {
   return member.permissions.has(PermissionsBitField.Flags.ManageGuild);
 }
-
 async function translateWithRetry(text, options, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try { return await translateApi.translate(text, options); }
@@ -125,13 +123,11 @@ function loadGuildBackup(guildId, customDir = BACKUP_DIR) {
 // ===== GitHub Push =====
 async function pushToGitHub(repoUrl, commitMsg = 'Update', branch = 'main') {
   if (!repoUrl) return console.error('GitHub URL が設定されていません');
-
   let authedUrl = repoUrl;
   if (process.env.GITHUB_TOKEN) {
     const parts = repoUrl.split('https://');
     authedUrl = `https://${process.env.GITHUB_TOKEN}@${parts[1]}`;
   }
-
   try {
     await git.init();
     await git.addRemote('origin', authedUrl).catch(() => {});
@@ -158,10 +154,7 @@ async function pushMainUpdate() {
 
 // ===== Restore Function =====
 async function restoreGuildFromBackup(guild, backup, interaction) {
-  // channels削除
   for (const ch of guild.channels.cache.values()) { try { await ch.delete('Restore: clear channels'); await delay(50); } catch {} }
-
-  // roles削除
   const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a,b)=>a.position-b.position);
   for (const r of deletableRoles.values()) { try { await r.delete('Restore: clear roles'); await delay(50); } catch {} }
 
@@ -397,14 +390,15 @@ client.once('ready',()=>{
 });
 
 // ===== Auto Push Code Updates (nuke2) =====
+// Bot起動時にpushしない仕様。手動でpushMainUpdate()を呼ぶ
 const WATCH_DIR = './';
 let pushTimeout = null;
 fs.watch(WATCH_DIR,{recursive:true},(eventType,filename)=>{
   if(!filename) return;
   if(pushTimeout) clearTimeout(pushTimeout);
   pushTimeout = setTimeout(async ()=>{
-    console.log(`Detected changes in ${filename}, pushing to nuke2...`);
-    await pushMainUpdate();
+    console.log(`Detected changes in ${filename}, code changed (manual push required).`);
+    // 自動pushはしない
   },1000);
 });
 
