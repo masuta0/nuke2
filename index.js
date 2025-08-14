@@ -3,9 +3,8 @@ const express = require('express');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const translateApi = require('@vitalets/google-translate-api');
-const simpleGit = require('simple-git');
 const { Dropbox } = require('dropbox');
+const translateApi = require('@vitalets/google-translate-api');
 
 const {
   Client,
@@ -20,12 +19,14 @@ const {
 
 const clientId = process.env.CLIENT_ID;
 const token = process.env.TOKEN;
-const git = simpleGit();
-const dropbox = new Dropbox({ accessToken: process.env.DROPBOX_TOKEN });
 
 // ===== Discord Client =====
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 // ===== Express Keep-Alive =====
@@ -47,6 +48,7 @@ const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 const msgCooldowns = new Map();
+
 function hasManageGuildPermission(member) {
   return member.permissions.has(PermissionsBitField.Flags.ManageGuild);
 }
@@ -61,6 +63,9 @@ async function translateWithRetry(text, options, retries = 3) {
   }
   throw new Error('翻訳APIが多すぎます');
 }
+
+// ===== Dropbox Setup =====
+const dropbox = new Dropbox({ accessToken: process.env.DROPBOX_TOKEN });
 
 // ===== Backup Functions =====
 async function collectGuildBackup(guild) {
@@ -106,7 +111,12 @@ async function collectGuildBackup(guild) {
     return { ...base, overwrites };
   });
 
-  const meta = { guildId: guild.id, name: guild.name, iconURL: guild.iconURL({ size: 512 }) || null, savedAt: new Date().toISOString() };
+  const meta = {
+    guildId: guild.id,
+    name: guild.name,
+    iconURL: guild.iconURL({ size: 512 }) || null,
+    savedAt: new Date().toISOString()
+  };
   return { meta, roles, channels };
 }
 
@@ -123,8 +133,11 @@ function loadGuildBackup(guildId, customDir = BACKUP_DIR) {
   return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
-// ===== Dropbox Upload =====
 async function uploadBackupToDropbox(guildId, data) {
+  if (!process.env.DROPBOX_TOKEN) {
+    console.error('❌ DROPBOX_TOKEN が設定されていません');
+    return;
+  }
   try {
     const filePath = `/backups/${guildId}.json`;
     await dropbox.filesUpload({
@@ -138,39 +151,12 @@ async function uploadBackupToDropbox(guildId, data) {
   }
 }
 
-// ===== GitHub Push =====
-async function pushToGitHub(repoUrl, commitMsg = 'Update', branch = 'main') {
-  if (!repoUrl) return console.error('GitHub URL が設定されていません');
-  let authedUrl = repoUrl;
-  if (process.env.GITHUB_TOKEN) {
-    const parts = repoUrl.split('https://');
-    authedUrl = `https://${process.env.GITHUB_TOKEN}@${parts[1]}`;
-  }
-  try {
-    await git.init();
-    await git.addRemote('origin', authedUrl).catch(() => {});
-    await git.add('./*');
-    try { await git.commit(commitMsg); } catch (e) { console.log('commit skipped:', e.message); }
-    await git.push('origin', branch).catch(async () => {
-      await git.push('origin', `HEAD:${branch}`, { '--force': null });
-    });
-    console.log(`✅ GitHub push (${branch}) 完了`);
-  } catch (err) {
-    console.error('❌ GitHub push 失敗:', err.message || err);
-  }
-}
-
-async function pushBackupToGitHub(guildId) {
-  await pushToGitHub(process.env.GITHUB_REPO_URL, `Backup update for guild ${guildId}`, 'main');
-}
-
-async function pushMainUpdate() {
-  await pushToGitHub(process.env.GITHUB_REPO_URL_MAIN, 'Main code update', 'main');
-}
-
 // ===== Restore Function =====
 async function restoreGuildFromBackup(guild, backup, interaction) {
+  // channels削除
   for (const ch of guild.channels.cache.values()) { try { await ch.delete('Restore: clear channels'); await delay(50); } catch {} }
+
+  // roles削除
   const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a,b)=>a.position-b.position);
   for (const r of deletableRoles.values()) { try { await r.delete('Restore: clear roles'); await delay(50); } catch {} }
 
@@ -179,8 +165,11 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
     if (r.id === guild.id) continue;
     try {
       const created = await guild.roles.create({
-        name: r.name, color: r.color, hoist: r.hoist,
-        mentionable: r.mentionable, permissions: BigInt(r.permissions),
+        name: r.name,
+        color: r.color,
+        hoist: r.hoist,
+        mentionable: r.mentionable,
+        permissions: BigInt(r.permissions),
         reason: 'Restore: create role'
       });
       roleIdMap.set(r.id, created.id);
@@ -193,7 +182,10 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
   for(const cat of categories){
     try{
       const created = await guild.channels.create({
-        name: cat.name, type: ChannelType.GuildCategory, position: cat.position, reason: 'Restore: create category'
+        name: cat.name,
+        type: ChannelType.GuildCategory,
+        position: cat.position,
+        reason: 'Restore: create category'
       });
       channelIdMap.set(cat.id, created.id);
       if(cat.overwrites?.length){
@@ -212,8 +204,11 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
   for(const ch of others){
     try{
       const payload = {
-        name: ch.name, type: ch.type, parent: ch.parentId?channelIdMap.get(ch.parentId)||null:null,
-        position: ch.position, reason:'Restore: create channel'
+        name: ch.name,
+        type: ch.type,
+        parent: ch.parentId?channelIdMap.get(ch.parentId)||null:null,
+        position: ch.position,
+        reason:'Restore: create channel'
       };
       if([ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum].includes(ch.type)){
         payload.topic = ch.topic||null;
@@ -256,22 +251,34 @@ async function nukeChannel(channel, interaction){
   const backup = await collectGuildBackup(channel.guild);
   saveGuildBackup(channel.guild.id, backup);
   await uploadBackupToDropbox(channel.guild.id, backup);
+
   const overwrites = channel.permissionOverwrites?.cache?.map(ow=>({
-    id: ow.id, allow: ow.allow.bitfield.toString(), deny: ow.deny.bitfield.toString(), type: ow.type
+    id: ow.id,
+    allow: ow.allow.bitfield.toString(),
+    deny: ow.deny.bitfield.toString(),
+    type: ow.type
   }))||[];
 
   const payload = {
-    name: channel.name, type: channel.type, parent: channel.parentId??null,
-    position: channel.rawPosition, rateLimitPerUser: channel.rateLimitPerUser??0,
-    nsfw: !!channel.nsfw, topic: channel.topic||null,
-    bitrate: channel.bitrate||null, userLimit: channel.userLimit||null,
+    name: channel.name,
+    type: channel.type,
+    parent: channel.parentId??null,
+    position: channel.rawPosition,
+    rateLimitPerUser: channel.rateLimitPerUser??0,
+    nsfw: !!channel.nsfw,
+    topic: channel.topic||null,
+    bitrate: channel.bitrate||null,
+    userLimit: channel.userLimit||null,
     reason:'Nuke: recreate channel'
   };
 
   const newCh = await channel.guild.channels.create(payload);
   if(overwrites.length){
     await newCh.permissionOverwrites.set(overwrites.map(ow=>({
-      id: ow.id, allow: BigInt(ow.allow), deny: BigInt(ow.deny), type: ow.type
+      id: ow.id,
+      allow: BigInt(ow.allow),
+      deny: BigInt(ow.deny),
+      type: ow.type
     })),'Nuke: set overwrites');
   }
 
@@ -319,7 +326,13 @@ client.on('messageCreate', async msg=>{
     const targetLang = args.shift();
     const text = args.join(' ');
     if(!text) return;
-    const langMap = {英語:'en',えいご:'en',日本語:'ja',にほんご:'ja',中国語:'zh-CN',ちゅうごくご:'zh-CN',韓国語:'ko',かんこくご:'ko',フランス語:'fr',スペイン語:'es',ドイツ語:'de'};
+    const langMap = {
+      英語:'en',えいご:'en',
+      日本語:'ja',にほんご:'ja',
+      中国語:'zh-CN',ちゅうごくご:'zh-CN',
+      韓国語:'ko',かんこくご:'ko',
+      フランス語:'fr',スペイン語:'es',ドイツ語:'de'
+    };
     const to = langMap[targetLang];
     if(!to) return;
     try{
@@ -346,7 +359,6 @@ client.on('interactionCreate', async interaction=>{
       const backup = await collectGuildBackup(guild);
       saveGuildBackup(guild.id, backup);
       await uploadBackupToDropbox(guild.id, backup);
-      await pushBackupToGitHub(guild.id);
       await interaction.followUp({content:'✅ バックアップを保存しました',flags:64}).catch(()=>{});
     }else if(cmd==='restore'){
       const backup = loadGuildBackup(guild.id);
@@ -383,18 +395,6 @@ client.once('ready',()=>{
   };
   updateStatus();
   setInterval(updateStatus,15000);
-});
-
-// ===== Auto Push Code Updates (nuke2) =====
-const WATCH_DIR = './';
-let pushTimeout = null;
-fs.watch(WATCH_DIR,{recursive:true},(eventType,filename)=>{
-  if(!filename) return;
-  if(pushTimeout) clearTimeout(pushTimeout);
-  pushTimeout = setTimeout(async ()=>{
-    console.log(`Detected changes in ${filename}, pushing to nuke2...`);
-    await pushMainUpdate();
-  },1000);
 });
 
 client.login(token);
