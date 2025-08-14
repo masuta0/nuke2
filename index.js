@@ -106,10 +106,11 @@ function loadGuildBackup(guildId) {
   return JSON.parse(fs.readFileSync(file, 'utf-8'));
 }
 
-// ===== GitHub Push (PAT対応) =====
+// ===== GitHub Push =====
 async function pushBackupToGitHub(guildId) {
   const repoUrl = process.env.GITHUB_REPO_URL;
   if (!repoUrl) return console.error('GITHUB_REPO_URL が設定されていません');
+
   try {
     await git.init();
     await git.addRemote('origin', repoUrl).catch(() => {});
@@ -117,19 +118,19 @@ async function pushBackupToGitHub(guildId) {
     await git.commit(`Backup update for guild ${guildId} at ${new Date().toISOString()}`);
     await git.push('origin', 'main');
     console.log('✅ GitHub にバックアップをプッシュしました');
+    return true;
   } catch (err) {
     console.error('❌ GitHub Push失敗:', err.message);
+    return false;
   }
 }
 
 // ===== Restore Function =====
 async function restoreGuildFromBackup(guild, backup, interaction) {
-  // 既存チャンネル・ロール削除
   for (const ch of guild.channels.cache.values()) { try { await ch.delete('Restore: clear channels'); await delay(50); } catch {} }
   const deletableRoles = guild.roles.cache.filter(r => !r.managed && r.id !== guild.id).sort((a, b) => a.position - b.position);
   for (const r of deletableRoles.values()) { try { await r.delete('Restore: clear roles'); await delay(50); } catch {} }
 
-  // ロール作成
   const roleIdMap = new Map();
   for (const r of backup.roles) {
     if (r.id === guild.id) continue;
@@ -147,7 +148,6 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
     } catch (e) { console.error('Role create failed:', r.name, e.message); }
   }
 
-  // カテゴリ作成
   const channelIdMap = new Map();
   const categories = backup.channels.filter(c => c.type === ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
   for (const cat of categories) {
@@ -171,7 +171,6 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
     } catch (e) { console.error('Category create failed:', cat.name, e.message); }
   }
 
-  // その他チャンネル作成
   const others = backup.channels.filter(c => c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
   for (const ch of others) {
     try {
@@ -205,28 +204,20 @@ async function restoreGuildFromBackup(guild, backup, interaction) {
     } catch (e) { console.error('Channel create failed:', ch.name, e.message); }
   }
 
-  // ギルド名・アイコン
   try {
     if (backup.meta?.name && guild.name !== backup.meta.name) await guild.setName(backup.meta.name, 'Restore: guild name');
     if (backup.meta?.iconURL) await guild.setIcon(backup.meta.iconURL, 'Restore: guild icon');
   } catch (e) { console.warn('Guild meta restore failed:', e.message); }
 
-  // 完了メッセージ
-  try {
-    const textChannels = guild.channels.cache.filter(c => c.isTextBased());
-    if (textChannels.size > 0) {
-      const randomCh = textChannels.random();
-      await randomCh.send('✅ バックアップを復元完了しました');
-    }
-  } catch {}
-
   if (interaction) {
-    try { await interaction.followUp({ content: '✅ 完全復元が完了しました', flags: 64 }); } catch {}
+    await interaction.followUp({ content: '✅ 完全復元が完了しました', flags: 64 }).catch(() => {});
   }
 }
 
-// ===== NUKE =====
-async function nukeChannel(channel) {
+// ===== Nuke Function =====
+async function nukeChannel(channel, interaction) {
+  const backup = await collectGuildBackup(channel.guild);
+  saveGuildBackup(channel.guild.id, backup);
   const overwrites = channel.permissionOverwrites?.cache?.map(ow => ({
     id: ow.id,
     allow: ow.allow.bitfield.toString(),
@@ -247,18 +238,24 @@ async function nukeChannel(channel) {
   };
   const newCh = await channel.guild.channels.create(payload);
   if (overwrites.length) {
-    try {
-      await newCh.permissionOverwrites.set(overwrites.map(ow => ({
-        id: ow.id,
-        allow: BigInt(ow.allow),
-        deny: BigInt(ow.deny),
-        type: ow.type
-      })), 'Nuke: set overwrites');
-    } catch {}
+    await newCh.permissionOverwrites.set(overwrites.map(ow => ({
+      id: ow.id,
+      allow: BigInt(ow.allow),
+      deny: BigInt(ow.deny),
+      type: ow.type
+    })), 'Nuke: set overwrites');
   }
   try { await channel.delete('Nuke: delete old channel'); } catch {}
-  try { await newCh.send('✅ チャンネルをNukeしました'); } catch {}
+  if (interaction) await interaction.followUp({ content: '💥 チャンネルをNukeしました', flags: 64 }).catch(() => {});
   return newCh;
+}
+
+// ===== Clear Messages Function =====
+async function clearMessages(channel, amount, user, interaction) {
+  const msgs = await channel.messages.fetch({ limit: amount });
+  const filtered = user ? msgs.filter(m => m.author.id === user.id) : msgs;
+  await channel.bulkDelete(filtered, true);
+  if (interaction) await interaction.followUp({ content: `🧹 ${filtered.size}件のメッセージを削除しました`, flags: 64 }).catch(() => {});
 }
 
 // ===== Slash Commands =====
@@ -271,7 +268,7 @@ async function registerCommands() {
       .setDescription('メッセージ一括削除')
       .addIntegerOption(o => o.setName('amount').setDescription('1〜1000').setRequired(true))
       .addUserOption(o => o.setName('user').setDescription('ユーザー指定').setRequired(false)),
-    new SlashCommandBuilder().setName('nuke').setDescription('このチャンネルを同設定で再作成（自動バックアップ）'),
+    new SlashCommandBuilder().setName('nuke').setDescription('このチャンネルを同設定で再作成（自動バックアップ付き）'),
   ];
   const rest = new REST({ version: '10' }).setToken(token);
   await rest.put(Routes.applicationCommands(clientId), { body: commands.map(c => c.toJSON()) });
@@ -298,7 +295,7 @@ client.once('ready', () => {
   setInterval(updateStatus, 10000);
 });
 
-// ===== Message Handling =====
+// ===== Message Handling (Translation) =====
 client.on('messageCreate', async msg => {
   if (msg.author.bot) return;
   const userId = msg.author.id;
@@ -320,50 +317,40 @@ client.on('messageCreate', async msg => {
 // ===== Interaction Handling =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName } = interaction;
   const guild = interaction.guild;
   if (!guild) return interaction.reply({ content: 'サーバー内で実行してください', flags: 64 });
   if (!hasManageGuildPermission(interaction.member)) return interaction.reply({ content: '管理者権限が必要です', flags: 64 });
 
-  // 安全に deferReply
-  if (!interaction.deferred && !interaction.replied) {
-    await interaction.deferReply({ flags: 64 }).catch(() => {});
-  }
+  if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: 64 }).catch(() => {});
 
   try {
-    if (commandName === 'backup') {
+    const cmd = interaction.commandName;
+    if (cmd === 'backup') {
       const backup = await collectGuildBackup(guild);
       saveGuildBackup(guild.id, backup);
       await pushBackupToGitHub(guild.id);
-      await interaction.followUp({ content: '✅ バックアップを保存してGitHubにプッシュしました', flags: 64 });
+      await interaction.followUp({ content: '✅ バックアップを保存しました', flags: 64 });
     }
-    if (commandName === 'restore') {
+    if (cmd === 'restore') {
       const backup = loadGuildBackup(guild.id);
-      if (!backup) return await interaction.followUp({ content: '⚠️ バックアップが見つかりません', flags: 64 });
+      if (!backup) return interaction.followUp({ content: '⚠️ バックアップが見つかりません', flags: 64 });
       await restoreGuildFromBackup(guild, backup, interaction);
     }
-    if (commandName === 'nuke') {
-      const backup = await collectGuildBackup(guild);
-      saveGuildBackup(guild.id, backup);
-      await nukeChannel(interaction.channel);
-      await interaction.followUp({ content: '💥 チャンネルをNukeしました', flags: 64 });
+    if (cmd === 'nuke') {
+      await nukeChannel(interaction.channel, interaction);
     }
-    if (commandName === 'clear') {
+    if (cmd === 'clear') {
       const amount = interaction.options.getInteger('amount');
       const user = interaction.options.getUser('user');
-      const msgs = await interaction.channel.messages.fetch({ limit: amount });
-      const filtered = user ? msgs.filter(m => m.author.id === user.id) : msgs;
-      await interaction.channel.bulkDelete(filtered, true);
-      await interaction.followUp({ content: `🧹 ${filtered.size}件のメッセージを削除しました`, flags: 64 });
+      await clearMessages(interaction.channel, amount, user, interaction);
     }
   } catch (e) {
     console.error('Interaction error:', e);
     if (!interaction.replied && !interaction.deferred) {
-      try { await interaction.reply({ content: '❌ エラーが発生しました', flags: 64 }); } catch {}
+      await interaction.reply({ content: '❌ エラーが発生しました', flags: 64 }).catch(() => {});
     }
   }
 });
 
 client.on('error', console.error);
-
 client.login(token);
