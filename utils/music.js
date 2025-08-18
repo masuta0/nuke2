@@ -34,10 +34,15 @@ async function _playNext(guildId, textChannel) {
   if (!next) return;
 
   try {
-    const src = await playdl.stream(next.url, { discordPlayerCompatibility: true }).catch(async () => {
+    const src = await playdl.stream(next.url, { discordPlayerCompatibility: true }).catch(async (e) => {
+      // YouTubeからストリーム取得失敗時のエラーをログに出力
+      console.error('Failed to get YouTube stream:', e);
+
       // Spotifyなど→YouTube検索で代替
       const results = await playdl.search(next.url, { limit: 1 });
       if (!results?.length) throw new Error('検索失敗');
+
+      // 検索結果のURLで再試行
       return await playdl.stream(results[0].url, { discordPlayerCompatibility: true });
     });
 
@@ -49,6 +54,8 @@ async function _playNext(guildId, textChannel) {
       _playNext(guildId, textChannel);
     });
   } catch (e) {
+    // 再生プロセス全体でエラーが発生した場合のログ
+    console.error('Playback failed:', e);
     textChannel?.send?.('⚠️ 再生に失敗しました').catch(() => {});
     _playNext(guildId, textChannel);
   }
