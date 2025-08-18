@@ -2,7 +2,10 @@
 const fs = require('fs');
 const path = require('path');
 const { Dropbox } = require('dropbox');
-const fetch = require('node-fetch'); // 明示注入
+
+// `node-fetch` v3以降はESM形式のため、動的インポートを使用
+// Dropbox SDKに明示的に注入
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const DROPBOX_TOKEN = process.env.DROPBOX_TOKEN;
 const QUIZ_PATH = process.env.DROPBOX_QUIZ_PATH || '/quizzes/quizzes.json';
