@@ -1,9 +1,10 @@
 // utils/weather.js
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
-const { ensureFolder, uploadBuffer, downloadToLocal, WEATHER_DIR } = require('./storage');
+// `node-fetch` v3以降はESM形式のため、動的インポートを使用
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
+const { ensureFolder, uploadBuffer, downloadToLocal, WEATHER_DIR } = require('./storage');
 const OPENWEATHER_KEY = process.env.OPENWEATHER_KEY;
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 
