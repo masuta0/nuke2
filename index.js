@@ -2,7 +2,9 @@
 require('dotenv').config();
 const express = require('express');
 const https = require('https');
-const fetch = require('node-fetch'); // Dropbox SDK & Node<18 互換
+
+// `node-fetch` v3以降はESM形式のため、動的インポートを使用
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 if (!global.fetch) global.fetch = fetch;
 
 const { Client, GatewayIntentBits, ActivityType, Partials } = require('discord.js');
