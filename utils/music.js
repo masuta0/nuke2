@@ -2,18 +2,17 @@
 
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const playdl = require('play-dl');
-const { YOUTUBE_COOKIE } = require('../config.json');
+// ★ ここを修正
+const { YOUTUBE_COOKIE, YOUTUBE_API_KEY } = require('../config.json');
+const { google } = require('googleapis');
 
-// ★ デバッグログの追加
-// config.jsonからYOUTUBE_COOKIEが正しく読み込まれているか確認
-console.log('✅ YOUTUBE_COOKIE from config.json:', YOUTUBE_COOKIE ? 'Loaded' : 'Not Loaded');
+// YouTube Data APIの初期化
+const youtube = google.youtube({
+  version: 'v3',
+  auth: YOUTUBE_API_KEY,
+});
 
-// play-dlに認証クッキーを設定
 if (YOUTUBE_COOKIE) {
-  // ★ デバッグログの追加
-  // 設定されるクッキーの値の一部を出力して確認
-  console.log('ℹ️ Attempting to set YouTube cookies. Value starts with:', YOUTUBE_COOKIE.substring(0, 10) + '...');
-
   playdl.set_cookies([
     { name: '__Secure-3PAPISID', value: YOUTUBE_COOKIE, domain: '.youtube.com' }
   ]).then(() => {
@@ -21,11 +20,9 @@ if (YOUTUBE_COOKIE) {
   }).catch(err => {
     console.error('❌ YouTube認証クッキーの設定に失敗しました:', err);
   });
-} else {
-  console.log('⚠️ config.jsonにYOUTUBE_COOKIEが設定されていないため、クッキー設定をスキップします。');
 }
 
-const queues = new Map(); // guildId -> { connection, player, queue: [{title,url}] }
+const queues = new Map();
 
 async function joinVoice(guild, voiceChannel) {
   try {
@@ -66,22 +63,22 @@ async function _playNext(guildId, textChannel) {
     return;
   }
 
-  // ★ デバッグログの追加
-  console.log('ℹ️ Attempting to play URL:', next.url);
-
   try {
     const src = await playdl.stream(next.url, { discordPlayerCompatibility: true }).catch(async (e) => {
       console.error('Failed to get YouTube stream:', e);
 
-      // ここでもしエラーが「Sign in...」なら、クッキー設定が失敗している可能性が高い
-      if (e.message.includes("Sign in to confirm")) {
-         console.error('❌ YouTubeがBotとしてアクセスをブロックしています。クッキー設定を確認してください。');
-      }
+      // ★ ここを修正：API検索に切り替えた後も、ここでのフォールバックは維持
+      const apiResults = await youtube.search.list({
+        q: next.url,
+        part: 'snippet',
+        type: 'video',
+        maxResults: 1
+      });
 
-      const results = await playdl.search(next.url, { limit: 1 });
-      if (!results?.length) throw new Error('検索失敗');
+      if (!apiResults?.data?.items?.length) throw new Error('API検索失敗');
+      const fallbackUrl = `https://www.youtube.com/watch?v=${apiResults.data.items[0].id.videoId}`;
 
-      return await playdl.stream(results[0].url, { discordPlayerCompatibility: true });
+      return await playdl.stream(fallbackUrl, { discordPlayerCompatibility: true });
     });
 
     const resource = createAudioResource(src.stream, { inputType: src.type });
@@ -111,14 +108,21 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
 
   try {
     const u = new URL(queryOrUrl);
+    // URLの場合はplay-dlで検証
     if (playdl.yt_validate(queryOrUrl) !== 'search') {
       const info = await playdl.video_info(queryOrUrl).catch(() => null);
       if (info?.video_details?.title) title = info.video_details.title;
       if (info === null && playdl.yt_validate(queryOrUrl) === 'url') {
-        const results = await playdl.search(queryOrUrl, { limit: 1 });
-        if (results?.length) {
-          url = results[0].url;
-          title = results[0].title;
+        // ここをAPI検索に置き換える
+        const apiResults = await youtube.search.list({
+          q: queryOrUrl,
+          part: 'snippet',
+          type: 'video',
+          maxResults: 1
+        });
+        if (apiResults?.data?.items?.length) {
+          url = `https://www.youtube.com/watch?v=${apiResults.data.items[0].id.videoId}`;
+          title = apiResults.data.items[0].snippet.title;
         } else {
           console.error(`URLから動画情報を取得できませんでした: ${queryOrUrl}`);
           return null;
@@ -126,13 +130,19 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
       }
     }
   } catch {
-    const results = await playdl.search(queryOrUrl, { limit: 1 });
-    if (!results?.length) {
+    // URLとして無効な場合は、API検索に切り替える
+    const apiResults = await youtube.search.list({
+      q: queryOrUrl,
+      part: 'snippet',
+      type: 'video',
+      maxResults: 1
+    });
+    if (!apiResults?.data?.items?.length) {
       console.error(`検索クエリから動画が見つかりませんでした: ${queryOrUrl}`);
       return null;
     }
-    url = results[0].url;
-    title = results[0].title || queryOrUrl;
+    url = `https://www.youtube.com/watch?v=${apiResults.data.items[0].id.videoId}`;
+    title = apiResults.data.items[0].snippet.title || queryOrUrl;
   }
 
   if (!url || typeof url !== 'string' || !url.startsWith('http')) {
