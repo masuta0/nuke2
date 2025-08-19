@@ -2,6 +2,19 @@
 
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const playdl = require('play-dl');
+const { YOUTUBE_COOKIE } = require('../config.json');
+
+// play-dlに認証クッキーを設定
+// config.jsonにYOUTUBE_COOKIEがない場合は、この行はスキップされます
+if (YOUTUBE_COOKIE) {
+  playdl.set_cookies([
+    { name: '__Secure-3PAPISID', value: YOUTUBE_COOKIE, domain: '.youtube.com' }
+  ]).then(() => {
+    console.log('✅ YouTube認証クッキーが設定されました');
+  }).catch(err => {
+    console.error('❌ YouTube認証クッキーの設定に失敗しました:', err);
+  });
+}
 
 const queues = new Map(); // guildId -> { connection, player, queue: [{title,url}] }
 
@@ -87,14 +100,13 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
   return title;
 }
 
-// 音楽を停止する関数を新しく追加
 function stopMusic(guildId) {
   const data = queues.get(guildId);
   if (!data) return false;
   try { 
     data.player.stop(); 
   } catch {}
-  data.queue = []; // 再生キューをクリア
+  data.queue = [];
   return true;
 }
 
@@ -109,6 +121,6 @@ async function leaveVoice(guildId) {
 module.exports = {
   joinVoice,
   playUrl,
-  stopMusic, // 新しい関数をエクスポート
+  stopMusic,
   leaveVoice
 };
