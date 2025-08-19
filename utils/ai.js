@@ -12,10 +12,22 @@ function getModel() {
   return genAI.getGenerativeModel({ model: GEMINI_MODEL });
 }
 
-async function chat(prompt, userId) {
+async function chat(userMessage, userId) {
   const model = getModel();
   if (!model) return '⚠️ GEMINI_API_KEY が未設定です';
+
   try {
+    // 質問かどうか判定（最後が ? or ？）
+    const isQuestion = userMessage.trim().endsWith('?') || userMessage.trim().endsWith('？');
+
+    // 質問用 / 通常用 プロンプトを分ける
+    let prompt;
+    if (isQuestion) {
+      prompt = `以下の質問に対して、4〜10行程度で詳しく答えてください。\n\n${userMessage}`;
+    } else {
+      prompt = `以下の発言に対して、一言だけ短く返してください。\n\n${userMessage}`;
+    }
+
     const res = await model.generateContent(prompt);
     const txt = res?.response?.text();
     return txt || '（空の返答）';
@@ -31,8 +43,11 @@ async function translateWithRetry(text, options = {}, retries = 3) {
       const r = await translateApi.translate(text, options);
       return r?.text;
     } catch (e) {
-      if (e?.name === 'TooManyRequestsError') await new Promise(r => setTimeout(r, 1500 * (i + 1)));
-      else break;
+      if (e?.name === 'TooManyRequestsError') {
+        await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+      } else {
+        break;
+      }
     }
   }
   return null;
