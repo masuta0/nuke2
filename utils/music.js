@@ -4,8 +4,16 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const playdl = require('play-dl');
 const { YOUTUBE_COOKIE } = require('../config.json');
 
+// ★ デバッグログの追加
+// config.jsonからYOUTUBE_COOKIEが正しく読み込まれているか確認
+console.log('✅ YOUTUBE_COOKIE from config.json:', YOUTUBE_COOKIE ? 'Loaded' : 'Not Loaded');
+
 // play-dlに認証クッキーを設定
 if (YOUTUBE_COOKIE) {
+  // ★ デバッグログの追加
+  // 設定されるクッキーの値の一部を出力して確認
+  console.log('ℹ️ Attempting to set YouTube cookies. Value starts with:', YOUTUBE_COOKIE.substring(0, 10) + '...');
+
   playdl.set_cookies([
     { name: '__Secure-3PAPISID', value: YOUTUBE_COOKIE, domain: '.youtube.com' }
   ]).then(() => {
@@ -13,6 +21,8 @@ if (YOUTUBE_COOKIE) {
   }).catch(err => {
     console.error('❌ YouTube認証クッキーの設定に失敗しました:', err);
   });
+} else {
+  console.log('⚠️ config.jsonにYOUTUBE_COOKIEが設定されていないため、クッキー設定をスキップします。');
 }
 
 const queues = new Map(); // guildId -> { connection, player, queue: [{title,url}] }
@@ -45,22 +55,28 @@ async function _playNext(guildId, textChannel) {
   if (!data) return;
   const next = data.queue.shift();
 
-  // ★ 修正1: キューから取り出したアイテムとURLが有効かを確認
   if (!next || !next.url || typeof next.url !== 'string') {
     console.error('⚠️ キューから取り出したアイテムに有効なURLがありません。次の曲にスキップします。');
     if (textChannel) {
       textChannel.send('⚠️ 再生に問題が発生しました。次の曲にスキップします。').catch(() => {});
     }
-    // 次の曲があれば、再帰的に_playNextを呼び出す
     if (data.queue.length > 0) {
       _playNext(guildId, textChannel);
     }
     return;
   }
 
+  // ★ デバッグログの追加
+  console.log('ℹ️ Attempting to play URL:', next.url);
+
   try {
     const src = await playdl.stream(next.url, { discordPlayerCompatibility: true }).catch(async (e) => {
       console.error('Failed to get YouTube stream:', e);
+
+      // ここでもしエラーが「Sign in...」なら、クッキー設定が失敗している可能性が高い
+      if (e.message.includes("Sign in to confirm")) {
+         console.error('❌ YouTubeがBotとしてアクセスをブロックしています。クッキー設定を確認してください。');
+      }
 
       const results = await playdl.search(next.url, { limit: 1 });
       if (!results?.length) throw new Error('検索失敗');
@@ -98,21 +114,18 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
     if (playdl.yt_validate(queryOrUrl) !== 'search') {
       const info = await playdl.video_info(queryOrUrl).catch(() => null);
       if (info?.video_details?.title) title = info.video_details.title;
-      // URLがYouTubeのものでない場合、そのままでは再生できない可能性があるため、検索にフォールバック
       if (info === null && playdl.yt_validate(queryOrUrl) === 'url') {
         const results = await playdl.search(queryOrUrl, { limit: 1 });
         if (results?.length) {
           url = results[0].url;
           title = results[0].title;
         } else {
-          // 検索でも見つからない場合は処理を終了
           console.error(`URLから動画情報を取得できませんでした: ${queryOrUrl}`);
           return null;
         }
       }
     }
   } catch {
-    // URLとして無効な場合は、検索クエリとして扱う
     const results = await playdl.search(queryOrUrl, { limit: 1 });
     if (!results?.length) {
       console.error(`検索クエリから動画が見つかりませんでした: ${queryOrUrl}`);
@@ -122,7 +135,6 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
     title = results[0].title || queryOrUrl;
   }
 
-  // ★ 修正2: 最後にurl変数が有効かを確認
   if (!url || typeof url !== 'string' || !url.startsWith('http')) {
     console.error(`キューに追加しようとしたURLが無効です。入力: ${queryOrUrl}, 最終URL: ${url}`);
     return null;
