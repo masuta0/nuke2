@@ -1,1 +1,0 @@
-npm list @google/generative-ai
