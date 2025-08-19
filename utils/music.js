@@ -2,12 +2,16 @@
 
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const playdl = require('play-dl');
-const { YOUTUBE_COOKIE, YOUTUBE_API_KEY } = require('../config.json');
+// config.jsonからの読み込みを試行し、なければ環境変数を参照
+const config = require('../config.json');
+const YOUTUBE_COOKIE = config.YOUTUBE_COOKIE || process.env.YOUTUBE_COOKIE;
+const YOUTUBE_API_KEY = config.YOUTUBE_API_KEY || process.env.YOUTUBE_API_KEY;
+
 const { google } = require('googleapis');
 
 // ★ デバッグログの追加: APIキーが読み込まれているかを確認
 if (!YOUTUBE_API_KEY) {
-  console.error('❌ YOUTUBE_API_KEYがconfig.jsonに設定されていません。');
+  console.error('❌ YOUTUBE_API_KEYがconfig.jsonにも環境変数にも設定されていません。');
 } else {
   console.log('✅ YouTube APIキーが読み込まれました。');
 }
@@ -108,17 +112,14 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
   const data = queues.get(guildId);
   if (!data) return null;
 
-  let url = null; // ★ 修正: URLを初期値`null`で初期化
+  let url = null;
   let title = queryOrUrl;
 
   try {
-    // ユーザー入力が有効なURLの場合
     const u = new URL(queryOrUrl);
-    // play-dlで検証
     if (playdl.yt_validate(queryOrUrl) !== 'search') {
       const info = await playdl.video_info(queryOrUrl).catch(() => null);
       if (info?.video_details?.title) title = info.video_details.title;
-      // URLが有効な形式でも、動画情報が取得できない場合はAPI検索にフォールバック
       if (info === null && playdl.yt_validate(queryOrUrl) === 'url') {
         const apiResults = await youtube.search.list({
           q: queryOrUrl,
@@ -131,10 +132,9 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
           title = apiResults.data.items[0].snippet.title;
         }
       } else {
-        url = queryOrUrl; // play-dlで動画情報が取得できた場合はそのままURLを使用
+        url = queryOrUrl;
       }
     } else {
-      // ユーザー入力が検索クエリの場合
       const apiResults = await youtube.search.list({
         q: queryOrUrl,
         part: 'snippet',
@@ -147,7 +147,6 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
       }
     }
   } catch (e) {
-    // ユーザー入力がURLとして無効な場合
     console.log('入力がURLとして無効です。検索に切り替えます。');
     const apiResults = await youtube.search.list({
       q: queryOrUrl,
@@ -161,7 +160,6 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
     }
   }
 
-  // ★ 最終的にURLが取得できたかを確認し、キューに追加
   if (!url || typeof url !== 'string' || !url.startsWith('http')) {
     console.error(`❌ キューに追加する有効なURLを取得できませんでした。入力: ${queryOrUrl}`);
     return null;
