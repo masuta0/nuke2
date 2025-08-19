@@ -4,6 +4,7 @@ const { hasManageGuildPermission, backupServer, restoreServer, nukeChannel, clea
 const { chat } = require('../utils/ai');
 const { saveUserWeatherPref, loadUserWeatherPref, fetchWeather } = require('../utils/weather');
 const { joinVoice, playUrl, leaveVoice } = require('../utils/music');
+const { getVoiceConnection } = require('@discordjs/voice'); // 新しく追加
 const { askQuiz } = require('../utils/quiz');
 
 const TOKEN = process.env.TOKEN;
@@ -31,6 +32,7 @@ async function registerSlashCommands(client) {
     new SlashCommandBuilder().setName('play')
       .setDescription('音楽を再生（URLまたは検索語）')
       .addStringOption(o => o.setName('query').setDescription('YouTube/Spotify URLまたは検索語').setRequired(true)),
+    new SlashCommandBuilder().setName('stop').setDescription('音楽の再生を停止し、ボイスチャンネルから退出'), // 新しく追加
     new SlashCommandBuilder().setName('leave').setDescription('ボイスチャンネルから退出'),
 
     new SlashCommandBuilder().setName('backup')
@@ -103,6 +105,25 @@ async function registerSlashCommands(client) {
         if (!ok) return interaction.editReply('⚠️ 参加に失敗しました');
         const added = await playUrl(interaction.guild.id, query, interaction.channel);
         return interaction.editReply(added ? `▶️ キュー追加: ${added}` : '⚠️ 取得に失敗しました');
+      }
+
+      if (name === 'stop') { // 新しく追加
+          await interaction.deferReply({ ephemeral: true });
+          const voiceConnection = getVoiceConnection(interaction.guild.id);
+
+          if (!voiceConnection) {
+              return interaction.editReply('⚠️ 現在、ボイスチャンネルに接続していません。');
+          }
+
+          const player = voiceConnection.state.subscription?.player;
+
+          if (player) {
+              player.stop();
+              voiceConnection.destroy();
+              return interaction.editReply('✅ 音楽の再生を停止し、ボイスチャンネルから切断しました。');
+          } else {
+              return interaction.editReply('⚠️ 現在、再生中の音楽はありません。');
+          }
       }
 
       if (name === 'leave') {

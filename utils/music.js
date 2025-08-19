@@ -1,4 +1,5 @@
 // utils/music.js
+
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const playdl = require('play-dl');
 
@@ -35,14 +36,11 @@ async function _playNext(guildId, textChannel) {
 
   try {
     const src = await playdl.stream(next.url, { discordPlayerCompatibility: true }).catch(async (e) => {
-      // YouTubeからストリーム取得失敗時のエラーをログに出力
       console.error('Failed to get YouTube stream:', e);
 
-      // Spotifyなど→YouTube検索で代替
       const results = await playdl.search(next.url, { limit: 1 });
       if (!results?.length) throw new Error('検索失敗');
 
-      // 検索結果のURLで再試行
       return await playdl.stream(results[0].url, { discordPlayerCompatibility: true });
     });
 
@@ -54,7 +52,6 @@ async function _playNext(guildId, textChannel) {
       _playNext(guildId, textChannel);
     });
   } catch (e) {
-    // 再生プロセス全体でエラーが発生した場合のログ
     console.error('Playback failed:', e);
     textChannel?.send?.('⚠️ 再生に失敗しました').catch(() => {});
     _playNext(guildId, textChannel);
@@ -65,14 +62,11 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
   const data = queues.get(guildId);
   if (!data) return null;
 
-  // URLか検索クエリかを判定
   let url = queryOrUrl;
   let title = queryOrUrl;
 
   try {
-    // URLか？
     const u = new URL(queryOrUrl);
-    // YouTube/Spotifyの簡易対応：タイトルを取得
     if (playdl.yt_validate(queryOrUrl) !== 'search') {
       const info = await playdl.video_info(queryOrUrl).catch(() => null);
       if (info?.video_details?.title) title = info.video_details.title;
@@ -80,7 +74,6 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
       title = queryOrUrl;
     }
   } catch {
-    // 検索 → 最初の結果
     const results = await playdl.search(queryOrUrl, { limit: 1 });
     if (!results?.length) return null;
     url = results[0].url;
@@ -94,6 +87,17 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
   return title;
 }
 
+// 音楽を停止する関数を新しく追加
+function stopMusic(guildId) {
+  const data = queues.get(guildId);
+  if (!data) return false;
+  try { 
+    data.player.stop(); 
+  } catch {}
+  data.queue = []; // 再生キューをクリア
+  return true;
+}
+
 async function leaveVoice(guildId) {
   const data = queues.get(guildId);
   if (!data) return;
@@ -105,5 +109,6 @@ async function leaveVoice(guildId) {
 module.exports = {
   joinVoice,
   playUrl,
+  stopMusic, // 新しい関数をエクスポート
   leaveVoice
 };
