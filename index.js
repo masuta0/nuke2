@@ -71,7 +71,7 @@ client.once('ready', async () => {
     } catch (_) { }
   };
   updateUptimeStatus();
-  setInterval(updateUptimeStatus, 2000); // ★ 修正箇所
+  setInterval(updateUptimeStatus, 2000);
   try {
     await registerSlashCommands(client);
     console.log('✅ スラッシュコマンド登録完了');
@@ -88,15 +88,17 @@ client.on('messageCreate', async (message) => {
 
   await addXp(message.member);
 
+  // ★ 修正箇所
+  if (!message.content.startsWith('!')) {
     if (message.mentions.has(client.user) && !message.mentions.everyone) {
       const prompt = message.content.replace(/<@!?(\d+)>/, '').trim();
       if (!prompt) return;
       const res = await chat(prompt, message.author.id);
       await message.reply(res || '⚠️ 返答に失敗しました');
     }
-
     return;
   }
+  // ★ 修正箇所ここまで
 
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift().toLowerCase();
