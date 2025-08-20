@@ -4,6 +4,7 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const playdl = require('play-dl');
 const config = require('../config.json');
 const { google } = require('googleapis');
+const urlModule = require('url');
 
 const YOUTUBE_COOKIE = config.YOUTUBE_COOKIE || process.env.YOUTUBE_COOKIE;
 const YOUTUBE_API_KEY = config.YOUTUBE_API_KEY || process.env.YOUTUBE_API_KEY;
@@ -98,23 +99,35 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
   let title = null;
 
   try {
-    // 常にYouTube APIを使って検索するロジックに変更
-    const apiResults = await youtube.search.list({
-      q: queryOrUrl,
-      part: 'snippet',
-      type: 'video',
-      maxResults: 1
-    });
+    // 入力が有効なYouTube URLかどうかをチェック
+    const isUrl = playdl.yt_validate(queryOrUrl) === 'video';
 
-    if (apiResults?.data?.items?.length) {
-      url = `https://www.youtube.com/watch?v=${apiResults.data.items[0].id.videoId}`;
-      title = apiResults.data.items[0].snippet.title || queryOrUrl;
+    if (isUrl) {
+      // URLの場合は、動画IDを抽出してvideos.list APIを使用
+      const videoId = new urlModule.URL(queryOrUrl).searchParams.get('v') || queryOrUrl.split('/').pop().split('?')[0];
+      const apiResults = await youtube.videos.list({
+        id: videoId,
+        part: 'snippet',
+      });
+      if (apiResults?.data?.items?.length) {
+        url = `https://www.youtube.com/watch?v=${apiResults.data.items[0].id}`;
+        title = apiResults.data.items[0].snippet.title || queryOrUrl;
+      }
     } else {
-      console.error(`❌ API検索失敗: 検索結果が見つかりません。入力: ${queryOrUrl}`);
-      return null;
+      // URLでない場合は、検索APIを使用
+      const apiResults = await youtube.search.list({
+        q: queryOrUrl,
+        part: 'snippet',
+        type: 'video',
+        maxResults: 1
+      });
+      if (apiResults?.data?.items?.length) {
+        url = `https://www.youtube.com/watch?v=${apiResults.data.items[0].id.videoId}`;
+        title = apiResults.data.items[0].snippet.title || queryOrUrl;
+      }
     }
   } catch (e) {
-    console.error('❌ YouTube APIでの検索に失敗しました:', e);
+    console.error('❌ YouTube APIでの情報取得に失敗しました:', e);
     return null;
   }
 
@@ -154,4 +167,3 @@ module.exports = {
   stopMusic,
   leaveVoice
 };
-
