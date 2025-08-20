@@ -64,7 +64,6 @@ async function downloadToBuffer(dropboxPath) {
   if (!_dbx) return null;
   try {
     const res = await _dbx.filesDownload({ path: dropboxPath });
-    // NodeのSDKは res.result.fileBinary(ArrayBuffer) を返す
     const ab = res?.result?.fileBinary;
     if (!ab) return null;
     return Buffer.from(ab);
@@ -82,6 +81,37 @@ async function downloadToLocal(dropboxPath, localPath) {
   return true;
 }
 
+// ★ レベル機能用のアップロード・ダウンロード関数
+async function uploadToDropbox(dropboxPath, data) {
+  const _dbx = await ensureDropboxInit();
+  if (!_dbx) throw new Error('Dropboxが初期化されていません');
+  try {
+    await _dbx.filesUpload({
+      path: dropboxPath,
+      contents: data,
+      mode: { '.tag': 'overwrite' }
+    });
+    return true;
+  } catch (e) {
+    console.error('Dropboxアップロード失敗:', e?.error || e?.message || e);
+    throw e;
+  }
+}
+
+async function downloadFromDropbox(dropboxPath) {
+  const _dbx = await ensureDropboxInit();
+  if (!_dbx) return null;
+  try {
+    const res = await _dbx.filesDownload({ path: dropboxPath });
+    const ab = res?.result?.fileBinary;
+    if (!ab) return null;
+    return JSON.parse(Buffer.from(ab).toString('utf-8'));
+  } catch (e) {
+    console.warn('Dropbox読み込み失敗:', e?.error || e?.message || e);
+    return null;
+  }
+}
+
 module.exports = {
   ensureDropboxInit,
   ensureFolder,
@@ -89,6 +119,8 @@ module.exports = {
   uploadBuffer,
   downloadToBuffer,
   downloadToLocal,
+  uploadToDropbox,
+  downloadFromDropbox,
   QUIZ_PATH,
   WEATHER_DIR
 };
