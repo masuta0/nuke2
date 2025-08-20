@@ -14,6 +14,10 @@ const RAID_TIME_WINDOW = 60 * 1000; // 1分
 const SIMILAR_MESSAGE_THRESHOLD = 2; // 2回
 const SIMILAR_MESSAGE_LENGTH = 5; // 5文字以上
 
+// ★ 連投検知
+const MASS_SPAM_THRESHOLD = 2; // 2メッセージ
+const MASS_SPAM_TIME_WINDOW = 3 * 1000; // 3秒
+
 // 荒らしと判断される特定のキーワード
 const RAID_KEYWORDS = [
   ' this server is raided',
@@ -66,11 +70,14 @@ function handleMemberJoin(member) {
   );
 
   if (recentJoins.length >= RAID_MEMBER_THRESHOLD) {
+    const logChannel = member.guild.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) {
+      logChannel.send(
+        `🚨 **Raid警告**: 過去1分間に${RAID_MEMBER_THRESHOLD}人以上のメンバーが参加しました。`
+      ).catch(console.error);
+    }
     recentJoins.forEach(join => {
-      const isNewUser = !markedUsers.has(join.id);
-      if (isNewUser) {
-        incrementScore(join.id, RAID_SCORE_MASS_JOIN, null, `大量参加 (${recentJoins.length}人)`);
-      }
+      incrementScore(join.id, RAID_SCORE_MASS_JOIN, null, `大量参加 (${recentJoins.length}人)`);
     });
     memberJoinLog.set(guildId, recentJoins);
   }
@@ -89,7 +96,6 @@ async function incrementScore(userId, score, message = null, reason = '不審な
     const member = message?.member || await message.guild.members.fetch(userId).catch(() => null);
     if (!member) return;
 
-    // 不審な行動を検知した時点でログを送信
     logRaidAction(
         member.guild,
         `🚨 **不審行動検知**: ${member.user.tag} が不審な行動を行いました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}`,
@@ -129,7 +135,7 @@ async function handleMessage(message) {
   const messageTimestamps = userMessageTimestamps.get(authorId) || [];
   messageTimestamps.push(now);
   const recentMessages = messageTimestamps.filter(
-    (timestamp) => now - timestamp < MASS_SPAM_TIME_WINDOW
+    (timestamp) => now - timestamp < MASS_SPAM_TIME_WINDOW // ★ 修正
   );
   userMessageTimestamps.set(authorId, recentMessages);
 
