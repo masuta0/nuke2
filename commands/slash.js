@@ -1,4 +1,5 @@
 // commands/slash.js
+
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const {
   hasManageGuildPermission,
@@ -105,10 +106,16 @@ async function registerSlashCommands(client) {
           });
         }
         const prompt = interaction.options.getString('prompt', true);
-        await interaction.deferReply({ ephemeral: true });
+
+        // ★ ephemeral: false に変更して公開
+        await interaction.deferReply({ ephemeral: false }); 
+
         aiCooldown.set(interaction.user.id, now);
         const res = await chat(prompt, interaction.user.id);
-        return interaction.editReply(res || '⚠️ 返答に失敗しました');
+
+        // ★ ユーザーのメンションとAIの返答を一緒に出力
+        await interaction.editReply(`**${interaction.user.displayName}**さんの質問:\n> ${prompt}\n\n**AIの返答:**\n${res}` || '⚠️ 返答に失敗しました');
+        return;
       }
       if (name === 'level') {
         const subcommand = interaction.options.getSubcommand();
