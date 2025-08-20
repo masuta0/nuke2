@@ -40,7 +40,7 @@ const RAID_SCORE_EXCESSIVE_NEWLINES = 8; // 過度な改行
 const RAID_SCORE_ZALGO = 10;         // Zalgo文字
 const RAID_SCORE_MASS_SPAM = 10;     // メッセージ連投
 const RAID_SCORE_WEBHOOK_ABUSE = 25; // ウェブフック乱用スコア
-const RAID_SCORE_ADMIN_ABUSE = 30; // 監査ログ不審行動
+const RAID_SCORE_AUDIT_LOG_ABUSE = 30; // 監査ログ不審行動
 
 // 処罰
 const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間
@@ -64,6 +64,7 @@ const userScores = new Map();
 const userCommandCounts = new Map();
 const userReactionCounts = new Map();
 const userMessageTimestamps = new Map();
+const adminAbuseLog = new Map();
 
 // === メンバー参加を監視 ===
 function handleMemberJoin(member) {
@@ -102,23 +103,60 @@ function handleMemberJoin(member) {
   }
 }
 
-// ★ 新規: ロールの権限変更を監視する関数
+// === 管理者の行動を監視 ===
+async function handleAdminAbuse(guild, executor, actionType) {
+    if (!executor || executor.bot) return;
+
+    const now = Date.now();
+    const abuseKey = `${guild.id}-${executor.id}`;
+
+    if (!adminAbuseLog.has(abuseKey)) {
+        adminAbuseLog.set(abuseKey, []);
+    }
+
+    const actionLog = adminAbuseLog.get(abuseKey);
+    actionLog.push({ timestamp: now, type: actionType });
+
+    const recentActions = actionLog.filter(action => now - action.timestamp < 5000); // 5秒間のアクション
+    adminAbuseLog.set(abuseKey, recentActions);
+
+    if (recentActions.length >= ADMIN_ABUSE_THRESHOLD) {
+        const member = guild.members.cache.get(executor.id);
+        if (member) {
+            try {
+                await member.roles.set([], '管理者の権限乱用');
+                await member.ban({ reason: `管理者権限を乱用しました（${ADMIN_ABUSE_THRESHOLD}回以上の管理操作）` });
+
+                await logRaidAction(
+                    guild,
+                    `🚨 **管理者権限乱用検知**: ${executor.tag} が悪意のある行動を繰り返し実行したため、権限を剥奪しBANしました。`,
+                    'サーバーログ'
+                );
+            } catch (e) {
+                console.error('管理者処罰に失敗しました:', e);
+                await logRaidAction(
+                    guild,
+                    `⚠️ **緊急警告**: ${executor.tag} の管理者権限の乱用を検知しましたが、処罰に失敗しました。`
+                );
+            }
+        }
+    }
+}
+
+
+// === ロールの権限変更を監視する関数
 async function handleRoleUpdate(oldRole, newRole) {
-  // @everyone ロール以外は無視
   if (oldRole.id !== oldRole.guild.id) return;
 
-  // 権限の変更を比較
   const oldPermissions = oldRole.permissions;
   const newPermissions = newRole.permissions;
 
-  // 危険な権限が新しく追加されたかを確認
   const addedDangerousPermissions = DANGEROUS_PERMISSIONS.filter(
     perm => newPermissions.has(perm) && !oldPermissions.has(perm)
   );
 
   if (addedDangerousPermissions.length > 0) {
     try {
-      // 監査ログをフェッチして操作者を特定
       const logs = await oldRole.guild.fetchAuditLogs({ type: AuditLogEvent.RoleUpdate, limit: 1 });
       const entry = logs.entries.first();
       const executor = entry?.executor;
@@ -127,13 +165,10 @@ async function handleRoleUpdate(oldRole, newRole) {
         const dangerousPerms = addedDangerousPermissions.map(p => PermissionsBitField.Flags[p]);
         const reason = `@everyoneロールに危険な権限(${dangerousPerms.join(', ')})を追加`;
 
-        // 操作者をBAN
         await oldRole.guild.members.ban(executor.id, { reason: reason });
 
-        // @everyoneロールの権限を元に戻す
         await newRole.setPermissions(oldPermissions, '危険な権限の自動削除');
 
-        // ログを送信
         logRaidAction(
           oldRole.guild,
           `🚨 **緊急警告**: ${executor.tag} が @everyone ロールに危険な権限を追加しました。\n**${executor.tag}** をBANし、権限を元に戻しました。\n追加された権限: ${dangerousPerms.join(', ')}`,
@@ -359,5 +394,5 @@ module.exports = {
   handleMemberJoin,
   handleMessage,
   handleReactionAdd,
-  handleRoleUpdate, // ★ エクスポート
+  handleRoleUpdate,
 };
