@@ -2,12 +2,11 @@
 require('dotenv').config();
 const express = require('express');
 const https = require('https');
+const { Client, GatewayIntentBits, ActivityType, Partials } = require('discord.js');
 
 // `node-fetch` v3以降はESM形式のため、動的インポートを使用
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 if (!global.fetch) global.fetch = fetch;
-
-const { Client, GatewayIntentBits, ActivityType, Partials } = require('discord.js');
 
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
@@ -15,6 +14,9 @@ const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
+
+// 音楽再生機能のインポート
+const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -75,16 +77,71 @@ client.once('ready', async () => {
 });
 
 // ==== Message: Prefix (!...) ====
-client.on('messageCreate', (msg) => handlePrefixMessage(client, msg));
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (!message.content.startsWith('!')) {
+    // メンション応答ロジックをここに移動
+    if (message.mentions.has(client.user)) {
+      const prompt = message.content.replace(/<@!?(\d+)>/, '').trim();
+      if (!prompt) return;
+      const res = await chat(prompt, message.author.id);
+      await message.reply(res || '⚠️ 返答に失敗しました');
+    }
+    return;
+  }
 
-// ==== AIリプライ（メンション時）====
-client.on('messageCreate', async (msg) => {
-  if (msg.author.bot) return;
-  if (msg.mentions.has(client.user)) {
-    const prompt = msg.content.replace(/<@!?(\d+)>/, '').trim();
-    if (!prompt) return;
-    const res = await chat(prompt, msg.author.id);
-    await msg.reply(res || '⚠️ 返答に失敗しました');
+  // Prefixコマンド処理
+  const args = message.content.slice(1).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  // 音楽コマンドの追加
+  switch (command) {
+    case 'join':
+      if (!message.member?.voice.channel) {
+        return message.reply('❌ ボイスチャンネルに参加してからコマンドを実行してください。');
+      }
+      const joinSuccess = await joinVoice(message.guild, message.member.voice.channel);
+      if (joinSuccess) {
+        message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
+      } else {
+        message.reply('❌ ボイスチャンネルへの参加に失敗しました。');
+      }
+      break;
+
+    case 'play':
+      if (!message.member?.voice.channel) {
+        return message.reply('❌ ボイスチャンネルに参加してからコマンドを実行してください。');
+      }
+      const query = args.join(' ');
+      if (!query) {
+        return message.reply('❌ 再生したい曲名またはURLを入力してください。');
+      }
+      const title = await playUrl(message.guild.id, query, message.channel);
+      if (title) {
+        message.channel.send(`▶️ 再生キューに追加: **${title}**`);
+      } else {
+        message.channel.send('❌ 申し訳ありません、曲が見つかりませんでした。');
+      }
+      break;
+
+    case 'stop':
+      const stopped = stopMusic(message.guild.id);
+      if (stopped) {
+        message.channel.send('⏹️ 再生を停止し、キューをクリアしました。');
+      } else {
+        message.reply('❌ 再生中の曲はありません。');
+      }
+      break;
+
+    case 'leave':
+      await leaveVoice(message.guild.id);
+      message.channel.send('👋 ボイスチャンネルから退出しました。');
+      break;
+
+    // 既存のprefixコマンドハンドラーを呼び出す
+    default:
+      handlePrefixMessage(client, message);
+      break;
   }
 });
 
