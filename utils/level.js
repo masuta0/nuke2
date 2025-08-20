@@ -11,9 +11,8 @@ const DROPBOX_LEVEL_DATA_PATH = '/app-data/userLevels.json';
 let userLevels = {};
 let levelSettings = {};
 const xpCooldown = new Set();
-const COOLDOWN_TIME = 60 * 1000; // 60秒のクールダウン
+const COOLDOWN_TIME = 60 * 1000;
 
-// Dropboxからデータをロードする関数
 async function loadData() {
     try {
         await ensureDropboxInit();
@@ -35,7 +34,6 @@ async function loadData() {
     }
 }
 
-// Dropboxにデータを保存する関数
 async function saveData() {
     try {
         await uploadToDropbox(DROPBOX_LEVEL_DATA_PATH, JSON.stringify(userLevels));
@@ -106,7 +104,6 @@ async function handleLevelUp(member, newLevel) {
 
 module.exports = { loadData, addXp };
 
-// level settingsファイルが存在しない場合は初期データを作成
 if (!fs.existsSync(LEVEL_SETTINGS_PATH)) {
     fs.mkdirSync(path.dirname(LEVEL_SETTINGS_PATH), { recursive: true });
     fs.writeFileSync(LEVEL_SETTINGS_PATH, JSON.stringify({

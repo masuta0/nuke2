@@ -18,13 +18,12 @@ const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry } = require('./utils/anti-raid');
 
-const { loadData, addXp } = require('./utils/level'); // ★ 新規: レベル機能をインポート
+const { loadData, addXp } = require('./utils/level');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const JOIN_LOG_CHANNEL_ID = '1407669514425860136';
 
-// ==== Discord Client ====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -32,12 +31,12 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildMembers
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
-// ==== Express Keep-Alive ====
 const app = express();
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
@@ -50,14 +49,13 @@ if (process.env.SELF_URL) {
   }, 4 * 60 * 1000);
 }
 
-// ==== Ready ====
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   await ensureDropboxInit();
-  await preloadQuizzes();
+  preloadQuizzes();
   await loadAllLocalWeatherPrefsIfAny();
-  await loadData(); // ★ 新規: レベルデータをロード
+  await loadData();
 
   const start = Date.now();
   const updateUptimeStatus = () => {
@@ -81,14 +79,14 @@ client.once('ready', async () => {
   }
 });
 
-// ==== 荒らし対策とコマンド処理 ====
 client.on('messageCreate', async (message) => {
-  await handleMessage(message);
+  if (message.author.bot) {
+    await handleMessage(message);
+    return;
+  }
 
-  if (message.author.bot) return;
-
-  // ★ 新規: 経験値の付与
   await addXp(message.member);
+  await handleMessage(message);
 
   if (!message.content.startsWith('!')) {
     if (message.mentions.has(client.user)) {
@@ -152,7 +150,6 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// ==== メンバー参加時のイベント ====
 client.on('guildMemberAdd', async (member) => {
   const fetchedMember = await member.guild.members.fetch(member.id).catch(() => null);
   if (!fetchedMember) return;
@@ -166,13 +163,11 @@ client.on('guildMemberAdd', async (member) => {
   }
 });
 
-// ==== ロール更新時のイベント ====
 client.on('roleUpdate', async (oldRole, newRole) => {
     handleRoleUpdate(oldRole, newRole);
 });
 
 
-// ==== リアクション追加時のイベント ====
 client.on('messageReactionAdd', async (reaction, user) => {
   await handleReactionAdd(reaction, user);
 
@@ -185,12 +180,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
   }
 });
 
-// ==== 監査ログエントリ作成時のイベント ====
 client.on('guildAuditLogEntryCreate', async (entry) => {
     if (entry.action === AuditLogEvent.MEMBER_ROLE_UPDATE || entry.action === AuditLogEvent.CHANNEL_OVERWRITE_UPDATE || entry.action === AuditLogEvent.WEBHOOK_CREATE || entry.action === AuditLogEvent.WEBHOOK_UPDATE) {
         handleAuditLogEntry(entry);
     }
 });
 
-// ==== Login ====
 client.login(TOKEN);
