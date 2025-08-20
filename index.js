@@ -88,13 +88,13 @@ client.on('messageCreate', async (message) => {
 
   await addXp(message.member);
 
-  if (!message.content.startsWith('!')) {
-    if (message.mentions.has(client.user)) {
+    if (message.mentions.has(client.user) && !message.mentions.everyone) {
       const prompt = message.content.replace(/<@!?(\d+)>/, '').trim();
       if (!prompt) return;
       const res = await chat(prompt, message.author.id);
       await message.reply(res || '⚠️ 返答に失敗しました');
     }
+
     return;
   }
 
