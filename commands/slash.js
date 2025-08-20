@@ -13,7 +13,7 @@ const { saveUserWeatherPref, loadUserWeatherPref, fetchWeather } = require('../u
 const { joinVoice, playUrl, leaveVoice } = require('../utils/music');
 const { getVoiceConnection } = require('@discordjs/voice');
 const { askQuiz } = require('../utils/quiz');
-const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level'); // ★ レベル機能の関数をインポート
+const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -24,7 +24,7 @@ async function registerSlashCommands(client) {
     new SlashCommandBuilder().setName('ai')
       .setDescription('AIに質問')
       .addStringOption(o => o.setName('prompt').setDescription('質問内容').setRequired(true)),
-    new SlashCommandBuilder().setName('level') // ★ levelコマンドを追加
+    new SlashCommandBuilder().setName('level')
       .setDescription('ユーザーのレベルと経験値に関するコマンドです。')
       .addSubcommand(subcommand =>
         subcommand
@@ -49,7 +49,7 @@ async function registerSlashCommands(client) {
               .setName('level')
               .setDescription('設定するレベル')
               .setRequired(true)))
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), // ★ 管理者権限を要求
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
     new SlashCommandBuilder().setName('天気')
       .setDescription('天気を表示／場所を保存')
       .addStringOption(o => o.setName('場所').setDescription('例: 東京、大阪、札幌...').setRequired(false)),
@@ -110,7 +110,7 @@ async function registerSlashCommands(client) {
         const res = await chat(prompt, interaction.user.id);
         return interaction.editReply(res || '⚠️ 返答に失敗しました');
       }
-      if (name === 'level') { // ★ levelコマンドのハンドラー
+      if (name === 'level') {
         const subcommand = interaction.options.getSubcommand();
         if (subcommand === 'check') {
           const targetUser = interaction.options.getUser('target') || interaction.user;
@@ -118,14 +118,14 @@ async function registerSlashCommands(client) {
           const level = levelData.level;
           const xp = levelData.xp;
           const requiredXp = calculateRequiredXp(level + 1);
-          const progress = Math.min(100, (xp / requiredXp) * 100).toFixed(2);
+          const progress = requiredXp ? Math.min(100, (xp / requiredXp) * 100).toFixed(2) : 'N/A';
           const embed = {
             color: 0x0099ff,
             title: `${targetUser.displayName} のレベル`,
             fields: [
               { name: '現在のレベル', value: `**${level}**`, inline: true },
               { name: '現在の経験値 (XP)', value: `**${xp}**`, inline: true },
-              { name: '次のレベルまで', value: `あと **${requiredXp - xp}** XP`, inline: false },
+              { name: '次のレベルまで', value: requiredXp ? `あと **${requiredXp - xp}** XP` : '最大レベルです！', inline: false },
               { name: 'レベルアップの進捗', value: `${progress}%`, inline: false }
             ],
             timestamp: new Date(),

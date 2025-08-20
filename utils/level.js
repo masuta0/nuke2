@@ -12,9 +12,6 @@ let levelSettings = {};
 const xpCooldown = new Set();
 const COOLDOWN_TIME = 60 * 1000;
 
-/**
- * Dropboxとローカルからデータをロードする
- */
 async function loadData() {
     try {
         await ensureDropboxInit();
@@ -34,9 +31,6 @@ async function loadData() {
     }
 }
 
-/**
- * データをDropboxに保存する
- */
 async function saveData() {
     try {
         await uploadToDropbox(DROPBOX_LEVEL_DATA_PATH, JSON.stringify(userLevels, null, 2));
@@ -45,9 +39,6 @@ async function saveData() {
     }
 }
 
-/**
- * ユーザーに経験値を追加する
- */
 async function addXp(member) {
     if (xpCooldown.has(member.id)) {
         return;
@@ -77,9 +68,6 @@ async function addXp(member) {
     }, COOLDOWN_TIME);
 }
 
-/**
- * レベルアップ時の処理
- */
 async function handleLevelUp(member, newLevel) {
     const levelData = levelSettings[newLevel];
     if (!levelData) {
@@ -101,7 +89,27 @@ async function handleLevelUp(member, newLevel) {
     }
 }
 
-// レベル設定ファイルが存在しない場合は初期データを作成
+// ★ 新規: レベル情報を取得する関数
+function getLevelData(guildId, userId) {
+  if (!userLevels[guildId] || !userLevels[guildId][userId]) {
+    return { level: 0, xp: 0 };
+  }
+  return userLevels[guildId][userId];
+}
+
+// ★ 新規: レベルを設定する関数
+async function setLevelAndXp(guildId, userId, newLevel) {
+  if (!userLevels[guildId]) userLevels[guildId] = {};
+  userLevels[guildId][userId] = { level: newLevel, xp: 0 };
+  await saveData();
+}
+
+// ★ 新規: 次のレベルまでの必要XPを計算する関数
+function calculateRequiredXp(level) {
+  const levelData = levelSettings[level];
+  return levelData ? levelData.xp : null;
+}
+
 if (!fs.existsSync(LEVEL_SETTINGS_PATH)) {
     fs.mkdirSync(path.dirname(LEVEL_SETTINGS_PATH), { recursive: true });
     fs.writeFileSync(LEVEL_SETTINGS_PATH, JSON.stringify({
@@ -111,4 +119,4 @@ if (!fs.existsSync(LEVEL_SETTINGS_PATH)) {
     }, null, 2));
 }
 
-module.exports = { loadData, addXp };
+module.exports = { loadData, addXp, getLevelData, setLevelAndXp, calculateRequiredXp };
