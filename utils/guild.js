@@ -1,10 +1,7 @@
 // utils/guild.js
-
 const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
-
-// ★ 荒らし対策モジュールからログチャンネルIDをインポート
 const { LOG_CHANNEL_ID } = require('./anti-raid');
 
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
@@ -87,13 +84,12 @@ async function backupServer(guild) {
   saveBackup(guild.id, data);
 }
 
-// ★ ログチャンネル自動作成/取得機能を追加
 async function getOrCreateLogChannel(guild) {
   let logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
   if (!logChannel) {
       try {
           logChannel = await guild.channels.create({
-              name: 'bot-logs', // チャンネル名を自由に設定
+              name: 'bot-logs',
               type: ChannelType.GuildText,
               reason: '荒らし対策ログチャンネルが削除されたため再作成',
           });
@@ -110,13 +106,11 @@ async function restoreServer(guild, feedbackChannel) {
   const backup = loadBackup(guild.id);
   if (!backup) return false;
 
-  // 既存チャンネルを削除（ログチャンネル以外）
   for (const ch of guild.channels.cache.values()) {
-    if (ch.id === LOG_CHANNEL_ID) continue; // ★ ログチャンネルをスキップ
+    if (ch.id === LOG_CHANNEL_ID) continue;
     try { await ch.delete('Restore: clear channels'); await delay(50); } catch {}
   }
 
-  // 既存ロールを削除（@everyoneと統合ロール以外）
   const deletable = guild.roles.cache
     .filter(r => !r.managed && r.id !== guild.id)
     .sort((a, b) => a.position - b.position);
@@ -169,7 +163,7 @@ async function restoreServer(guild, feedbackChannel) {
 
   const others = backup.channels.filter(c => c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
   for (const ch of others) {
-    if (ch.id === LOG_CHANNEL_ID) continue; // ★ ログチャンネルの再作成をスキップ
+    if (ch.id === LOG_CHANNEL_ID) continue;
     try {
       const payload = {
         name: ch.name,
@@ -254,9 +248,61 @@ async function nukeChannel(channel) {
   return newCh;
 }
 
-async function clearMessages(channel, amount) {
-  const msgs = await channel.messages.fetch({ limit: Math.min(amount, 100) });
-  await channel.bulkDelete(msgs, true).catch(() => {});
+// ★ 既存のclearMessagesを新しいロジックに置き換える
+async function clearMessages(channel, amount, feedbackChannel) {
+  let messagesToDelete = amount;
+  let lastMessageId = null;
+  let deletedCount = 0;
+
+  const now = Date.now();
+  const twoWeeksAgo = now - (14 * 24 * 60 * 60 * 1000);
+
+  // 14日以内のメッセージを一括削除
+  while (messagesToDelete > 0) {
+    const fetchLimit = Math.min(messagesToDelete, 100);
+    const fetched = await channel.messages.fetch({ limit: fetchLimit, before: lastMessageId });
+    if (fetched.size === 0) break;
+
+    // 14日より古いメッセージを除外
+    const recentMessages = fetched.filter(msg => msg.createdTimestamp > twoWeeksAgo);
+
+    if (recentMessages.size > 0) {
+      await channel.bulkDelete(recentMessages, true).catch(e => {
+        console.error(`Bulk delete failed: ${e}`);
+        if(feedbackChannel) feedbackChannel.send(`⚠️ メッセージの一括削除に失敗しました。`).catch(()=>{});
+      });
+      deletedCount += recentMessages.size;
+    }
+
+    messagesToDelete -= fetched.size;
+    lastMessageId = fetched.last().id;
+
+    if (recentMessages.size < fetched.size) {
+      // 14日より古いメッセージが見つかったら、一括削除ループを終了
+      break;
+    }
+  }
+
+  // 14日以上前のメッセージを個別に削除
+  if (messagesToDelete > 0) {
+    const slowDeleteMsg = await feedbackChannel.send('⚠️ 14日以上前のメッセージは個別削除します。時間がかかります...').catch(()=>{});
+    while (messagesToDelete > 0) {
+      const fetched = await channel.messages.fetch({ limit: 100, before: lastMessageId });
+      if (fetched.size === 0) break;
+
+      for (const [id, msg] of fetched) {
+        if (messagesToDelete <= 0) break;
+        await msg.delete().catch(e => console.error(`Failed to delete message: ${e}`));
+        deletedCount++;
+        messagesToDelete--;
+        await delay(1000); // APIレートリミット回避
+      }
+      lastMessageId = fetched.last().id;
+      if(slowDeleteMsg) slowDeleteMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`).catch(()=>{});
+    }
+  }
+
+  return deletedCount;
 }
 
 module.exports = {
