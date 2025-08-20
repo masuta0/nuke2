@@ -6,10 +6,12 @@ const { AuditLogEvent, PermissionsBitField } = require('discord.js');
 // 荒らしログを送信するチャンネルID
 const LOG_CHANNEL_ID = '1405660583025709106';
 
-// ★ 日本時間で夜間と判断する時間帯
+// ★ 認証用チャンネルID
+const AUTH_CHANNEL_ID = '1405660583025709107';
+
+// ★ 時間帯ごとの設定
 const NIGHT_START_HOUR = 22; // 22時
 const NIGHT_END_HOUR = 6;    // 6時
-
 const config = {
   daytime: {
     RAID_SCORE_THRESHOLD: 20,
@@ -40,16 +42,16 @@ const config = {
 };
 
 // メンバー参加検知
-const RAID_MEMBER_THRESHOLD = 3;
-const RAID_TIME_WINDOW = 60 * 1000;
+const RAID_MEMBER_THRESHOLD = 3; // 3人
+const RAID_TIME_WINDOW = 60 * 1000; // 1分
 
 // 類似メッセージ検知
-const SIMILAR_MESSAGE_THRESHOLD = 2;
-const SIMILAR_MESSAGE_LENGTH = 5;
+const SIMILAR_MESSAGE_THRESHOLD = 2; // 2回
+const SIMILAR_MESSAGE_LENGTH = 5; // 5文字以上
 
 // 連投検知
-const MASS_SPAM_THRESHOLD = 2;
-const MASS_SPAM_TIME_WINDOW = 3 * 1000;
+const MASS_SPAM_THRESHOLD = 2; // 2メッセージ
+const MASS_SPAM_TIME_WINDOW = 3 * 1000; // 3秒
 
 // 荒らしと判断される特定のキーワード
 const RAID_KEYWORDS = [
@@ -62,8 +64,8 @@ const RAID_KEYWORDS = [
 ];
 
 // 処罰
-const TIMEOUT_DURATION = 5 * 60 * 1000;
-const MARK_DURATION = 48 * 60 * 60 * 1000;
+const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間
+const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
 
 // 危険な権限
 const DANGEROUS_PERMISSIONS = [
@@ -84,11 +86,12 @@ const userCommandCounts = new Map();
 const userReactionCounts = new Map();
 const userMessageTimestamps = new Map();
 const adminAbuseLog = new Map();
+const raidAuthData = new Map();
 
 // ★ 新規: 現在の時間帯を取得する関数
 function getCurrentConfig() {
   const now = new Date();
-  const jstHour = (now.getUTCHours() + 9) % 24; // UTC時間に9時間足してJSTに変換
+  const jstHour = (now.getUTCHours() + 9) % 24;
 
   if (jstHour >= NIGHT_START_HOUR || jstHour < NIGHT_END_HOUR) {
     return config.night;
@@ -96,8 +99,58 @@ function getCurrentConfig() {
   return config.daytime;
 }
 
+// ★ 新規: メンバーのロールを一時的に保存する関数
+async function saveAndStripRoles(member) {
+  const oldRoles = member.roles.cache.map(role => role.id);
+  raidAuthData.set(member.id, oldRoles);
+  await member.roles.set([], 'Raid対策のため権限を一時剥奪');
+}
+
+// ★ 新規: 認証後のロールを復活させる関数
+async function restoreRoles(member) {
+  const oldRoles = raidAuthData.get(member.id);
+  if (oldRoles) {
+    await member.roles.set(oldRoles, 'Raid対策認証完了');
+    raidAuthData.delete(member.id);
+    await member.send('✅ 認証が完了しました。あなたのロールは元に戻されました。');
+  }
+}
+
+// ★ 新規: ボット追加を監視する関数
+async function handleBotAdd(member) {
+  if (!member.user.bot) return false;
+
+  try {
+    const fetchedLogs = await member.guild.fetchAuditLogs({
+      type: AuditLogEvent.BotAdd,
+      limit: 1,
+    });
+    const botAddEntry = fetchedLogs.entries.first();
+
+    if (!botAddEntry) {
+      console.warn('BotAddの監査ログが見つかりませんでした。');
+      return false;
+    }
+
+    const { executor, target } = botAddEntry;
+
+    if (!executor.permissions.has('Administrator') || userScores.has(executor.id)) {
+      await member.kick(`不審なユーザー(${executor.tag})が招待したBotを自動拒否`);
+      await logRaidAction(
+        member.guild,
+        `🚨 **Bot自動拒否**: 不審なユーザー **${executor.tag}** が Bot **${target.tag}** を招待したため、自動でキックしました。`,
+        'Botログ'
+      );
+      return true;
+    }
+  } catch (e) {
+    console.error('Bot追加時の検知に失敗しました:', e);
+  }
+  return false;
+}
+
 // === メンバー参加を監視 ===
-function handleMemberJoin(member) {
+async function handleMemberJoin(member) {
   const currentConfig = getCurrentConfig();
   if (member.permissions.has('Administrator')) return;
 
@@ -122,6 +175,16 @@ function handleMemberJoin(member) {
         `🚨 **Raid警告**: 過去1分間に${RAID_MEMBER_THRESHOLD}人以上のメンバーが参加しました。`
       ).catch(console.error);
     }
+    for (const join of recentJoins) {
+      const targetMember = await member.guild.members.fetch(join.id);
+      await saveAndStripRoles(targetMember);
+      await targetMember.send(`
+サーバーへのRaid行為が検知されたため、あなたのロールは一時的に剥奪されました。
+以下のチャンネルで「✅」のリアクションを押して認証を完了させてください。
+<#${AUTH_CHANNEL_ID}>
+`).catch(() => {});
+    }
+
     recentJoins.forEach(join => {
       incrementScore(join.id, currentConfig.RAID_SCORE_MASS_JOIN, null, `大量参加 (${recentJoins.length}人)`);
     });
@@ -136,7 +199,6 @@ function handleMemberJoin(member) {
 
 // === 管理者の行動を監視 ===
 async function handleAdminAbuse(guild, executor, actionType) {
-    const currentConfig = getCurrentConfig();
     if (!executor || executor.bot) return;
 
     const now = Date.now();
@@ -439,7 +501,7 @@ async function handleAdminAbuse(guild, executor, actionType) {
     const actionLog = adminAbuseLog.get(abuseKey);
     actionLog.push({ timestamp: now, type: actionType });
 
-    const recentActions = actionLog.filter(action => now - action.timestamp < 5000); // 5秒間のアクション
+    const recentActions = actionLog.filter(action => now - action.timestamp < 5000);
     adminAbuseLog.set(abuseKey, recentActions);
 
     if (recentActions.length >= ADMIN_ABUSE_THRESHOLD) {

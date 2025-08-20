@@ -16,8 +16,7 @@ const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
-// ★ 新しい関数をインポート
-const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry, handleMessageUpdate } = require('./utils/anti-raid');
+const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry, handleMessageUpdate, handleBotAdd } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
 
 const TOKEN = process.env.TOKEN;
@@ -32,7 +31,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.GuildMembers
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
