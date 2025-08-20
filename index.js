@@ -12,7 +12,7 @@ const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
-const { preloadQuizzes } = require('./utils/quiz');
+const { preloadQuizzes, askQuiz } = require('./utils/quiz'); // ★ ここを修正
 const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
@@ -147,16 +147,11 @@ client.on('messageCreate', async (message) => {
 
 // ==== メンバー参加時のイベント ====
 client.on('guildMemberAdd', async (member) => {
-  // ★ 荒らし対策と入室ログの処理を確実に行うための修正
-
-  // ギルドメンバーの情報を確実に取得
   const fetchedMember = await member.guild.members.fetch(member.id).catch(() => null);
   if (!fetchedMember) return;
 
-  // 荒らし対策のチェック
   handleMemberJoin(fetchedMember);
 
-  // 入室ログを送信
   const logChannel = member.guild.channels.cache.get(JOIN_LOG_CHANNEL_ID);
   if (logChannel) {
     const welcomeMessage = `🟢 **${fetchedMember.user.tag}** がサーバーに参加しました！`;
@@ -172,7 +167,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
   if (reaction.emoji.name === '👍') {
     if (reaction.message.author.id !== client.user.id) return;
     if (reaction.message.content.includes('クイズを続けますか？')) {
-      await preloadQuizzes();
+      // preloadQuizzesはreadyイベントで実行済みなので、ここでは不要です
       await askQuiz(reaction.message.channel, user, 'mix');
     }
   }
