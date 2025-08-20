@@ -16,14 +16,15 @@ const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
-const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry } = require('./utils/anti-raid');
-
+// ★ 新しい関数をインポート
+const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry, handleMessageUpdate } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const JOIN_LOG_CHANNEL_ID = '1407669514425860136';
 
+// ==== Discord Client ====
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -31,12 +32,12 @@ const client = new Client({
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildModeration
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
 
+// ==== Express Keep-Alive ====
 const app = express();
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
@@ -49,6 +50,7 @@ if (process.env.SELF_URL) {
   }, 4 * 60 * 1000);
 }
 
+// ==== Ready ====
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -79,14 +81,13 @@ client.once('ready', async () => {
   }
 });
 
+// ==== 荒らし対策とコマンド処理 ====
 client.on('messageCreate', async (message) => {
-  if (message.author.bot) {
-    await handleMessage(message);
-    return;
-  }
+  await handleMessage(message);
+
+  if (message.author.bot) return;
 
   await addXp(message.member);
-  await handleMessage(message);
 
   if (!message.content.startsWith('!')) {
     if (message.mentions.has(client.user)) {
@@ -150,9 +151,18 @@ client.on('messageCreate', async (message) => {
   }
 });
 
+client.on('messageUpdate', async (oldMessage, newMessage) => {
+  await handleMessageUpdate(oldMessage, newMessage);
+});
+
 client.on('guildMemberAdd', async (member) => {
   const fetchedMember = await member.guild.members.fetch(member.id).catch(() => null);
   if (!fetchedMember) return;
+
+  if (fetchedMember.user.bot) {
+    const isKicked = await handleBotAdd(fetchedMember);
+    if (isKicked) return;
+  }
 
   handleMemberJoin(fetchedMember);
 
