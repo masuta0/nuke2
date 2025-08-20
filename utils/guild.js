@@ -1,7 +1,11 @@
 // utils/guild.js
+
 const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
+
+// ★ 荒らし対策モジュールからログチャンネルIDをインポート
+const { LOG_CHANNEL_ID } = require('./anti-raid');
 
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -83,14 +87,36 @@ async function backupServer(guild) {
   saveBackup(guild.id, data);
 }
 
+// ★ ログチャンネル自動作成/取得機能を追加
+async function getOrCreateLogChannel(guild) {
+  let logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
+  if (!logChannel) {
+      try {
+          logChannel = await guild.channels.create({
+              name: 'bot-logs', // チャンネル名を自由に設定
+              type: ChannelType.GuildText,
+              reason: '荒らし対策ログチャンネルが削除されたため再作成',
+          });
+          console.log(`✅ ログチャンネルを再作成しました: #${logChannel.name}`);
+      } catch (e) {
+          console.error('❌ ログチャンネルの作成に失敗しました:', e);
+          return null;
+      }
+  }
+  return logChannel;
+}
+
 async function restoreServer(guild, feedbackChannel) {
   const backup = loadBackup(guild.id);
   if (!backup) return false;
 
-  // 既存消し
+  // 既存チャンネルを削除（ログチャンネル以外）
   for (const ch of guild.channels.cache.values()) {
+    if (ch.id === LOG_CHANNEL_ID) continue; // ★ ログチャンネルをスキップ
     try { await ch.delete('Restore: clear channels'); await delay(50); } catch {}
   }
+
+  // 既存ロールを削除（@everyoneと統合ロール以外）
   const deletable = guild.roles.cache
     .filter(r => !r.managed && r.id !== guild.id)
     .sort((a, b) => a.position - b.position);
@@ -143,6 +169,7 @@ async function restoreServer(guild, feedbackChannel) {
 
   const others = backup.channels.filter(c => c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
   for (const ch of others) {
+    if (ch.id === LOG_CHANNEL_ID) continue; // ★ ログチャンネルの再作成をスキップ
     try {
       const payload = {
         name: ch.name,

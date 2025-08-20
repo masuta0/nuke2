@@ -86,7 +86,7 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
   if (!message.content.startsWith('!')) {
-    // メンション応答ロジックをここに移動
+    // メンション応答ロジック
     if (message.mentions.has(client.user)) {
       const prompt = message.content.replace(/<@!?(\d+)>/, '').trim();
       if (!prompt) return;
@@ -150,7 +150,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// ==== 新しいイベント: メンバー参加時の荒らし対策 ====
+// ★ 新しいイベント: メンバー参加時の荒らし対策
 client.on('guildMemberAdd', (member) => {
   handleMemberJoin(member);
 });

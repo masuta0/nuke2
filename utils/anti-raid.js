@@ -1,4 +1,5 @@
 // utils/anti-raid.js
+
 const { AuditLogEvent } = require('discord.js');
 
 // === 設定 ===
@@ -44,20 +45,17 @@ function handleMemberJoin(member) {
   const joinArray = memberJoinLog.get(guildId);
   joinArray.push({ id: member.id, timestamp: now });
 
-  // 1分以内に参加したメンバーをカウント
   const recentJoins = joinArray.filter(
     (join) => now - join.timestamp < RAID_TIME_WINDOW
   );
 
   if (recentJoins.length >= RAID_MEMBER_THRESHOLD) {
-    // 荒らしと判断、ログチャンネルに警告
     const logChannel = member.guild.channels.cache.get(LOG_CHANNEL_ID);
     if (logChannel) {
       logChannel.send(
         `🚨 **Raid警告**: 過去1分間に${RAID_MEMBER_THRESHOLD}人以上のメンバーが参加しました。`
       ).catch(console.error);
     }
-    // 古いログを削除
     memberJoinLog.set(guildId, recentJoins);
   }
 }
@@ -76,9 +74,11 @@ async function handleMessage(message) {
     try {
       await message.member.timeout(TIMEOUT_DURATION, '荒らしメッセージの送信');
       await message.delete();
+      message.channel.send(`🚨 **${message.author.tag}** は荒らしメッセージを送信したため、10分間タイムアウトされました。`).catch(console.error);
       await logRaidAction(
         message.guild,
-        `🚨 **荒らし行為検知**: ${message.author.tag}が不適切なメッセージを送信しました。`
+        `🚨 **荒らし行為検知**: ${message.author.tag} が不適切なメッセージを送信しました。\n理由: キーワードに一致`,
+        message.channel.name
       );
       markUser(message.author.id);
       return;
@@ -114,9 +114,11 @@ async function handleMessage(message) {
   if (sendCount >= SIMILAR_MESSAGE_THRESHOLD) {
     try {
       await message.member.timeout(TIMEOUT_DURATION, '類似メッセージの連投');
+      message.channel.send(`⚠️ **${message.author.tag}** は類似メッセージを連投したため、10分間タイムアウトされました。`).catch(console.error);
       await logRaidAction(
         message.guild,
-        `⚠️ **類似メッセージ連投警告**: ${message.author.tag}が類似メッセージを${SIMILAR_MESSAGE_THRESHOLD}回以上送信しました。`
+        `⚠️ **類似メッセージ連投警告**: ${message.author.tag} が類似メッセージを${SIMILAR_MESSAGE_THRESHOLD}回以上送信しました。`,
+        message.channel.name
       );
       markUser(message.author.id);
       return;
@@ -130,9 +132,11 @@ async function handleMessage(message) {
   if (totalSenders >= SIMILAR_MESSAGE_THRESHOLD) {
      try {
        await message.member.timeout(TIMEOUT_DURATION, '複数のユーザーによる類似メッセージ連投');
+       message.channel.send(`⚠️ 複数のユーザーが類似メッセージを送信したため、関連するユーザーを10分間タイムアウトしました。`).catch(console.error);
        await logRaidAction(
          message.guild,
-         `⚠️ **協調荒らし警告**: 複数のユーザーが類似メッセージを送信しました。`
+         `⚠️ **協調荒らし警告**: 複数のユーザーが類似メッセージを送信しました。`,
+         message.channel.name
        );
        msgSenders.forEach(async (_, userId) => {
          await message.guild.members.cache.get(userId).timeout(TIMEOUT_DURATION, '協調荒らし');
@@ -155,14 +159,35 @@ function markUser(userId) {
 }
 
 // === ログを送信 ===
-async function logRaidAction(guild, message) {
-  const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
+async function logRaidAction(guild, message, channelName) {
+  const logChannel = await getOrCreateLogChannel(guild);
   if (logChannel) {
-    await logChannel.send(message).catch(console.error);
+    await logChannel.send(`${message}\n\n**チャンネル:** #${channelName}`).catch(console.error);
   }
 }
+
+// === ログチャンネルの取得と作成 ===
+async function getOrCreateLogChannel(guild) {
+    let logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
+    if (!logChannel) {
+        try {
+            logChannel = await guild.channels.create({
+                name: 'bot-logs', // チャンネル名を自由に設定
+                type: 0, // TextChannel
+                reason: '荒らし対策ログチャンネルが削除されたため再作成',
+            });
+            console.log(`✅ ログチャンネルを再作成しました: #${logChannel.name}`);
+        } catch (e) {
+            console.error('❌ ログチャンネルの作成に失敗しました:', e);
+            return null;
+        }
+    }
+    return logChannel;
+}
+
 
 module.exports = {
   handleMemberJoin,
   handleMessage,
+  LOG_CHANNEL_ID,
 };
