@@ -146,12 +146,20 @@ client.on('messageCreate', async (message) => {
 });
 
 // ==== メンバー参加時のイベント ====
-client.on('guildMemberAdd', (member) => {
-  handleMemberJoin(member);
+client.on('guildMemberAdd', async (member) => {
+  // ★ 荒らし対策と入室ログの処理を確実に行うための修正
 
+  // ギルドメンバーの情報を確実に取得
+  const fetchedMember = await member.guild.members.fetch(member.id).catch(() => null);
+  if (!fetchedMember) return;
+
+  // 荒らし対策のチェック
+  handleMemberJoin(fetchedMember);
+
+  // 入室ログを送信
   const logChannel = member.guild.channels.cache.get(JOIN_LOG_CHANNEL_ID);
   if (logChannel) {
-    const welcomeMessage = `🟢 **${member.user.tag}** がサーバーに参加しました！`;
+    const welcomeMessage = `🟢 **${fetchedMember.user.tag}** がサーバーに参加しました！`;
     logChannel.send(welcomeMessage).catch(console.error);
   }
 });
