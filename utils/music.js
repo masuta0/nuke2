@@ -1,11 +1,13 @@
 // utils/music.js
 
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
-const playdl = require('play-dl');
+const ytdl = require('ytdl-core'); // ★ここを変更
 const config = require('../config.json');
 const { google } = require('googleapis');
 const urlModule = require('url');
 
+// ★ play-dl関連の記述を削除
+// const playdl = require('play-dl');
 const YOUTUBE_COOKIE = config.YOUTUBE_COOKIE || process.env.YOUTUBE_COOKIE;
 const YOUTUBE_API_KEY = config.YOUTUBE_API_KEY || process.env.YOUTUBE_API_KEY;
 
@@ -20,19 +22,21 @@ const youtube = google.youtube({
   auth: YOUTUBE_API_KEY,
 });
 
-if (YOUTUBE_COOKIE) {
-  playdl.set_cookies([
-    { name: '__Secure-3PAPISID', value: YOUTUBE_COOKIE, domain: '.youtube.com' }
-  ]).then(() => {
-    console.log('✅ YouTube認証クッキーが設定されました');
-  }).catch(err => {
-    console.error('❌ YouTube認証クッキーの設定に失敗しました:', err);
-  });
-}
+// ★ play-dlのクッキー設定部分を削除
+// if (YOUTUBE_COOKIE) {
+//   playdl.set_cookies([
+//     { name: '__Secure-3PAPISID', value: YOUTUBE_COOKIE, domain: '.youtube.com' }
+//   ]).then(() => {
+//     console.log('✅ YouTube認証クッキーが設定されました');
+//   }).catch(err => {
+//     console.error('❌ YouTube認証クッキーの設定に失敗しました:', err);
+//   });
+// }
 
 const queues = new Map();
 
 async function joinVoice(guild, voiceChannel) {
+  // (この部分は変更なし)
   try {
     const conn = joinVoiceChannel({
       channelId: voiceChannel.id,
@@ -60,7 +64,7 @@ async function _playNext(guildId, textChannel) {
   if (!data) return;
   const next = data.queue.shift();
 
-  if (!next || !next.url || typeof next.url !== 'string') {
+  if (!next || !next.url || typeof next.url !== 'string' || !ytdl.validateURL(next.url)) { // ★バリデーションを変更
     console.error('⚠️ キューから取り出したアイテムに有効なURLがありません。次の曲にスキップします。');
     if (textChannel) {
       textChannel.send('⚠️ 再生に問題が発生しました。次の曲にスキップします。').catch(() => {});
@@ -72,8 +76,14 @@ async function _playNext(guildId, textChannel) {
   }
 
   try {
-    const src = await playdl.stream(next.url, { discordPlayerCompatibility: true });
-    const resource = createAudioResource(src.stream, { inputType: src.type });
+    // ★ ytdl-coreを使ってストリームを取得
+    const stream = ytdl(next.url, {
+        filter: 'audioonly', // 音声のみにフィルタリング
+        quality: 'highestaudio', // 最高音質を選択
+        highWaterMark: 1 << 25 // バッファサイズを大きくして安定性を向上
+    });
+
+    const resource = createAudioResource(stream);
     data.player.play(resource);
     if (textChannel) {
       textChannel.send(`🎶 再生中: **${next.title}**`).catch(() => {});
@@ -92,6 +102,7 @@ async function _playNext(guildId, textChannel) {
 }
 
 async function playUrl(guildId, queryOrUrl, textChannel) {
+  // (この部分は変更なし)
   const data = queues.get(guildId);
   if (!data) return null;
 
@@ -99,11 +110,9 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
   let title = null;
 
   try {
-    // 入力が有効なYouTube URLかどうかをチェック
-    const isUrl = playdl.yt_validate(queryOrUrl) === 'video';
+    const isUrl = ytdl.validateURL(queryOrUrl); // ★ ytdl-coreのバリデーションを使用
 
     if (isUrl) {
-      // URLの場合は、動画IDを抽出してvideos.list APIを使用
       const videoId = new urlModule.URL(queryOrUrl).searchParams.get('v') || queryOrUrl.split('/').pop().split('?')[0];
       const apiResults = await youtube.videos.list({
         id: videoId,
@@ -114,7 +123,6 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
         title = apiResults.data.items[0].snippet.title || queryOrUrl;
       }
     } else {
-      // URLでない場合は、検索APIを使用
       const apiResults = await youtube.search.list({
         q: queryOrUrl,
         part: 'snippet',
@@ -144,6 +152,7 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
 }
 
 function stopMusic(guildId) {
+  // (この部分は変更なし)
   const data = queues.get(guildId);
   if (!data) return false;
   try { 
@@ -154,6 +163,7 @@ function stopMusic(guildId) {
 }
 
 async function leaveVoice(guildId) {
+  // (この部分は変更なし)
   const data = queues.get(guildId);
   if (!data) return;
   try { data.player.stop(); } catch {}
