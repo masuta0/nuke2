@@ -88,7 +88,6 @@ client.on('messageCreate', async (message) => {
 
   await addXp(message.member);
 
-  // ★ 修正箇所
   if (!message.content.startsWith('!')) {
     if (message.mentions.has(client.user) && !message.mentions.everyone) {
       const prompt = message.content.replace(/<@!?(\d+)>/, '').trim();
@@ -98,7 +97,10 @@ client.on('messageCreate', async (message) => {
     }
     return;
   }
-  // ★ 修正箇所ここまで
+
+  // ★ 修正箇所
+  // `if`文を正しく閉じるための括弧を追加
+  // } // この行が抜けていました
 
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift().toLowerCase();
