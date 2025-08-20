@@ -1,13 +1,61 @@
 // utils/anti-raid.js
 
 const { AuditLogEvent, PermissionsBitField } = require('discord.js');
+const { chat } = require('./ai');
 
 // === 設定 ===
 // 荒らしログを送信するチャンネルID
 const LOG_CHANNEL_ID = '1405660583025709106';
-
-// ★ 認証用チャンネルID
 const AUTH_CHANNEL_ID = '1405660583025709107';
+
+// ★ AIによる荒らし判定プロンプト
+const AI_ANTI_RAID_PROMPT = `
+あなたはDiscordサーバーの荒らし対策ボットです。
+以下のメッセージがサーバーのルールに違反しているか、または不適切かを判定してください。
+判定の重みに応じて、タイムアウト期間を決定してください。
+
+ルール違反の例:
+- スパム行為（同じ内容の連投、意味不明な文字の羅列など）
+- 不適切な内容（NSFW、グロテスクな内容など）
+- 荒らし行為（Raid予告、サーバーの破壊を促す発言など）
+- その他、サーバーの健全な運営を妨げる行為
+
+以下のフォーマットで、簡潔に回答してください。
+[不審度] | 理由: [具体的な理由] | 重さ: [タイムアウト期間]
+
+不審度の例:
+- 問題なし: ルールに違反しない場合
+- 軽微な不審: 軽度のスパム、煽りなど
+- 中程度の不審: 攻撃的な発言、軽度のハラスメントなど
+- 重大な不審: 重大なハラスメント、差別発言、Raid行為など
+
+タイムアウト期間の例（必ずこの中から選んでください）:
+- 5分
+- 30分
+- 1時間
+- 1日
+- 1週間
+
+---
+メッセージ:
+`;
+
+// ★ AIによる監査ログ判定プロンプト
+const AI_AUDIT_LOG_PROMPT = `
+あなたはDiscordサーバーの管理者補佐AIです。
+以下の監査ログの内容を分析し、悪意のある操作であるか判定してください。
+- 悪意のある操作と判断した場合は「不審」、そうでない場合は「問題なし」と簡潔に答えてください。
+
+監査ログ:
+操作者: {executor}
+操作内容: {action}
+操作対象: {target}
+変更内容: {changes}
+`;
+
+// ★ AIによる不審度スコア
+const RAID_SCORE_AI_JUDGEMENT = 12;
+const RAID_SCORE_AI_AUDIT_LOG = 25; // ★ 監査ログ用スコア
 
 // ★ 時間帯ごとの設定
 const NIGHT_START_HOUR = 22; // 22時
@@ -149,6 +197,61 @@ async function handleBotAdd(member) {
   return false;
 }
 
+// ★ タイムアウト期間をミリ秒に変換するヘルパー関数
+function parseTimeoutDuration(durationStr) {
+  const multipliers = {
+    '分': 60 * 1000,
+    '時間': 60 * 60 * 1000,
+    '日': 24 * 60 * 60 * 1000,
+    '週間': 7 * 24 * 60 * 60 * 1000
+  };
+
+  for (const unit in multipliers) {
+    if (durationStr.includes(unit)) {
+      const value = parseInt(durationStr.replace(unit, '').trim());
+      if (!isNaN(value)) {
+        return value * multipliers[unit];
+      }
+    }
+  }
+  return 0; // 不明な期間の場合は0を返す
+}
+
+// ★ 新規: AIによる荒らし判定と処罰
+async function handleAiJudgement(message) {
+  const prompt = `${AI_ANTI_RAID_PROMPT}${message.content}`;
+  const response = await chat(prompt, message.author.id).catch(() => null);
+
+  if (response && response.includes('不審')) {
+    const parts = response.split('|').map(p => p.trim());
+    const judgment = parts[0];
+    const reason = parts[1] || 'AIによる不審判定';
+    const durationStr = parts[2]?.replace('重さ: ', '').trim();
+    const duration = parseTimeoutDuration(durationStr);
+
+    if (duration > 0) {
+      try {
+        await message.member.timeout(duration, reason);
+        logRaidAction(
+          message.guild,
+          `🚨 **AIによる処罰**: ${message.member.user.tag} が不審な行動を行いました。\n不審度: ${judgment}\n理由: ${reason}\nタイムアウト期間: ${durationStr}`,
+          message.channel.name
+        );
+        if (message.deletable) {
+          await message.delete();
+        }
+      } catch (e) {
+        console.error('AIによるタイムアウト処理に失敗しました:', e);
+        logRaidAction(
+          message.guild,
+          `⚠️ **AI処罰失敗**: ${message.member.user.tag} へのタイムアウト処理に失敗しました。\n理由: ${reason}`,
+          message.channel.name
+        );
+      }
+    }
+  }
+}
+
 // === メンバー参加を監視 ===
 async function handleMemberJoin(member) {
   const currentConfig = getCurrentConfig();
@@ -194,84 +297,6 @@ async function handleMemberJoin(member) {
   const accountAge = now - member.user.createdAt.getTime();
   if (accountAge < 24 * 60 * 60 * 1000) {
     incrementScore(member.id, currentConfig.RAID_SCORE_ACCOUNT_AGE, null, 'アカウント作成から24時間未満');
-  }
-}
-
-// === 管理者の行動を監視 ===
-async function handleAdminAbuse(guild, executor, actionType) {
-    if (!executor || executor.bot) return;
-
-    const now = Date.now();
-    const abuseKey = `${guild.id}-${executor.id}`;
-
-    if (!adminAbuseLog.has(abuseKey)) {
-        adminAbuseLog.set(abuseKey, []);
-    }
-
-    const actionLog = adminAbuseLog.get(abuseKey);
-    actionLog.push({ timestamp: now, type: actionType });
-
-    const recentActions = actionLog.filter(action => now - action.timestamp < 5000);
-    adminAbuseLog.set(abuseKey, recentActions);
-
-    if (recentActions.length >= ADMIN_ABUSE_THRESHOLD) {
-        const member = guild.members.cache.get(executor.id);
-        if (member) {
-            try {
-                await member.roles.set([], '管理者の権限乱用');
-                await member.ban({ reason: `管理者権限を乱用しました（${ADMIN_ABUSE_THRESHOLD}回以上の管理操作）` });
-
-                await logRaidAction(
-                    guild,
-                    `🚨 **管理者権限乱用検知**: ${executor.tag} が悪意のある行動を繰り返し実行したため、権限を剥奪しBANしました。`,
-                    'サーバーログ'
-                );
-            } catch (e) {
-                console.error('管理者処罰に失敗しました:', e);
-                await logRaidAction(
-                    guild,
-                    `⚠️ **緊急警告**: ${executor.tag} の管理者権限の乱用を検知しましたが、処罰に失敗しました。`
-                );
-            }
-        }
-    }
-}
-
-
-// === ロールの権限変更を監視する関数
-async function handleRoleUpdate(oldRole, newRole) {
-  if (oldRole.id !== oldRole.guild.id) return;
-
-  const oldPermissions = oldRole.permissions;
-  const newPermissions = newRole.permissions;
-
-  const addedDangerousPermissions = DANGEROUS_PERMISSIONS.filter(
-    perm => newPermissions.has(perm) && !oldPermissions.has(perm)
-  );
-
-  if (addedDangerousPermissions.length > 0) {
-    try {
-      const logs = await oldRole.guild.fetchAuditLogs({ type: AuditLogEvent.RoleUpdate, limit: 1 });
-      const entry = logs.entries.first();
-      const executor = entry?.executor;
-
-      if (executor && !executor.bot && executor.id !== newRole.client.user.id) {
-        const dangerousPerms = addedDangerousPermissions.map(p => PermissionsBitField.Flags[p]);
-        const reason = `@everyoneロールに危険な権限(${dangerousPerms.join(', ')})を追加`;
-
-        await oldRole.guild.members.ban(executor.id, { reason: reason });
-
-        await newRole.setPermissions(oldPermissions, '危険な権限の自動削除');
-
-        logRaidAction(
-          oldRole.guild,
-          `🚨 **緊急警告**: ${executor.tag} が @everyone ロールに危険な権限を追加しました。\n**${executor.tag}** をBANし、権限を元に戻しました。\n追加された権限: ${dangerousPerms.join(', ')}`,
-          'サーバーログ'
-        );
-      }
-    } catch (e) {
-      console.error('ロール更新監視中にエラーが発生しました:', e);
-    }
   }
 }
 
@@ -349,6 +374,8 @@ async function handleMessage(message) {
   if (!message.webhookId && message.member && message.member.permissions.has('Administrator')) {
       return;
   }
+
+  await handleAiJudgement(message);
 
   const now = Date.now();
   const authorId = message.author.id;
@@ -491,7 +518,7 @@ async function getOrCreateLogChannel(guild) {
 async function handleAdminAbuse(guild, executor, actionType) {
     if (!executor || executor.bot) return;
 
-    const now = Date.now();
+    const now = Date.Now();
     const abuseKey = `${guild.id}-${executor.id}`;
 
     if (!adminAbuseLog.has(abuseKey)) {
