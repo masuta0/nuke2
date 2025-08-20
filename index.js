@@ -5,7 +5,6 @@ const express = require('express');
 const https = require('https');
 const { Client, GatewayIntentBits, ActivityType, Partials } = require('discord.js');
 
-// `node-fetch` v3以降はESM形式のため、動的インポートを使用
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 if (!global.fetch) global.fetch = fetch;
 
@@ -18,7 +17,7 @@ const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 // ★ 荒らし対策機能のインポート
-const { handleMemberJoin, handleMessage } = require('./utils/anti-raid');
+const { handleMemberJoin, handleMessage, handleReactionAdd } = require('./utils/anti-raid');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -143,25 +142,26 @@ client.on('messageCreate', async (message) => {
       message.channel.send('👋 ボイスチャンネルから退出しました。');
       break;
 
-    // 既存のprefixコマンドハンドラーを呼び出す
     default:
       handlePrefixMessage(client, message);
       break;
   }
 });
 
-// ★ 新しいイベント: メンバー参加時の荒らし対策
+// ★ メンバー参加時の荒らし対策
 client.on('guildMemberAdd', (member) => {
   handleMemberJoin(member);
 });
 
-// ==== クイズ 続行リアクション ====
-const { askQuiz } = require('./utils/quiz');
+// ★ リアクション追加時の荒らし対策
 client.on('messageReactionAdd', async (reaction, user) => {
+  await handleReactionAdd(reaction, user);
+
   if (user.bot) return;
   if (reaction.emoji.name === '👍') {
     if (reaction.message.author.id !== client.user.id) return;
     if (reaction.message.content.includes('クイズを続けますか？')) {
+      await preloadQuizzes(); // クイズデータを再読み込み
       await askQuiz(reaction.message.channel, user, 'mix');
     }
   }
