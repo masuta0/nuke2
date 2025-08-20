@@ -29,19 +29,19 @@ const RAID_KEYWORDS = [
 ];
 
 // 不審度スコアの設定
-const RAID_SCORE_THRESHOLD = 20; // 総合スコアが20を超えたらタイムアウト
-const RAID_SCORE_ACCOUNT_AGE = 15; // アカウント作成1日未満
-const RAID_SCORE_MASS_JOIN = 10;    // メンバー大量参加時
-const RAID_SCORE_KEYWORD = 15;      // NGキーワードを含む
-const RAID_SCORE_SIMILAR = 10;      // 類似メッセージの連投
-const RAID_SCORE_COMMAND_ABUSE = 5;  // コマンド乱用
-const RAID_SCORE_REACTION_SPAM = 5;  // リアクション連打
-const RAID_SCORE_EXCESSIVE_NEWLINES = 8; // 過度な改行
-const RAID_SCORE_ZALGO = 10;         // Zalgo文字
-const RAID_SCORE_MASS_SPAM = 10;     // メッセージ連投
+const RAID_SCORE_THRESHOLD = 30; // ★ 閾値を30に変更
+const RAID_SCORE_ACCOUNT_AGE = 15;
+const RAID_SCORE_MASS_JOIN = 10;
+const RAID_SCORE_KEYWORD = 15;
+const RAID_SCORE_SIMILAR = 10;
+const RAID_SCORE_COMMAND_ABUSE = 5;
+const RAID_SCORE_REACTION_SPAM = 5;
+const RAID_SCORE_EXCESSIVE_NEWLINES = 8;
+const RAID_SCORE_ZALGO = 10;
+const RAID_SCORE_MASS_SPAM = 10;
 
 // 処罰
-const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間
+const TIMEOUT_DURATION = 7 * 24 * 60 * 60 * 1000; // ★ 1週間（7日間）に変更
 const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
 
 // === 内部変数 ===
@@ -121,7 +121,6 @@ async function incrementScore(userId, score, message = null, reason = '不審な
 
     if (newScore >= RAID_SCORE_THRESHOLD) {
         if (markedUsers.has(userId)) {
-            // ★ 処罰済みの場合も、ログを送信し、スコアをリセット
             logRaidAction(
               member.guild,
               `⚠️ **再処罰**: ${member.user.tag} の不審度スコアが再度閾値を超えました。\n最終スコア: ${newScore}\n\n⚠️ スコアをリセットし、タイムアウトを再適用します。`,
