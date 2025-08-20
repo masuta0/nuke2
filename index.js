@@ -71,8 +71,7 @@ client.once('ready', async () => {
     } catch (_) { }
   };
   updateUptimeStatus();
-  setInterval(updateUptimeStatus, 5000);
-
+  setInterval(updateUptimeStatus, 2000); // ★ 修正箇所
   try {
     await registerSlashCommands(client);
     console.log('✅ スラッシュコマンド登録完了');
@@ -151,10 +150,7 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-client.on('messageUpdate', async (oldMessage, newMessage) => {
-  await handleMessageUpdate(oldMessage, newMessage);
-});
-
+// ==== メンバー参加時のイベント ====
 client.on('guildMemberAdd', async (member) => {
   const fetchedMember = await member.guild.members.fetch(member.id).catch(() => null);
   if (!fetchedMember) return;
@@ -173,11 +169,13 @@ client.on('guildMemberAdd', async (member) => {
   }
 });
 
+// ==== ロール更新時のイベント ====
 client.on('roleUpdate', async (oldRole, newRole) => {
     handleRoleUpdate(oldRole, newRole);
 });
 
 
+// ==== リアクション追加時のイベント ====
 client.on('messageReactionAdd', async (reaction, user) => {
   await handleReactionAdd(reaction, user);
 
@@ -190,10 +188,12 @@ client.on('messageReactionAdd', async (reaction, user) => {
   }
 });
 
+// ==== 監査ログエントリ作成時のイベント ====
 client.on('guildAuditLogEntryCreate', async (entry) => {
     if (entry.action === AuditLogEvent.MEMBER_ROLE_UPDATE || entry.action === AuditLogEvent.CHANNEL_OVERWRITE_UPDATE || entry.action === AuditLogEvent.WEBHOOK_CREATE || entry.action === AuditLogEvent.WEBHOOK_UPDATE) {
         handleAuditLogEntry(entry);
     }
 });
 
+// ==== Login ====
 client.login(TOKEN);
