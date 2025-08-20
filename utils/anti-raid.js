@@ -41,7 +41,7 @@ const RAID_SCORE_ZALGO = 10;         // Zalgo文字
 const RAID_SCORE_MASS_SPAM = 10;     // メッセージ連投
 
 // 処罰
-const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間に変更
+const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間
 const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
 
 // === 内部変数 ===
@@ -55,6 +55,9 @@ const userMessageTimestamps = new Map();
 
 // === メンバー参加を監視 ===
 function handleMemberJoin(member) {
+  // 管理者は荒らし対策の対象外
+  if (member.permissions.has('Administrator')) return;
+
   const now = Date.now();
   const guildId = member.guild.id;
 
@@ -90,11 +93,12 @@ function handleMemberJoin(member) {
 
 // === スコア加算と処罰の実行 ===
 async function incrementScore(userId, score, message = null, reason = '不審な行動') {
-    const newScore = (userScores.get(userId) || 0) + score;
-    userScores.set(userId, newScore);
-
     const member = message?.member || await message.guild.members.fetch(userId).catch(() => null);
-    if (!member) return;
+    if (!member || member.permissions.has('Administrator')) return;
+
+    const currentScore = userScores.get(userId) || 0;
+    const newScore = currentScore + score;
+    userScores.set(userId, newScore);
 
     // 不審なメッセージを検知した場合、メッセージを削除し、内容をログに送信
     if (message && message.deletable) {
@@ -103,7 +107,7 @@ async function incrementScore(userId, score, message = null, reason = '不審な
         await message.delete();
         logRaidAction(
           member.guild,
-          `🚨 **不審メッセージ検知**: ${member.user.tag} が不審なメッセージを投稿しました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}\n\n**メッセージ内容:**\n\`\`\`\n${messageContent}\n\`\`\``,
+          `🚨 **不審メッセージ検知**: ${member.user.tag} が不審なメッセージを投稿しました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}`,
           message?.channel.name || '不明なチャンネル'
         );
       } catch (e) {
@@ -124,13 +128,17 @@ async function incrementScore(userId, score, message = null, reason = '不審な
         try {
             await member.timeout(TIMEOUT_DURATION, reason);
             if (message) {
-              message.channel.send(`🚨 **${member.user.tag}** は不審な行動を複数回行ったため、5分間タイムアウトされました。`).catch(console.error);
+              message.channel.send(`🚨 **${member.user.tag}** は不審な行動を複数回行ったため、${TIMEOUT_DURATION / 1000 / 60}分間タイムアウトされました。`).catch(console.error);
             }
             logRaidAction(
               member.guild,
-              `⚠️ **最終処罰**: ${member.user.tag} の不審度スコアが閾値(${RAID_SCORE_THRESHOLD})を超過しました。\n理由: ${reason}\n最終スコア: ${newScore}`,
+              `⚠️ **最終処罰**: ${member.user.tag} の不審度スコアが閾値(${RAID_SCORE_THRESHOLD})を超過しました。\n理由: ${reason}\n最終スコア: ${newScore}\n\n⚠️ スコアをリセットします。`,
               message?.channel.name || '不明なチャンネル'
             );
+
+            // スコアをリセットし、10から再スタート
+            userScores.set(userId, 10);
+
             markUser(userId);
         } catch (e) {
             console.error('タイムアウト処理に失敗しました:', e);
@@ -140,7 +148,8 @@ async function incrementScore(userId, score, message = null, reason = '不審な
 
 // === メッセージを監視 ===
 async function handleMessage(message) {
-  if (message.author.bot || markedUsers.has(message.author.id)) {
+  // 管理者は荒らし対策の対象外
+  if (message.author.bot || markedUsers.has(message.author.id) || (message.member && message.member.permissions.has('Administrator'))) {
     return;
   }
 
@@ -217,14 +226,15 @@ async function handleMessage(message) {
 
 // === リアクションを監視 ===
 async function handleReactionAdd(reaction, user) {
-    if (user.bot || markedUsers.has(user.id)) return;
+    if (user.bot) return;
+
+    const member = reaction.message.guild.members.cache.get(user.id);
+    if (!member || markedUsers.has(user.id) || member.permissions.has('Administrator')) return;
 
     const now = Date.now();
     const lastReactionTime = userReactionCounts.get(user.id) || 0;
     if (now - lastReactionTime < 1000) {
-        const message = reaction.message;
-        const member = message.guild.members.cache.get(user.id);
-        incrementScore(user.id, RAID_SCORE_REACTION_SPAM, { member: member, channel: message.channel, guild: message.guild }, '過度なリアクション連打');
+        incrementScore(user.id, RAID_SCORE_REACTION_SPAM, { member: member, channel: reaction.message.channel, guild: reaction.message.guild }, '過度なリアクション連打');
         return;
     }
     userReactionCounts.set(user.id, now);
