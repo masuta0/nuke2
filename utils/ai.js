@@ -3,7 +3,8 @@
 const axios = require('axios');
 const fs = require('fs');
 
-const { GOOGLE_AI_API_KEY } = process.env;
+// ★ 変更点: 環境変数名をGOOGLE_AI_API_KEYからGEMINI_API_KEYに変更
+const { GEMINI_API_KEY } = process.env;
 
 const BOT_PERSONA_PROMPT = `
 あなたは「AI Chat Bot」に組み込まれたAIアシスタントです。
@@ -45,17 +46,15 @@ const BOT_PERSONA_PROMPT = `
 ユーザーが@hereや@everyoneを含むメッセージを送信した場合、それらには反応しないでください。あなたは個別のユーザーとの対話に焦点を当てます。
 `;
 
-// 過去の会話履歴を保存するMap
 const conversationHistory = new Map();
 
 async function chat(prompt, userId) {
-    if (!GOOGLE_AI_API_KEY) {
+    if (!GEMINI_API_KEY) { // ★ 変更点
         return 'APIキーが設定されていません。';
     }
 
     const history = conversationHistory.get(userId) || [];
 
-    // システムプロンプトを会話履歴の先頭にuserロールとして挿入
     const contents = [{
         role: 'user',
         parts: [{ text: BOT_PERSONA_PROMPT }],
@@ -66,7 +65,7 @@ async function chat(prompt, userId) {
 
     try {
         const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_AI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`, // ★ 変更点
             {
                 contents: contents,
             },
@@ -79,7 +78,6 @@ async function chat(prompt, userId) {
 
         const aiResponse = response.data.candidates[0].content.parts[0].text;
 
-        // 成功した応答を履歴に保存
         const newHistory = [...history, { role: 'user', parts: [{ text: prompt }] }, { role: 'model', parts: [{ text: aiResponse }] }];
         conversationHistory.set(userId, newHistory);
 
