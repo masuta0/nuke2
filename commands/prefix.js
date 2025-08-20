@@ -1,9 +1,11 @@
+// commands/prefix.js
 const {
   hasManageGuildPermission,
   backupServer,
   restoreServer,
   nukeChannel,
   clearMessages,
+  addRoleToAll,
 } = require("../utils/guild");
 const { translateWithRetry, chat } = require("../utils/ai");
 const {
@@ -15,13 +17,11 @@ const { askQuiz } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 
 const cooldown = new Map();
-// ★ AI専用のクールダウンマップ
 const aiCooldown = new Map();
 const CMD_PREFIX = "!";
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ★ ヘルプメッセージの内容を定義
 const helpMessage = `
 **このボットについて**
 
@@ -50,6 +50,7 @@ const helpMessage = `
 | \`!leave\` | ボイスチャンネルから退出します。 |
 | \`!backup\` | サーバーの構成をバックアップします。 |
 | \`!restore\` | バックアップからサーバーを復元します。 |
+| \`!addrole [ロール名]\` | 全ユーザーにロールを付与します。 |
 | \`!clear [数]\` | メッセージを削除します。 |
 
 ---
@@ -60,10 +61,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
   if (msg.author.bot) return;
   const content = (msg.content || "").trim();
   if (!content.startsWith(CMD_PREFIX)) return;
-
   const args = content.slice(CMD_PREFIX.length).split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
-
   const now = Date.now();
   const last = cooldown.get(msg.author.id) || 0;
   if (now - last < 1000) return;
@@ -85,7 +84,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await msg.reply("ステータス欄に稼働時間を表示しています（5秒更新）");
         break;
       }
-      // ====== 天気 ======
       case "天気": {
         const maybePref = args.join(" ");
         if (maybePref) {
@@ -103,34 +101,26 @@ module.exports = async function handlePrefixMessage(client, msg) {
         }
         break;
       }
-      // ====== クイズ ======
       case "クイズ": {
         const category = args[0]?.toLowerCase() || "mix";
         await askQuiz(msg.channel, msg.author, category);
         break;
       }
-      // ====== AI ======
       case "ai": {
         const now = Date.now();
         const lastAiUse = aiCooldown.get(msg.author.id) || 0;
-        const cooldownTime = 30 * 1000; // 30秒
-
+        const cooldownTime = 30 * 1000;
         if (now - lastAiUse < cooldownTime) {
           const remaining = (cooldownTime - (now - lastAiUse)) / 1000;
           return msg.reply(`❌ AIはクールタイム中です。あと${Math.ceil(remaining)}秒お待ちください。`);
         }
-
         const prompt = args.join(" ").trim();
         if (!prompt) return msg.reply("使い方: `!ai 相談したい内容`");
-
-        // ★ クールタイムを更新
         aiCooldown.set(msg.author.id, now);
-
         const res = await chat(prompt, msg.author.id);
         await msg.reply(res || "⚠️ 返答に失敗しました");
         break;
       }
-      // ====== 音楽機能 ======
       case "join": {
         if (!msg.member?.voice?.channel)
           return msg.reply("⚠️ まずボイスチャンネルに参加してください");
@@ -160,7 +150,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await msg.reply("👋 退出しました");
         break;
       }
-      // ====== 管理系（要権限） ======
       case "backup": {
         if (!hasManageGuildPermission(msg.member))
           return msg.reply("⚠️ 管理者権限が必要です");
@@ -175,6 +164,21 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await msg.reply(ok ? "✅ 復元完了" : "⚠️ バックアップが見つかりません");
         break;
       }
+      case "addrole": {
+        if (!hasManageGuildPermission(msg.member))
+          return msg.reply("⚠️ 管理者権限が必要です");
+        const roleName = args.join(" ");
+        if (!roleName)
+          return msg.reply("使い方: `!addrole <ロール名>`");
+        await msg.reply(`✅ **${roleName}** を全ユーザーに付与します。完了まで時間がかかることがあります...`);
+        const result = await addRoleToAll(msg.guild, roleName);
+        if (result.success) {
+          await msg.channel.send(`🎉 全${result.count}ユーザーにロールを付与しました！`);
+        } else {
+          await msg.channel.send(`❌ ロールの付与に失敗しました: ${result.error}`);
+        }
+        break;
+      }
       case "nuke": {
         if (!hasManageGuildPermission(msg.member))
           return msg.reply("⚠️ 管理者権限が必要です");
@@ -184,43 +188,14 @@ module.exports = async function handlePrefixMessage(client, msg) {
       case "clear": {
         if (!hasManageGuildPermission(msg.member))
           return msg.reply("⚠️ 管理者権限が必要です");
-
         const amount = parseInt(args[0] || "0", 10);
         if (!amount || amount < 1 || amount > 1000)
           return msg.reply("使い方: `!clear 1〜1000`");
-
-        const chunks = Math.ceil(amount / 100);
-        let deletedCount = 0;
-
-        const waitingMsg = await msg.reply(
-          `🧹 ${amount}件のメッセージを削除します。数回に分けて実行するため、少し時間がかかります...`
-        );
-
-        for (let i = 0; i < chunks; i++) {
-          const limit = Math.min(amount - (i * 100), 100);
-          const messages = await msg.channel.messages.fetch({ limit });
-
-          if (messages.size === 0) break;
-
-          await msg.channel.bulkDelete(messages, true)
-            .then(deleted => {
-              deletedCount += deleted.size;
-            })
-            .catch(e => {
-              console.error(`Bulk delete failed: ${e}`);
-              waitingMsg.edit(`⚠️ メッセージの削除中にエラーが発生しました。`);
-              return;
-            });
-
-          if (i < chunks - 1) {
-            await sleep(1000);
-          }
-        }
-
+        const waitingMsg = await msg.reply(`🧹 ${amount}件のメッセージ削除を開始します...`);
+        const deletedCount = await clearMessages(msg.channel, amount, waitingMsg);
         await waitingMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`);
         break;
       }
-      // ====== 簡易 翻訳 ======
       default: {
         const langMap = {
           英語: "en",

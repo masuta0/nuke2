@@ -1,9 +1,10 @@
 // utils/guild.js
+
 const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
-const { LOG_CHANNEL_ID } = require('./anti-raid');
 
+const { LOG_CHANNEL_ID } = require('./anti-raid');
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -218,7 +219,6 @@ async function nukeChannel(channel) {
     deny: ow.deny.bitfield.toString(),
     type: ow.type
   })) || [];
-
   const payload = {
     name: channel.name,
     type: channel.type,
@@ -248,7 +248,6 @@ async function nukeChannel(channel) {
   return newCh;
 }
 
-// ★ 既存のclearMessagesを新しいロジックに置き換える
 async function clearMessages(channel, amount, feedbackChannel) {
   let messagesToDelete = amount;
   let lastMessageId = null;
@@ -257,13 +256,11 @@ async function clearMessages(channel, amount, feedbackChannel) {
   const now = Date.now();
   const twoWeeksAgo = now - (14 * 24 * 60 * 60 * 1000);
 
-  // 14日以内のメッセージを一括削除
   while (messagesToDelete > 0) {
     const fetchLimit = Math.min(messagesToDelete, 100);
     const fetched = await channel.messages.fetch({ limit: fetchLimit, before: lastMessageId });
     if (fetched.size === 0) break;
 
-    // 14日より古いメッセージを除外
     const recentMessages = fetched.filter(msg => msg.createdTimestamp > twoWeeksAgo);
 
     if (recentMessages.size > 0) {
@@ -278,12 +275,10 @@ async function clearMessages(channel, amount, feedbackChannel) {
     lastMessageId = fetched.last().id;
 
     if (recentMessages.size < fetched.size) {
-      // 14日より古いメッセージが見つかったら、一括削除ループを終了
       break;
     }
   }
 
-  // 14日以上前のメッセージを個別に削除
   if (messagesToDelete > 0) {
     const slowDeleteMsg = await feedbackChannel.send('⚠️ 14日以上前のメッセージは個別削除します。時間がかかります...').catch(()=>{});
     while (messagesToDelete > 0) {
@@ -295,7 +290,7 @@ async function clearMessages(channel, amount, feedbackChannel) {
         await msg.delete().catch(e => console.error(`Failed to delete message: ${e}`));
         deletedCount++;
         messagesToDelete--;
-        await delay(1000); // APIレートリミット回避
+        await delay(1000);
       }
       lastMessageId = fetched.last().id;
       if(slowDeleteMsg) slowDeleteMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`).catch(()=>{});
@@ -305,10 +300,33 @@ async function clearMessages(channel, amount, feedbackChannel) {
   return deletedCount;
 }
 
+async function addRoleToAll(guild, roleName) {
+  const role = guild.roles.cache.find(r => r.name === roleName || r.id === roleName);
+  if (!role) {
+    return { success: false, error: '指定されたロールが見つかりません。' };
+  }
+  let count = 0;
+  try {
+    const members = await guild.members.fetch();
+    for (const member of members.values()) {
+      if (!member.roles.cache.has(role.id)) {
+        await member.roles.add(role);
+        count++;
+        await delay(500); 
+      }
+    }
+    return { success: true, count: count };
+  } catch (e) {
+    console.error(`Error adding role to all members: ${e}`);
+    return { success: false, error: e.message };
+  }
+}
+
 module.exports = {
   hasManageGuildPermission,
   backupServer,
   restoreServer,
   nukeChannel,
-  clearMessages
+  clearMessages,
+  addRoleToAll,
 };
