@@ -3,7 +3,7 @@
 const axios = require('axios');
 const fs = require('fs');
 
-const { GOOGLE_AI_API_KEY } = process.env;
+const { GEMINI_API_KEY } = process.env;
 
 const BOT_PERSONA_PROMPT = `
 あなたは「AI Chat Bot」に組み込まれたAIアシスタントです。
@@ -49,7 +49,7 @@ const BOT_PERSONA_PROMPT = `
 const conversationHistory = new Map();
 
 async function chat(prompt, userId) {
-    if (!GOOGLE_AI_API_KEY) {
+    if (!GEMINI_API_KEY) {
         return 'APIキーが設定されていません。';
     }
 
@@ -58,7 +58,7 @@ async function chat(prompt, userId) {
 
     try {
         const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GOOGLE_AI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`,
             {
                 contents: [
                     {
