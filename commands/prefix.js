@@ -21,6 +21,41 @@ const CMD_PREFIX = "!";
 // 指定された秒数だけ待機する関数
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// ★ ヘルプメッセージの内容を定義
+const helpMessage = `
+**このボットについて**
+
+このボットは、サーバー管理をサポートし、メンバーのコミュニケーションを豊かにするために開発されました。
+以下の主な機能を提供しています：
+
+- 🎶 **音楽再生**: YouTubeの音楽を再生し、ボイスチャットを盛り上げます。
+- 📝 **AIチャット**: メンションや\`!ai\`コマンドでAIと会話できます。
+- 📚 **クイズ**: 雑学や専門知識のクイズで遊べます。
+- 🌤️ **天気情報**: \`!天気\`コマンドで、指定した地域の天気情報を取得します。
+- 🔨 **サーバー管理**: 管理者向けの\`!backup\`や\`!clear\`などの機能でサーバーの管理をサポートします。
+- 🛡️ **荒らし対策**: 不審な行動を自動で検知・処罰し、サーバーの安全を守ります。
+
+**コマンド一覧**
+
+| コマンド | 説明 |
+|---|---|
+| \`!help\` | このヘルプをDMで送信します。 |
+| \`!ping\` | ボットの応答性を確認します。 |
+| \`!uptime\` | ボットの稼働時間を表示します。 |
+| \`!天気 [場所]\` | 指定した場所の天気情報を取得します。 |
+| \`!クイズ\` | クイズを出題します。 |
+| \`!join\` | ボイスチャンネルに参加します。 |
+| \`!play [URL/検索]\` | YouTubeの音楽を再生します。 |
+| \`!stop\` | 音楽再生を停止します。 |
+| \`!leave\` | ボイスチャンネルから退出します。 |
+| \`!backup\` | サーバーの構成をバックアップします。 |
+| \`!restore\` | バックアップからサーバーを復元します。 |
+| \`!clear [数]\` | メッセージを削除します。 |
+
+---
+ご質問やご要望があれば、開発者までお問い合わせください。
+`;
+
 module.exports = async function handlePrefixMessage(client, msg) {
   if (msg.author.bot) return;
   const content = (msg.content || "").trim();
@@ -37,6 +72,13 @@ module.exports = async function handlePrefixMessage(client, msg) {
 
   try {
     switch (cmd) {
+      // ★ help コマンドの追加
+      case "help": {
+        await msg.author.send(helpMessage)
+          .then(() => msg.reply("✅ DMでヘルプを送信しました。"))
+          .catch(() => msg.reply("❌ DMを送信できませんでした。DM設定をご確認ください。"));
+        break;
+      }
       case "ping": {
         await msg.reply("Pong!");
         break;
@@ -165,8 +207,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
               return;
             });
 
-          // 最後に削除したメッセージのIDを保持しておき、次のフェッチの基点にすることもできますが、
-          // シンプルな実装のため、今回はsleepを挟むことにします。
           if (i < chunks - 1) {
             await sleep(1000); // APIレートリミットを回避するために1秒待機
           }
@@ -178,7 +218,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
 
       // ====== 簡易 翻訳 ======
       default: {
-        // 例:　!英語 こんにちは
         const langMap = {
           英語: "en",
           えいご: "en",
@@ -193,7 +232,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
           ドイツ語: "de",
         };
         const to = langMap[cmd];
-        if (!to) return; // 未対応なら黙る
+        if (!to) return;
         const text = args.join(" ").trim();
         if (!text) return;
         const res = await translateWithRetry(text, { to });
