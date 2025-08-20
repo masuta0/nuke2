@@ -1,4 +1,5 @@
 // index.js
+
 require('dotenv').config();
 const express = require('express');
 const https = require('https');
@@ -14,9 +15,10 @@ const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
-
-// 音楽再生機能のインポート
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
+
+// ★ 荒らし対策機能のインポート
+const { handleMemberJoin, handleMessage } = require('./utils/anti-raid');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -76,9 +78,13 @@ client.once('ready', async () => {
   }
 });
 
-// ==== Message: Prefix (!...) ====
+// ==== 荒らし対策とコマンド処理 ====
 client.on('messageCreate', async (message) => {
+  // ★ 荒らし対策のチェックを最優先で実行
+  await handleMessage(message);
+
   if (message.author.bot) return;
+
   if (!message.content.startsWith('!')) {
     // メンション応答ロジックをここに移動
     if (message.mentions.has(client.user)) {
@@ -94,7 +100,6 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
-  // 音楽コマンドの追加
   switch (command) {
     case 'join':
       if (!message.member?.voice.channel) {
@@ -143,6 +148,11 @@ client.on('messageCreate', async (message) => {
       handlePrefixMessage(client, message);
       break;
   }
+});
+
+// ==== 新しいイベント: メンバー参加時の荒らし対策 ====
+client.on('guildMemberAdd', (member) => {
+  handleMemberJoin(member);
 });
 
 // ==== クイズ 続行リアクション ====
