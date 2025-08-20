@@ -18,6 +18,8 @@ const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry } = require('./utils/anti-raid');
 
+const { loadData, addXp } = require('./utils/level'); // ★ 新規: レベル機能をインポート
+
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const JOIN_LOG_CHANNEL_ID = '1407669514425860136';
@@ -55,6 +57,7 @@ client.once('ready', async () => {
   await ensureDropboxInit();
   await preloadQuizzes();
   await loadAllLocalWeatherPrefsIfAny();
+  await loadData(); // ★ 新規: レベルデータをロード
 
   const start = Date.now();
   const updateUptimeStatus = () => {
@@ -83,6 +86,9 @@ client.on('messageCreate', async (message) => {
   await handleMessage(message);
 
   if (message.author.bot) return;
+
+  // ★ 新規: 経験値の付与
+  await addXp(message.member);
 
   if (!message.content.startsWith('!')) {
     if (message.mentions.has(client.user)) {
