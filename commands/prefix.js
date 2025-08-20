@@ -1,4 +1,3 @@
-// commands/prefix.js
 const {
   hasManageGuildPermission,
   backupServer,
@@ -6,7 +5,7 @@ const {
   nukeChannel,
   clearMessages,
 } = require("../utils/guild");
-const { translateWithRetry, chat } = require("../utils/ai"); // 翻訳とAIチャットをまとめてインポート
+const { translateWithRetry, chat } = require("../utils/ai");
 const {
   saveUserWeatherPref,
   loadUserWeatherPref,
@@ -16,9 +15,10 @@ const { askQuiz } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 
 const cooldown = new Map();
+// ★ AI専用のクールダウンマップ
+const aiCooldown = new Map();
 const CMD_PREFIX = "!";
 
-// 指定された秒数だけ待機する関数
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ★ ヘルプメッセージの内容を定義
@@ -64,7 +64,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
   const args = content.slice(CMD_PREFIX.length).split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
 
-  // 軽いクールダウン（ユーザー別）
   const now = Date.now();
   const last = cooldown.get(msg.author.id) || 0;
   if (now - last < 1000) return;
@@ -72,7 +71,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
 
   try {
     switch (cmd) {
-      // ★ help コマンドの追加
       case "help": {
         await msg.author.send(helpMessage)
           .then(() => msg.reply("✅ DMでヘルプを送信しました。"))
@@ -87,7 +85,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await msg.reply("ステータス欄に稼働時間を表示しています（5秒更新）");
         break;
       }
-
       // ====== 天気 ======
       case "天気": {
         const maybePref = args.join(" ");
@@ -106,24 +103,33 @@ module.exports = async function handlePrefixMessage(client, msg) {
         }
         break;
       }
-
       // ====== クイズ ======
       case "クイズ": {
-        // 例: !クイズ / !クイズ 一般 / !クイズ 鉄道
-        const category = args[0]?.toLowerCase() || "mix"; // general+trivia混在が既定
+        const category = args[0]?.toLowerCase() || "mix";
         await askQuiz(msg.channel, msg.author, category);
         break;
       }
-
       // ====== AI ======
       case "ai": {
+        const now = Date.now();
+        const lastAiUse = aiCooldown.get(msg.author.id) || 0;
+        const cooldownTime = 30 * 1000; // 30秒
+
+        if (now - lastAiUse < cooldownTime) {
+          const remaining = (cooldownTime - (now - lastAiUse)) / 1000;
+          return msg.reply(`❌ AIはクールタイム中です。あと${Math.ceil(remaining)}秒お待ちください。`);
+        }
+
         const prompt = args.join(" ").trim();
         if (!prompt) return msg.reply("使い方: `!ai 相談したい内容`");
+
+        // ★ クールタイムを更新
+        aiCooldown.set(msg.author.id, now);
+
         const res = await chat(prompt, msg.author.id);
         await msg.reply(res || "⚠️ 返答に失敗しました");
         break;
       }
-
       // ====== 音楽機能 ======
       case "join": {
         if (!msg.member?.voice?.channel)
@@ -154,7 +160,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await msg.reply("👋 退出しました");
         break;
       }
-
       // ====== 管理系（要権限） ======
       case "backup": {
         if (!hasManageGuildPermission(msg.member))
@@ -208,14 +213,13 @@ module.exports = async function handlePrefixMessage(client, msg) {
             });
 
           if (i < chunks - 1) {
-            await sleep(1000); // APIレートリミットを回避するために1秒待機
+            await sleep(1000);
           }
         }
 
         await waitingMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`);
         break;
       }
-
       // ====== 簡易 翻訳 ======
       default: {
         const langMap = {

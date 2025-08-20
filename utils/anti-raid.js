@@ -34,7 +34,7 @@ const RAID_SCORE_ACCOUNT_AGE = 15; // アカウント作成1日未満
 const RAID_SCORE_MASS_JOIN = 10;    // メンバー大量参加時
 const RAID_SCORE_KEYWORD = 15;      // NGキーワードを含む
 const RAID_SCORE_SIMILAR = 10;      // 類似メッセージの連投
-const RAID_SCORE_COMMAND_ABUSE = 5;  // コマンド乱用
+const RAID_SCORE_COMMAND_ABUSE = 10;  // ★ 修正: コマンド乱用スコアを10に
 const RAID_SCORE_REACTION_SPAM = 5;  // リアクション連打
 const RAID_SCORE_EXCESSIVE_NEWLINES = 8; // 過度な改行
 const RAID_SCORE_ZALGO = 10;         // Zalgo文字
@@ -326,7 +326,8 @@ async function handleMessage(message) {
 
   if (message.content.startsWith('!')) {
     const lastCmdTime = userCommandCounts.get(authorId) || 0;
-    if (now - lastCmdTime < 2000) {
+    // ★ 修正: コマンド連打の検知間隔を1秒に
+    if (now - lastCmdTime < 1000) {
       incrementScore(authorId, RAID_SCORE_COMMAND_ABUSE, message, 'ボットコマンドの連打');
       return;
     }

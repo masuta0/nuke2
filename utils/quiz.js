@@ -1,8 +1,11 @@
 // utils/quiz.js
+
 const fs = require("fs");
 const path = require("path");
 
 let quizzes = {};
+const userQuizCounts = new Map();
+const QUIZ_LIMIT = 3;
 
 // JSONファイルを読み込む関数
 function preloadQuizzes() {
@@ -20,6 +23,19 @@ function preloadQuizzes() {
 function getRandomQuiz(category = null) {
   let categories = Object.keys(quizzes);
   if (categories.length === 0) return null;
+
+  // 'mix'カテゴリに対応
+  if (category === 'mix') {
+    const allQuestions = Object.values(quizzes).flat();
+    if (allQuestions.length === 0) return null;
+    const randomQuestion = allQuestions[Math.floor(Math.random() * allQuestions.length)];
+    return {
+      category: 'mix',
+      question: randomQuestion.q,
+      answer: randomQuestion.a,
+      choices: randomQuestion.choices
+    };
+  }
 
   if (category && quizzes[category]) {
     categories = [category];
@@ -41,8 +57,43 @@ function getRandomQuiz(category = null) {
   };
 }
 
+// ユーザーのクイズ利用回数をチェック＆更新
+function checkAndIncrementQuizCount(userId) {
+  const today = new Date().toISOString().slice(0, 10);
+  let userStats = userQuizCounts.get(userId) || { count: 0, date: today };
+
+  if (userStats.date !== today) {
+    userStats.count = 0;
+    userStats.date = today;
+  }
+
+  if (userStats.count >= QUIZ_LIMIT) {
+    return { canPlay: false, remaining: 0 };
+  }
+
+  userStats.count++;
+  userQuizCounts.set(userId, userStats);
+  return { canPlay: true, remaining: QUIZ_LIMIT - userStats.count };
+}
+
 // クイズを出題する関数
 async function askQuiz(channel, user, category) {
+  const isChatChannel = channel.name.includes('雑談');
+
+  let canPlay = true;
+  let remaining = QUIZ_LIMIT;
+
+  if (isChatChannel) {
+    const checkResult = checkAndIncrementQuizCount(user.id);
+    canPlay = checkResult.canPlay;
+    remaining = checkResult.remaining;
+
+    if (!canPlay) {
+      await channel.send(`❌ ${user}さん、このチャンネルでの今日のクイズは上限の3回に達しました。明日また挑戦してね！`);
+      return;
+    }
+  }
+
   const quiz = getRandomQuiz(category);
   if (!quiz) {
     await channel.send("⚠️ クイズデータが見つかりません。");
@@ -58,7 +109,6 @@ async function askQuiz(channel, user, category) {
     `📝 **${quiz.category}クイズ**\n${quiz.question}\n\n${choicesText}\n(答えを30秒以内に入力してください)`
   );
 
-  // 答えを待つ
   try {
     const collected = await channel.awaitMessages({
       filter: (m) => m.author.id === user.id,
@@ -69,25 +119,22 @@ async function askQuiz(channel, user, category) {
 
     const answer = collected.first().content.trim();
 
-    // ユーザーの回答が「答えの文字そのもの」または「答えの番号」かを確認
     const isCorrectByText = answer.toLowerCase() === quiz.answer.toLowerCase();
 
-    // 全角・半角の数字を統一して判定
     const normalizedAnswer = answer.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
     const answerNumber = parseInt(normalizedAnswer, 10);
     const answerIndex = quiz.choices.findIndex(c => c === quiz.answer);
     const isCorrectByNumber = !isNaN(answerNumber) && (answerNumber - 1) === answerIndex;
 
     if (isCorrectByText || isCorrectByNumber) {
-      await channel.send(`✅ 正解！ 🎉 (${quiz.answer})`);
+      await channel.send(`✅ 正解！ 🎉 (${quiz.answer})${isChatChannel ? `\n**${user}さん、残りクイズ回数は ${remaining} 回です。**` : ''}`);
     } else {
-      await channel.send(`❌ 不正解... 正解は **${quiz.answer}** でした。`);
+      await channel.send(`❌ 不正解... 正解は **${quiz.answer}** でした。${isChatChannel ? `\n**${user}さん、残りクイズ回数は ${remaining} 回です。**` : ''}`);
     }
   } catch (err) {
-    await channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
+    await channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。${isChatChannel ? `\n**${user}さん、残りクイズ回数は ${remaining} 回です。**` : ''}`);
   }
 
-  // 正解発表のあとに続行確認
   const followMsg = await channel.send(
     "📝 クイズを続けますか？ 👍 を押すと次の問題を出します"
   );

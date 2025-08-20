@@ -4,11 +4,14 @@ const { hasManageGuildPermission, backupServer, restoreServer, nukeChannel, clea
 const { chat } = require('../utils/ai');
 const { saveUserWeatherPref, loadUserWeatherPref, fetchWeather } = require('../utils/weather');
 const { joinVoice, playUrl, leaveVoice } = require('../utils/music');
-const { getVoiceConnection } = require('@discordjs/voice'); // 新しく追加
+const { getVoiceConnection } = require('@discordjs/voice');
 const { askQuiz } = require('../utils/quiz');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+
+// ★ AI専用のクールダウンマップを定義
+const aiCooldown = new Map();
 
 async function registerSlashCommands(client) {
   const commands = [
@@ -32,7 +35,7 @@ async function registerSlashCommands(client) {
     new SlashCommandBuilder().setName('play')
       .setDescription('音楽を再生（URLまたは検索語）')
       .addStringOption(o => o.setName('query').setDescription('YouTube/Spotify URLまたは検索語').setRequired(true)),
-    new SlashCommandBuilder().setName('stop').setDescription('音楽の再生を停止し、ボイスチャンネルから退出'), // 新しく追加
+    new SlashCommandBuilder().setName('stop').setDescription('音楽の再生を停止し、ボイスチャンネルから退出'),
     new SlashCommandBuilder().setName('leave').setDescription('ボイスチャンネルから退出'),
 
     new SlashCommandBuilder().setName('backup')
@@ -53,15 +56,31 @@ async function registerSlashCommands(client) {
     { body: commands.map(c => c.toJSON()) }
   );
 
-  // ハンドラー
   client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
     try {
       const name = interaction.commandName;
 
       if (name === 'ai') {
+        // ★ AIチャットのクールダウンチェック
+        const now = Date.now();
+        const lastAiUse = aiCooldown.get(interaction.user.id) || 0;
+        const cooldownTime = 30 * 1000; // 30秒
+
+        if (now - lastAiUse < cooldownTime) {
+          const remaining = (cooldownTime - (now - lastAiUse)) / 1000;
+          return interaction.reply({
+            content: `❌ AIはクールタイム中です。あと${Math.ceil(remaining)}秒お待ちください。`,
+            ephemeral: true,
+          });
+        }
+
         const prompt = interaction.options.getString('prompt', true);
         await interaction.deferReply({ ephemeral: true });
+
+        // ★ クールタイムを更新
+        aiCooldown.set(interaction.user.id, now);
+
         const res = await chat(prompt, interaction.user.id);
         return interaction.editReply(res || '⚠️ 返答に失敗しました');
       }
@@ -107,7 +126,7 @@ async function registerSlashCommands(client) {
         return interaction.editReply(added ? `▶️ キュー追加: ${added}` : '⚠️ 取得に失敗しました');
       }
 
-      if (name === 'stop') { // 新しく追加
+      if (name === 'stop') {
           await interaction.deferReply({ ephemeral: true });
           const voiceConnection = getVoiceConnection(interaction.guild.id);
 
