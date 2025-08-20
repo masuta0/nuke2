@@ -55,7 +55,6 @@ const userMessageTimestamps = new Map();
 
 // === メンバー参加を監視 ===
 function handleMemberJoin(member) {
-  // 管理者は荒らし対策の対象外
   if (member.permissions.has('Administrator')) return;
 
   const now = Date.now();
@@ -100,21 +99,19 @@ async function incrementScore(userId, score, message = null, reason = '不審な
     const newScore = currentScore + score;
     userScores.set(userId, newScore);
 
-    // 不審なメッセージを検知した場合、メッセージを削除し、内容をログに送信
     if (message && message.deletable) {
       const messageContent = message.content.length > 200 ? message.content.substring(0, 197) + '...' : message.content;
       try {
         await message.delete();
         logRaidAction(
           member.guild,
-          `🚨 **不審メッセージ検知**: ${member.user.tag} が不審なメッセージを投稿しました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}`,
+          `🚨 **不審メッセージ検知**: ${member.user.tag} が不審なメッセージを投稿しました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}\n\n**メッセージ内容:**\n\`\`\`\n${messageContent}\n\`\`\``,
           message?.channel.name || '不明なチャンネル'
         );
       } catch (e) {
         console.error('メッセージの削除に失敗しました:', e);
       }
     } else {
-      // メッセージが削除できない、またはメッセージを伴わない不審行動の場合
       logRaidAction(
         member.guild,
         `🚨 **不審行動検知**: ${member.user.tag} が不審な行動を行いました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}`,
@@ -123,7 +120,21 @@ async function incrementScore(userId, score, message = null, reason = '不審な
     }
 
     if (newScore >= RAID_SCORE_THRESHOLD) {
-        if (markedUsers.has(userId)) return;
+        if (markedUsers.has(userId)) {
+            // ★ 処罰済みの場合も、ログを送信し、スコアをリセット
+            logRaidAction(
+              member.guild,
+              `⚠️ **再処罰**: ${member.user.tag} の不審度スコアが再度閾値を超えました。\n最終スコア: ${newScore}\n\n⚠️ スコアをリセットし、タイムアウトを再適用します。`,
+              message?.channel.name || '不明なチャンネル'
+            );
+            userScores.set(userId, 10);
+            try {
+                await member.timeout(TIMEOUT_DURATION, reason);
+            } catch (e) {
+                console.error('タイムアウト再適用に失敗しました:', e);
+            }
+            return;
+        }
 
         try {
             await member.timeout(TIMEOUT_DURATION, reason);
@@ -136,9 +147,7 @@ async function incrementScore(userId, score, message = null, reason = '不審な
               message?.channel.name || '不明なチャンネル'
             );
 
-            // スコアをリセットし、10から再スタート
             userScores.set(userId, 10);
-
             markUser(userId);
         } catch (e) {
             console.error('タイムアウト処理に失敗しました:', e);
@@ -148,8 +157,7 @@ async function incrementScore(userId, score, message = null, reason = '不審な
 
 // === メッセージを監視 ===
 async function handleMessage(message) {
-  // 管理者は荒らし対策の対象外
-  if (message.author.bot || markedUsers.has(message.author.id) || (message.member && message.member.permissions.has('Administrator'))) {
+  if (message.author.bot || (message.member && message.member.permissions.has('Administrator'))) {
     return;
   }
 
@@ -229,7 +237,7 @@ async function handleReactionAdd(reaction, user) {
     if (user.bot) return;
 
     const member = reaction.message.guild.members.cache.get(user.id);
-    if (!member || markedUsers.has(user.id) || member.permissions.has('Administrator')) return;
+    if (!member || member.permissions.has('Administrator')) return;
 
     const now = Date.now();
     const lastReactionTime = userReactionCounts.get(user.id) || 0;
