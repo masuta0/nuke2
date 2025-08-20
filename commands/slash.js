@@ -13,6 +13,7 @@ const { saveUserWeatherPref, loadUserWeatherPref, fetchWeather } = require('../u
 const { joinVoice, playUrl, leaveVoice } = require('../utils/music');
 const { getVoiceConnection } = require('@discordjs/voice');
 const { askQuiz } = require('../utils/quiz');
+const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level'); // ★ レベル機能の関数をインポート
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -23,6 +24,32 @@ async function registerSlashCommands(client) {
     new SlashCommandBuilder().setName('ai')
       .setDescription('AIに質問')
       .addStringOption(o => o.setName('prompt').setDescription('質問内容').setRequired(true)),
+    new SlashCommandBuilder().setName('level') // ★ levelコマンドを追加
+      .setDescription('ユーザーのレベルと経験値に関するコマンドです。')
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('check')
+          .setDescription('あなたの、または他のユーザーのレベルと経験値を確認します。')
+          .addUserOption(option =>
+            option
+              .setName('target')
+              .setDescription('レベルを確認したいユーザー')
+              .setRequired(false)))
+      .addSubcommand(subcommand =>
+        subcommand
+          .setName('set')
+          .setDescription('ユーザーのレベルを手動で設定します。')
+          .addUserOption(option =>
+            option
+              .setName('target')
+              .setDescription('レベルを設定するユーザー')
+              .setRequired(true))
+          .addIntegerOption(option =>
+            option
+              .setName('level')
+              .setDescription('設定するレベル')
+              .setRequired(true)))
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), // ★ 管理者権限を要求
     new SlashCommandBuilder().setName('天気')
       .setDescription('天気を表示／場所を保存')
       .addStringOption(o => o.setName('場所').setDescription('例: 東京、大阪、札幌...').setRequired(false)),
@@ -82,6 +109,41 @@ async function registerSlashCommands(client) {
         aiCooldown.set(interaction.user.id, now);
         const res = await chat(prompt, interaction.user.id);
         return interaction.editReply(res || '⚠️ 返答に失敗しました');
+      }
+      if (name === 'level') { // ★ levelコマンドのハンドラー
+        const subcommand = interaction.options.getSubcommand();
+        if (subcommand === 'check') {
+          const targetUser = interaction.options.getUser('target') || interaction.user;
+          const levelData = getLevelData(interaction.guild.id, targetUser.id);
+          const level = levelData.level;
+          const xp = levelData.xp;
+          const requiredXp = calculateRequiredXp(level + 1);
+          const progress = Math.min(100, (xp / requiredXp) * 100).toFixed(2);
+          const embed = {
+            color: 0x0099ff,
+            title: `${targetUser.displayName} のレベル`,
+            fields: [
+              { name: '現在のレベル', value: `**${level}**`, inline: true },
+              { name: '現在の経験値 (XP)', value: `**${xp}**`, inline: true },
+              { name: '次のレベルまで', value: `あと **${requiredXp - xp}** XP`, inline: false },
+              { name: 'レベルアップの進捗', value: `${progress}%`, inline: false }
+            ],
+            timestamp: new Date(),
+            footer: { text: 'レベルシステム' },
+          };
+          return interaction.reply({ embeds: [embed] });
+        } else if (subcommand === 'set') {
+          if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+            return interaction.reply({ content: '❌ このコマンドを実行する権限がありません。', ephemeral: true });
+          }
+          const targetUser = interaction.options.getUser('target');
+          const newLevel = interaction.options.getInteger('level');
+          if (newLevel < 0) {
+            return interaction.reply({ content: '❌ レベルは0以上に設定してください。', ephemeral: true });
+          }
+          await setLevelAndXp(interaction.guild.id, targetUser.id, newLevel);
+          return interaction.reply(`✅ **${targetUser.displayName}** のレベルを **${newLevel}** に設定しました。`);
+        }
       }
       if (name === '天気') {
         await interaction.deferReply({ ephemeral: true });
