@@ -14,7 +14,7 @@ const RAID_TIME_WINDOW = 60 * 1000; // 1分
 const SIMILAR_MESSAGE_THRESHOLD = 2; // 2回
 const SIMILAR_MESSAGE_LENGTH = 5; // 5文字以上
 
-// ★ 連投検知
+// 連投検知
 const MASS_SPAM_THRESHOLD = 2; // 2メッセージ
 const MASS_SPAM_TIME_WINDOW = 3 * 1000; // 3秒
 
@@ -41,7 +41,7 @@ const RAID_SCORE_ZALGO = 10;         // Zalgo文字
 const RAID_SCORE_MASS_SPAM = 10;     // メッセージ連投
 
 // 処罰
-const TIMEOUT_DURATION = 1 * 60 * 1000; // 1分間
+const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間に変更
 const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
 
 // === 内部変数 ===
@@ -96,11 +96,27 @@ async function incrementScore(userId, score, message = null, reason = '不審な
     const member = message?.member || await message.guild.members.fetch(userId).catch(() => null);
     if (!member) return;
 
-    logRaidAction(
+    // 不審なメッセージを検知した場合、メッセージを削除し、内容をログに送信
+    if (message && message.deletable) {
+      const messageContent = message.content.length > 200 ? message.content.substring(0, 197) + '...' : message.content;
+      try {
+        await message.delete();
+        logRaidAction(
+          member.guild,
+          `🚨 **不審メッセージ検知**: ${member.user.tag} が不審なメッセージを投稿しました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}\n\n**メッセージ内容:**\n\`\`\`\n${messageContent}\n\`\`\``,
+          message?.channel.name || '不明なチャンネル'
+        );
+      } catch (e) {
+        console.error('メッセージの削除に失敗しました:', e);
+      }
+    } else {
+      // メッセージが削除できない、またはメッセージを伴わない不審行動の場合
+      logRaidAction(
         member.guild,
         `🚨 **不審行動検知**: ${member.user.tag} が不審な行動を行いました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}`,
         message?.channel.name || '不明なチャンネル'
-    );
+      );
+    }
 
     if (newScore >= RAID_SCORE_THRESHOLD) {
         if (markedUsers.has(userId)) return;
@@ -108,8 +124,7 @@ async function incrementScore(userId, score, message = null, reason = '不審な
         try {
             await member.timeout(TIMEOUT_DURATION, reason);
             if (message) {
-              await message.delete();
-              message.channel.send(`🚨 **${member.user.tag}** は不審な行動を複数回行ったため、1分間タイムアウトされました。`).catch(console.error);
+              message.channel.send(`🚨 **${member.user.tag}** は不審な行動を複数回行ったため、5分間タイムアウトされました。`).catch(console.error);
             }
             logRaidAction(
               member.guild,
@@ -135,7 +150,7 @@ async function handleMessage(message) {
   const messageTimestamps = userMessageTimestamps.get(authorId) || [];
   messageTimestamps.push(now);
   const recentMessages = messageTimestamps.filter(
-    (timestamp) => now - timestamp < MASS_SPAM_TIME_WINDOW // ★ 修正
+    (timestamp) => now - timestamp < MASS_SPAM_TIME_WINDOW
   );
   userMessageTimestamps.set(authorId, recentMessages);
 
