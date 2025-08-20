@@ -3,7 +3,7 @@
 require('dotenv').config();
 const express = require('express');
 const https = require('https');
-const { Client, GatewayIntentBits, ActivityType, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent, PermissionsBitField } = require('discord.js');
 
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 if (!global.fetch) global.fetch = fetch;
@@ -12,11 +12,11 @@ const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
-const { preloadQuizzes, askQuiz } = require('./utils/quiz'); // ★ ここを修正
+const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
-const { handleMemberJoin, handleMessage, handleReactionAdd } = require('./utils/anti-raid');
+const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate } = require('./utils/anti-raid');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -29,7 +29,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildModeration // ★ Audit Logのために必要
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
@@ -57,7 +58,7 @@ client.once('ready', async () => {
 
   const start = Date.now();
   const updateUptimeStatus = () => {
-    const elapsed = Date.now() - start;
+    const elapsed = Date.Now() - start;
     const h = Math.floor(elapsed / 1000 / 60 / 60);
     const m = Math.floor((elapsed / 1000 / 60) % 60);
     const s = Math.floor((elapsed / 1000) % 60);
@@ -159,6 +160,12 @@ client.on('guildMemberAdd', async (member) => {
   }
 });
 
+// ==== ロール更新時のイベント ====
+client.on('roleUpdate', async (oldRole, newRole) => {
+    handleRoleUpdate(oldRole, newRole);
+});
+
+
 // ==== リアクション追加時のイベント ====
 client.on('messageReactionAdd', async (reaction, user) => {
   await handleReactionAdd(reaction, user);
@@ -167,10 +174,17 @@ client.on('messageReactionAdd', async (reaction, user) => {
   if (reaction.emoji.name === '👍') {
     if (reaction.message.author.id !== client.user.id) return;
     if (reaction.message.content.includes('クイズを続けますか？')) {
-      // preloadQuizzesはreadyイベントで実行済みなので、ここでは不要です
       await askQuiz(reaction.message.channel, user, 'mix');
     }
   }
+});
+
+// ==== 監査ログエントリ作成時のイベント ====
+client.on('guildAuditLogEntryCreate', async (entry) => {
+    // AuditLogEventをインポートしていることを確認
+    if (entry.action === AuditLogEvent.MEMBER_ROLE_UPDATE || entry.action === AuditLogEvent.CHANNEL_OVERWRITE_UPDATE || entry.action === AuditLogEvent.WEBHOOK_CREATE || entry.action === AuditLogEvent.WEBHOOK_UPDATE) {
+        handleAuditLogEntry(entry);
+    }
 });
 
 // ==== Login ====
