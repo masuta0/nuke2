@@ -16,11 +16,11 @@ const { preloadQuizzes } = require('./utils/quiz');
 const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
-// ★ 荒らし対策機能のインポート
 const { handleMemberJoin, handleMessage, handleReactionAdd } = require('./utils/anti-raid');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
+const JOIN_LOG_CHANNEL_ID = '1407669514425860136';
 
 // ==== Discord Client ====
 const client = new Client({
@@ -79,13 +79,11 @@ client.once('ready', async () => {
 
 // ==== 荒らし対策とコマンド処理 ====
 client.on('messageCreate', async (message) => {
-  // ★ 荒らし対策のチェックを最優先で実行
   await handleMessage(message);
 
   if (message.author.bot) return;
 
   if (!message.content.startsWith('!')) {
-    // メンション応答ロジック
     if (message.mentions.has(client.user)) {
       const prompt = message.content.replace(/<@!?(\d+)>/, '').trim();
       if (!prompt) return;
@@ -95,7 +93,6 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Prefixコマンド処理
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift().toLowerCase();
 
@@ -148,12 +145,18 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// ★ メンバー参加時の荒らし対策
+// ==== メンバー参加時のイベント ====
 client.on('guildMemberAdd', (member) => {
   handleMemberJoin(member);
+
+  const logChannel = member.guild.channels.cache.get(JOIN_LOG_CHANNEL_ID);
+  if (logChannel) {
+    const welcomeMessage = `🟢 **${member.user.tag}** がサーバーに参加しました！`;
+    logChannel.send(welcomeMessage).catch(console.error);
+  }
 });
 
-// ★ リアクション追加時の荒らし対策
+// ==== リアクション追加時のイベント ====
 client.on('messageReactionAdd', async (reaction, user) => {
   await handleReactionAdd(reaction, user);
 
@@ -161,7 +164,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
   if (reaction.emoji.name === '👍') {
     if (reaction.message.author.id !== client.user.id) return;
     if (reaction.message.content.includes('クイズを続けますか？')) {
-      await preloadQuizzes(); // クイズデータを再読み込み
+      await preloadQuizzes();
       await askQuiz(reaction.message.channel, user, 'mix');
     }
   }

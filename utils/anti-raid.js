@@ -14,6 +14,10 @@ const RAID_TIME_WINDOW = 60 * 1000; // 1分
 const SIMILAR_MESSAGE_THRESHOLD = 2; // 2回
 const SIMILAR_MESSAGE_LENGTH = 5; // 5文字以上
 
+// ★ 新規: 連投検知
+const MASS_SPAM_THRESHOLD = 2; // 2メッセージ
+const MASS_SPAM_TIME_WINDOW = 3 * 1000; // 3秒
+
 // 荒らしと判断される特定のキーワード
 const RAID_KEYWORDS = [
   ' this server is raided',
@@ -30,13 +34,14 @@ const RAID_SCORE_ACCOUNT_AGE = 15; // アカウント作成1日未満
 const RAID_SCORE_MASS_JOIN = 10;    // メンバー大量参加時
 const RAID_SCORE_KEYWORD = 15;      // NGキーワードを含む
 const RAID_SCORE_SIMILAR = 10;      // 類似メッセージの連投
-const RAID_SCORE_COMMAND_ABUSE = 5;  // ★ 新規: コマンド乱用
-const RAID_SCORE_REACTION_SPAM = 5;  // ★ 新規: リアクション連打
-const RAID_SCORE_EXCESSIVE_NEWLINES = 8; // ★ 新規: 過度な改行
-const RAID_SCORE_ZALGO = 10;         // ★ 新規: Zalgo文字
+const RAID_SCORE_COMMAND_ABUSE = 5;  // コマンド乱用
+const RAID_SCORE_REACTION_SPAM = 5;  // リアクション連打
+const RAID_SCORE_EXCESSIVE_NEWLINES = 8; // 過度な改行
+const RAID_SCORE_ZALGO = 10;         // Zalgo文字
+const RAID_SCORE_MASS_SPAM = 10;     // ★ 新規: メッセージ連投
 
 // 処罰
-const TIMEOUT_DURATION = 10 * 60 * 1000; // 10分
+const TIMEOUT_DURATION = 1 * 60 * 1000; // ★ タイムアウトを1分に変更
 const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
 
 // === 内部変数 ===
@@ -44,9 +49,9 @@ const memberJoinLog = new Map();
 const messageHistory = new Map();
 const markedUsers = new Map();
 const userScores = new Map();
-const userCommandCounts = new Map(); // ★ 新規: コマンド乱用監視用
-const userReactionCounts = new Map(); // ★ 新規: リアクション監視用
-const userMessageTimestamps = new Map(); // ★ 新規: 連投監視用
+const userCommandCounts = new Map();
+const userReactionCounts = new Map();
+const userMessageTimestamps = new Map(); // ★ 新規: メッセージ送信時刻を管理
 
 // === メンバー参加を監視 ===
 function handleMemberJoin(member) {
@@ -78,7 +83,7 @@ function handleMemberJoin(member) {
   }
 
   const accountAge = now - member.user.createdAt.getTime();
-  if (accountAge < 24 * 60 * 60 * 1000) { // 24時間未満
+  if (accountAge < 24 * 60 * 60 * 1000) {
     incrementScore(member.id, RAID_SCORE_ACCOUNT_AGE, null, 'アカウント作成から24時間未満');
   }
 }
@@ -98,7 +103,7 @@ async function incrementScore(userId, score, message = null, reason = '不審な
             await member.timeout(TIMEOUT_DURATION, reason);
             if (message) {
               await message.delete();
-              message.channel.send(`🚨 **${member.user.tag}** は不審な行動を複数回行ったため、10分間タイムアウトされました。`).catch(console.error);
+              message.channel.send(`🚨 **${member.user.tag}** は不審な行動を複数回行ったため、${TIMEOUT_DURATION / 1000 / 60}分間タイムアウトされました。`).catch(console.error);
             }
             await logRaidAction(
               member.guild,
@@ -118,32 +123,47 @@ async function handleMessage(message) {
     return;
   }
 
-  const content = message.content.toLowerCase();
+  // ★ 1. メッセージ連投の検知
+  const now = Date.now();
+  const authorId = message.author.id;
+  const messageTimestamps = userMessageTimestamps.get(authorId) || [];
+  messageTimestamps.push(now);
 
-  // 1. NGキーワードによる検知
+  const recentMessages = messageTimestamps.filter(
+    (timestamp) => now - timestamp < MASS_SPAM_TIME_WINDOW
+  );
+
+  userMessageTimestamps.set(authorId, recentMessages);
+
+  if (recentMessages.length >= MASS_SPAM_THRESHOLD) {
+    incrementScore(authorId, RAID_SCORE_MASS_SPAM, message, 'メッセージ連投');
+    return;
+  }
+
+  // 2. NGキーワードによる検知
+  const content = message.content.toLowerCase();
   const isRaidMessage = RAID_KEYWORDS.some(keyword => content.includes(keyword));
   if (isRaidMessage) {
-    incrementScore(message.author.id, RAID_SCORE_KEYWORD, message, 'NGキーワードを含むメッセージ');
+    incrementScore(authorId, RAID_SCORE_KEYWORD, message, 'NGキーワードを含むメッセージ');
     return;
   }
 
-  // 2. 過度な改行による検知
+  // 3. 過度な改行による検知
   const newlineCount = (message.content.match(/\n/g) || []).length;
   if (newlineCount > 10) {
-    incrementScore(message.author.id, RAID_SCORE_EXCESSIVE_NEWLINES, message, '過度な改行');
+    incrementScore(authorId, RAID_SCORE_EXCESSIVE_NEWLINES, message, '過度な改行');
     return;
   }
 
-  // 3. Zalgo文字の乱用検知 (Unicodeの特定の範囲をチェック)
+  // 4. Zalgo文字の乱用検知
   const zalgoCount = (message.content.match(/[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]/g) || []).length;
   if (zalgoCount > 5) {
-      incrementScore(message.author.id, RAID_SCORE_ZALGO, message, 'Zalgo文字の乱用');
+      incrementScore(authorId, RAID_SCORE_ZALGO, message, 'Zalgo文字の乱用');
       return;
   }
 
-  // 4. 類似メッセージによる検知
+  // 5. 類似メッセージによる検知
   const guildId = message.guild.id;
-  const authorId = message.author.id;
   const normalizedContent = content.replace(/\s/g, '');
 
   if (normalizedContent.length < SIMILAR_MESSAGE_LENGTH) return;
@@ -152,29 +172,27 @@ async function handleMessage(message) {
     messageHistory.set(guildId, new Map());
   }
 
-  const guildHistory = messageHistory.get(normalizedContent);
-  if (!guildHistory) {
+  const guildHistory = messageHistory.get(guildId);
+  if (!guildHistory.has(normalizedContent)) {
     guildHistory.set(normalizedContent, new Map());
-    guildHistory.get(normalizedContent).set(authorId, 1);
-  } else {
-    const msgSenders = guildHistory.get(normalizedContent);
-    if (!msgSenders.has(authorId)) {
-      msgSenders.set(authorId, 0);
-    }
-    msgSenders.set(authorId, msgSenders.get(authorId) + 1);
-
-    const sendCount = msgSenders.get(authorId);
-    if (sendCount >= SIMILAR_MESSAGE_THRESHOLD) {
-      incrementScore(authorId, RAID_SCORE_SIMILAR, message, '類似メッセージの連投');
-      return;
-    }
   }
 
-  // 5. ボットコマンドの連打検知
+  const msgSenders = guildHistory.get(normalizedContent);
+  if (!msgSenders.has(authorId)) {
+    msgSenders.set(authorId, 0);
+  }
+  msgSenders.set(authorId, msgSenders.get(authorId) + 1);
+
+  const sendCount = msgSenders.get(authorId);
+  if (sendCount >= SIMILAR_MESSAGE_THRESHOLD) {
+    incrementScore(authorId, RAID_SCORE_SIMILAR, message, '類似メッセージの連投');
+    return;
+  }
+
+  // 6. ボットコマンドの連打検知
   if (message.content.startsWith('!')) {
-    const now = Date.now();
     const lastCmdTime = userCommandCounts.get(authorId) || 0;
-    if (now - lastCmdTime < 2000) { // 2秒以内に再度コマンド
+    if (now - lastCmdTime < 2000) {
       incrementScore(authorId, RAID_SCORE_COMMAND_ABUSE, message, 'ボットコマンドの連打');
       return;
     }
@@ -188,7 +206,7 @@ async function handleReactionAdd(reaction, user) {
 
     const now = Date.now();
     const lastReactionTime = userReactionCounts.get(user.id) || 0;
-    if (now - lastReactionTime < 1000) { // 1秒以内に再度リアクション
+    if (now - lastReactionTime < 1000) {
         const message = reaction.message;
         const member = message.guild.members.cache.get(user.id);
         incrementScore(user.id, RAID_SCORE_REACTION_SPAM, { member: member, channel: message.channel, guild: message.guild }, '過度なリアクション連打');
@@ -206,6 +224,7 @@ function markUser(userId) {
     userScores.delete(userId);
     userCommandCounts.delete(userId);
     userReactionCounts.delete(userId);
+    userMessageTimestamps.delete(userId);
     console.log(`✅ ユーザー ${userId} のマークを解除しました。`);
   }, MARK_DURATION);
 }
@@ -239,6 +258,6 @@ async function getOrCreateLogChannel(guild) {
 module.exports = {
   handleMemberJoin,
   handleMessage,
-  handleReactionAdd, // ★ エクスポート
+  handleReactionAdd,
   LOG_CHANNEL_ID,
 };
