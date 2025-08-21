@@ -12,7 +12,8 @@ const AUTH_CHANNEL_ID = '1405660583025709107';
 const AI_ANTI_RAID_PROMPT = `
 あなたはDiscordサーバーの荒らし対策ボットです。
 以下のメッセージがサーバーのルールに違反しているか、または不適切かを判定してください。
-判定の重みに応じて、タイムアウト期間を決定してください。
+判定の際は、単語だけでなく文脈やユーザーの意図を重視してください。
+特に「トークン」という単語は、文脈によっては無害な場合があるため、慎重に判断してください。
 
 ルール違反の例:
 - スパム行為（同じ内容の連投、意味不明な文字の羅列など）
@@ -32,6 +33,7 @@ const AI_ANTI_RAID_PROMPT = `
 - 重大な不審: 重大なハラスメント、差別発言、Raid行為など
 
 タイムアウト期間の例（必ずこの中から選んでください）:
+- 1分
 - 5分
 - 30分
 - 1時間
@@ -228,6 +230,17 @@ async function handleAiJudgement(message) {
         if (message.deletable) {
           await message.delete();
         }
+
+        // ★ 処罰理由をユーザーにDMで送信
+        const userMessage = `
+サーバーの荒らし対策システムにより、タイムアウトされました。
+**理由:** ${reason}
+**期間:** ${durationStr}
+---
+サーバーの安全を保つための措置ですので、ご理解をお願いいたします。
+`;
+        await message.author.send(userMessage).catch(console.error);
+
       } catch (e) {
         console.error('AIによるタイムアウト処理に失敗しました:', e);
         logRaidAction(
