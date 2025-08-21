@@ -10,44 +10,42 @@ const AUTH_CHANNEL_ID = '1405660583025709107';
 
 // ★ AIによる荒らし判定プロンプト (タイムアウト期間も決定)
 const AI_ANTI_RAID_PROMPT = `
+// ★ AIによる荒らし判定プロンプト (自由な発言を尊重)
+const AI_ANTI_RAID_PROMPT = `
 あなたはDiscordサーバーの荒らし対策ボットです。
-以下のメッセージがサーバーのルールに違反しているか、または不適切かを判定してください。
-判定の際は、単語だけでなく文脈やユーザーの意図を重視してください。
-特に「トークン」という単語は、文脈によっては無害な場合があるため、慎重に判断してください。
+ただし、サーバー参加者の「言論の自由」を最大限尊重してください。
 
-ルール違反の例:
-- スパム行為（同じ内容の連投、意味不明な文字の羅列など）
-- ハラスメント（個人攻撃、いじめ、煽りなど）
-- 差別発言（人種、性別、国籍など）
-- 不適切な内容（NSFW、グロテスクな内容など）
-- 荒らし行為（Raid予告、サーバーの破壊を促す発言など）
-- その他、サーバーの健全な運営を妨げる行為
+- **重要方針**:
+  - 単なる意見、冗談、皮肉、煽り、無害な技術用語は「問題なし」としてください。
+  - スラングや下ネタ、個人的な軽口も「問題なし」としてください。
+  - 「荒らす目的が確実」である場合にのみ「不審」と判定してください。
 
-以下のフォーマットで、簡潔に回答してください。
-[不審度] | 理由: [具体的な理由] | 重さ: [タイムアウト期間]
+- **判定基準**:
+  1. **スパム**（短時間に大量の同じ/類似メッセージ）
+  2. **明確な攻撃**（このサーバーはreidされました等）
+  3. **Raid予告や実行**（「このサーバーを潰す」「raided」など）
+  4. **サーバー破壊行為**（権限乱用、Botスパム誘導）
 
-不審度の例:
-- 問題なし: ルールに違反しない場合
-- 軽微な不審: 軽度のスパム、煽りなど
-- 中程度の不審: 攻撃的な発言、軽度のハラスメントなど
-- 重大な不審: 重大なハラスメント、差別発言、Raid行為など
+- **タイムアウト期間**:
+  - 問題なし → 0
+  - 軽微なスパム → **60秒**
+  - サーバーへの明確な攻撃 → **5分**
+  - Raidやサーバー破壊行為 → **1週間**
 
-タイムアウト期間の例（必ずこの中から選んでください）:
-- 1分
-- 5分
-- 30分
-- 1時間
-- 1日
-- 1週間
+以下のフォーマットで簡潔に回答してください:
+[不審度] | 理由: [具体的な理由] | 重さ: [タイムアウト期間] | メッセージ内容: [メッセージ内容]
 
 ---
 メッセージ:
 `;
+---
+メッセージ:
+`;
 
-// ★ AIによる処罰を直接実行するため、スコアは不要
+// AIによる処罰を直接実行するため、スコアは不要
 const RAID_SCORE_AI_JUDGEMENT = 0;
 
-// ★ 時間帯ごとの設定
+// 時間帯ごとの設定
 const NIGHT_START_HOUR = 22; // 22時
 const NIGHT_END_HOUR = 6;    // 6時
 const config = {
@@ -65,7 +63,7 @@ const config = {
     RAID_SCORE_AUDIT_LOG_ABUSE: 30,
   },
   night: {
-    RAID_SCORE_THRESHOLD: 15, // 夜間は閾値を厳しく
+    RAID_SCORE_THRESHOLD: 15,
     RAID_SCORE_MASS_JOIN: 15,
     RAID_SCORE_KEYWORD: 20,
     RAID_SCORE_SIMILAR: 15,
@@ -80,16 +78,16 @@ const config = {
 };
 
 // メンバー参加検知
-const RAID_MEMBER_THRESHOLD = 3; // 3人
-const RAID_TIME_WINDOW = 60 * 1000; // 1分
+const RAID_MEMBER_THRESHOLD = 3;
+const RAID_TIME_WINDOW = 60 * 1000;
 
 // 類似メッセージ検知
-const SIMILAR_MESSAGE_THRESHOLD = 2; // 2回
-const SIMILAR_MESSAGE_LENGTH = 5; // 5文字以上
+const SIMILAR_MESSAGE_THRESHOLD = 2;
+const SIMILAR_MESSAGE_LENGTH = 5;
 
 // 連投検知
-const MASS_SPAM_THRESHOLD = 2; // 2メッセージ
-const MASS_SPAM_TIME_WINDOW = 3 * 1000; // 3秒
+const MASS_SPAM_THRESHOLD = 2;
+const MASS_SPAM_TIME_WINDOW = 3 * 1000;
 
 // 荒らしと判断される特定のキーワード
 const RAID_KEYWORDS = [
@@ -102,8 +100,8 @@ const RAID_KEYWORDS = [
 ];
 
 // 処罰
-const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間
-const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
+const TIMEOUT_DURATION = 5 * 60 * 1000;
+const MARK_DURATION = 48 * 60 * 60 * 1000;
 
 // 危険な権限
 const DANGEROUS_PERMISSIONS = [
@@ -190,6 +188,7 @@ async function handleBotAdd(member) {
 // ★ タイムアウト期間をミリ秒に変換するヘルパー関数
 function parseTimeoutDuration(durationStr) {
   const multipliers = {
+    '秒': 1000,
     '分': 60 * 1000,
     '時間': 60 * 60 * 1000,
     '日': 24 * 60 * 60 * 1000,
@@ -204,7 +203,7 @@ function parseTimeoutDuration(durationStr) {
       }
     }
   }
-  return 0; // 不明な期間の場合は0を返す
+  return 0;
 }
 
 // ★ 新規: AIによる荒らし判定と処罰
@@ -231,7 +230,6 @@ async function handleAiJudgement(message) {
           await message.delete();
         }
 
-        // ★ 処罰理由をユーザーにDMで送信
         const userMessage = `
 サーバーの荒らし対策システムにより、タイムアウトされました。
 **理由:** ${reason}
