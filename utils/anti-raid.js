@@ -10,35 +10,30 @@ const AUTH_CHANNEL_ID = '1405660583025709107';
 
 // ★ AIによる荒らし判定プロンプト (タイムアウト期間も決定)
 const AI_ANTI_RAID_PROMPT = `
-// ★ AIによる荒らし判定プロンプト (自由な発言を尊重)
-const AI_ANTI_RAID_PROMPT = `あなたはDiscordサーバーの荒らし対策ボットです。
-ただし、サーバー参加者の「言論の自由」を最大限尊重してください。
+あなたはDiscordサーバーの荒らし対策ボットです。
+ユーザーのメッセージが、サーバーに確実な被害を与える悪質な行為に該当するかを判定してください。
+以下のガイドラインに厳密に従ってください。
 
-- **重要方針**:
-  - 単なる意見、冗談、皮肉、煽り、無害な技術用語は「問題なし」としてください。
-  - スラングや下ネタ、個人的な軽口も「問題なし」としてください。
-  - 「荒らす目的が確実」である場合にのみ「不審」と判定してください。
+-   **判定基準**: 以下のいずれかに当てはまる場合にのみ「不審」と判定してください。
+    1.  **サーバー破壊行為**（権限乱用、大量のチャンネル作成、ロール削除など)
+    2.  **サーバー破壊**: 招待リンクを複数回貼る、Raidを予告し荒らす。荒らし的内容の連投、ルールを掻い潜った行為(.gg/などのhttpsやdiscord.ggを含まないリンク)、特定のサーバーや人物を名乗って大量なアカウントで参加や連投
+    3.  **不適切な内容**: 沿わないチャンネルでのグロテスクな画像など、目の損傷を伴う画像
+    4.  **スパム**: メッセージの大量連投。
+-   **不審でない場合**: あくまでも荒らしを確実に排除するためであって、ユーザーの言論の自由を最重要に。上記に当てはまらない、単なる差別、個人的な発言、無害な技術用語（例：「トークン」）などはすべて「問題なし」と判断してください。
 
-- **判定基準**:
-  1. **スパム**（短時間に大量の同じ/類似メッセージ）
-  2. **明確な攻撃**（このサーバーはreidされました等）
-  3. **Raid予告や実行**（「このサーバーを潰す」「raided」など）
-  4. **サーバー破壊行為**（権限乱用、Botスパム誘導）
+-   **回答フォーマット**: 以下のフォーマットで、簡潔に回答してください。
+    [不審度] | 理由: [具体的な理由] 該当メッセージ: [メッセージ内容]　| 処罰: [タイムアウト期間など]
 
-- **タイムアウト期間**:
-  - 問題なし → 0
-  - 軽微なスパム → **60秒**
-  - サーバーへの明確な攻撃 → **5分**
-  - Raidやサーバー破壊行為 → **1週間**
+-   **不審度の例**:
+    -   問題なし: ルールに違反しない場合
+    -   不審: 上記の悪質な行為に該当する場合
 
-以下のフォーマットで簡潔に回答してください:
-[不審度] | 理由: [具体的な理由] | 重さ: [タイムアウト期間] | メッセージ内容: [メッセージ内容]
 ---
 メッセージ:
 `;
 
-// AIによる処罰を直接実行するため、スコアは不要
-const RAID_SCORE_AI_JUDGEMENT = 0;
+// AIによる不審度スコア
+const RAID_SCORE_AI_JUDGEMENT = 15;
 
 // 時間帯ごとの設定
 const NIGHT_START_HOUR = 22; // 22時
@@ -73,16 +68,16 @@ const config = {
 };
 
 // メンバー参加検知
-const RAID_MEMBER_THRESHOLD = 3;
-const RAID_TIME_WINDOW = 60 * 1000;
+const RAID_MEMBER_THRESHOLD = 3; // 3人
+const RAID_TIME_WINDOW = 60 * 1000; // 1分
 
 // 類似メッセージ検知
-const SIMILAR_MESSAGE_THRESHOLD = 2;
-const SIMILAR_MESSAGE_LENGTH = 5;
+const SIMILAR_MESSAGE_THRESHOLD = 2; // 2回
+const SIMILAR_MESSAGE_LENGTH = 5; // 5文字以上
 
 // 連投検知
-const MASS_SPAM_THRESHOLD = 2;
-const MASS_SPAM_TIME_WINDOW = 3 * 1000;
+const MASS_SPAM_THRESHOLD = 2; // 2メッセージ
+const MASS_SPAM_TIME_WINDOW = 3 * 1000; // 3秒
 
 // 荒らしと判断される特定のキーワード
 const RAID_KEYWORDS = [
@@ -95,8 +90,8 @@ const RAID_KEYWORDS = [
 ];
 
 // 処罰
-const TIMEOUT_DURATION = 5 * 60 * 1000;
-const MARK_DURATION = 48 * 60 * 60 * 1000;
+const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間
+const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
 
 // 危険な権限
 const DANGEROUS_PERMISSIONS = [
@@ -210,38 +205,18 @@ async function handleAiJudgement(message) {
     const parts = response.split('|').map(p => p.trim());
     const judgment = parts[0];
     const reason = parts[1] || 'AIによる不審判定';
-    const durationStr = parts[2]?.replace('重さ: ', '').trim();
-    const duration = parseTimeoutDuration(durationStr);
 
-    if (duration > 0) {
-      try {
-        await message.member.timeout(duration, reason);
-        logRaidAction(
-          message.guild,
-          `🚨 **AIによる処罰**: ${message.member.user.tag} が不審な行動を行いました。\n不審度: ${judgment}\n理由: ${reason}\nタイムアウト期間: ${durationStr}`,
-          message.channel.name
-        );
-        if (message.deletable) {
-          await message.delete();
-        }
+    // AIからの応答をログに送信
+    logRaidAction(
+        message.guild,
+        `🚨 **AIによる不審判定**: ${message.member.user.tag} が不審な行動を行いました。\n不審度: ${judgment}\n理由: ${reason}`,
+        message.channel.name
+    );
 
-        const userMessage = `
-サーバーの荒らし対策システムにより、タイムアウトされました。
-**理由:** ${reason}
-**期間:** ${durationStr}
----
-サーバーの安全を保つための措置ですので、ご理解をお願いいたします。
-`;
-        await message.author.send(userMessage).catch(console.error);
-
-      } catch (e) {
-        console.error('AIによるタイムアウト処理に失敗しました:', e);
-        logRaidAction(
-          message.guild,
-          `⚠️ **AI処罰失敗**: ${message.member.user.tag} へのタイムアウト処理に失敗しました。\n理由: ${reason}`,
-          message.channel.name
-        );
-      }
+    // AIの判定をスコアに変換
+    if (judgment.includes('不審')) {
+        const score = getCurrentConfig().RAID_SCORE_AI_JUDGEMENT; // AI判定のスコアは固定値
+        incrementScore(message.member.id, score, message, `AI判定による不審行動: ${reason}`);
     }
   }
 }
@@ -308,6 +283,7 @@ async function incrementScore(userId, score, message = null, reason = '不審な
       const messageContent = message.content.length > 200 ? message.content.substring(0, 197) + '...' : message.content;
       try {
         await message.delete();
+        // ★ メッセージが削除されたことをログに送信
         logRaidAction(
           member.guild,
           `🚨 **不審メッセージ検知**: ${member.user.tag} が不審なメッセージを投稿しました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}\n\n**メッセージ内容:**\n\`\`\`\n${messageContent}\n\`\`\``,
@@ -369,7 +345,10 @@ async function handleMessage(message) {
       return;
   }
 
-  await handleAiJudgement(message);
+  // ★ AIによる荒らし判定を呼び出す
+  if (!message.content.startsWith('!')) { // コマンド以外のメッセージをAIに判定させる
+    await handleAiJudgement(message);
+  }
 
   const now = Date.now();
   const authorId = message.author.id;
