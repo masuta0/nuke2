@@ -8,7 +8,7 @@ const { chat } = require('./ai');
 const LOG_CHANNEL_ID = '1405660583025709106';
 const AUTH_CHANNEL_ID = '1405660583025709107';
 
-// ★ AIによる荒らし判定プロンプト
+// ★ AIによる荒らし判定プロンプト (タイムアウト期間も決定)
 const AI_ANTI_RAID_PROMPT = `
 あなたはDiscordサーバーの荒らし対策ボットです。
 以下のメッセージがサーバーのルールに違反しているか、または不適切かを判定してください。
@@ -16,6 +16,8 @@ const AI_ANTI_RAID_PROMPT = `
 
 ルール違反の例:
 - スパム行為（同じ内容の連投、意味不明な文字の羅列など）
+- ハラスメント（個人攻撃、いじめ、煽りなど）
+- 差別発言（人種、性別、国籍など）
 - 不適切な内容（NSFW、グロテスクな内容など）
 - 荒らし行為（Raid予告、サーバーの破壊を促す発言など）
 - その他、サーバーの健全な運営を妨げる行為
@@ -40,22 +42,8 @@ const AI_ANTI_RAID_PROMPT = `
 メッセージ:
 `;
 
-// ★ AIによる監査ログ判定プロンプト
-const AI_AUDIT_LOG_PROMPT = `
-あなたはDiscordサーバーの管理者補佐AIです。
-以下の監査ログの内容を分析し、悪意のある操作であるか判定してください。
-- 悪意のある操作と判断した場合は「不審」、そうでない場合は「問題なし」と簡潔に答えてください。
-
-監査ログ:
-操作者: {executor}
-操作内容: {action}
-操作対象: {target}
-変更内容: {changes}
-`;
-
-// ★ AIによる不審度スコア
-const RAID_SCORE_AI_JUDGEMENT = 12;
-const RAID_SCORE_AI_AUDIT_LOG = 25; // ★ 監査ログ用スコア
+// ★ AIによる処罰を直接実行するため、スコアは不要
+const RAID_SCORE_AI_JUDGEMENT = 0;
 
 // ★ 時間帯ごとの設定
 const NIGHT_START_HOUR = 22; // 22時
@@ -518,7 +506,7 @@ async function getOrCreateLogChannel(guild) {
 async function handleAdminAbuse(guild, executor, actionType) {
     if (!executor || executor.bot) return;
 
-    const now = Date.Now();
+    const now = Date.now();
     const abuseKey = `${guild.id}-${executor.id}`;
 
     if (!adminAbuseLog.has(abuseKey)) {
