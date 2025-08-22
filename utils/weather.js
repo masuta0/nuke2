@@ -2,12 +2,11 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
-const { ensureFolder, downloadToLocal, uploadFile } = require('./storage');
+const { ensureFolder, uploadToDropbox, downloadFromDropbox } = require('./storage');
 const API_KEY = process.env.WEATHER_API_KEY;
-const WEATHER_DIR = process.env.DROPBOX_WEATHER_DIR || './data/weather';
+const WEATHER_DIR = process.env.DROPBOX_WEATHER_DIR || '/weather';
 
 async function fetchWeather(location) {
-  // ... (既存の fetchWeather 関数は変更なし)
   try {
     const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${API_KEY}&units=metric&lang=ja`);
     const data = response.data;
@@ -21,30 +20,26 @@ async function fetchWeather(location) {
 }
 
 async function saveUserWeatherPref(userId, location) {
-  const filePath = path.join(WEATHER_DIR, `${userId}.json`);
   const data = { location, savedAt: new Date().toISOString() };
   try {
-    // ★ 修正: ローカルフォルダが存在しない場合に作成
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(data, null, 2));
-
-    // ★ 修正: Dropboxフォルダが存在しない場合に作成
-    const dropboxFolderPath = process.env.DROPBOX_WEATHER_DIR || '/weather';
+    const dropboxFolderPath = WEATHER_DIR;
     await ensureFolder(dropboxFolderPath);
 
-    await uploadFile(filePath, `${dropboxFolderPath}/${userId}.json`);
+    // ★ 修正: uploadFileの代わりにuploadToDropboxを使用
+    const success = await uploadToDropbox(`${dropboxFolderPath}/${userId}.json`, JSON.stringify(data, null, 2));
+    return success;
   } catch (e) {
     console.error(`天気設定の保存に失敗しました: ${e}`);
+    return false;
   }
 }
 
 async function loadUserWeatherPref(userId) {
-  const filePath = path.join(WEATHER_DIR, `${userId}.json`);
   try {
-    const dropboxFolderPath = process.env.DROPBOX_WEATHER_DIR || '/weather';
-    const success = await downloadToLocal(`${dropboxFolderPath}/${userId}.json`, filePath);
-    if (success) {
-      const data = await fs.readFile(filePath, 'utf-8');
+    const dropboxFolderPath = WEATHER_DIR;
+    // ★ 修正: downloadToLocalの代わりにdownloadFromDropboxを使用
+    const data = await downloadFromDropbox(`${dropboxFolderPath}/${userId}.json`);
+    if (data) {
       const pref = JSON.parse(data);
       return pref.location;
     }
