@@ -758,10 +758,6 @@ function hasManageGuildPermission(member) {
   return member?.permissions?.has(PermissionsBitField.Flags.ManageGuild) || false;
 }
 
-// 不審行動監視ユーティリティ（新しいもの）
-const executorActionLog = new Map();
-const probationAdmins = new Map();
-
 function isInProbation(userId) {
   const p = probationAdmins.get(userId);
   return p && Date.now() - p < PROBATION_MS;
