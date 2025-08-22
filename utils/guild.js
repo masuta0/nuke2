@@ -1,10 +1,9 @@
 // utils/guild.js
-
 const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
-
 const { LOG_CHANNEL_ID } = require('./anti-raid');
+
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
@@ -107,107 +106,126 @@ async function restoreServer(guild, feedbackChannel) {
   const backup = loadBackup(guild.id);
   if (!backup) return false;
 
-  for (const ch of guild.channels.cache.values()) {
-    if (ch.id === LOG_CHANNEL_ID) continue;
-    try { await ch.delete('Restore: clear channels'); await delay(50); } catch {}
-  }
-
-  const deletable = guild.roles.cache
-    .filter(r => !r.managed && r.id !== guild.id)
-    .sort((a, b) => a.position - b.position);
-  for (const r of deletable.values()) {
-    try { await r.delete('Restore: clear roles'); await delay(50); } catch {}
-  }
+  const existingRoles = guild.roles.cache;
+  const existingChannels = guild.channels.cache;
 
   const roleIdMap = new Map();
+  roleIdMap.set(guild.id, guild.id); // @everyone ロールをマッピング
+
+  // ★ 1. 不足しているロールを作成
   for (const r of backup.roles) {
     if (r.id === guild.id) continue;
-    try {
-      const created = await guild.roles.create({
-        name: r.name,
-        color: r.color,
-        hoist: r.hoist,
-        mentionable: r.mentionable,
-        permissions: BigInt(r.permissions),
-        reason: 'Restore: create role'
-      });
-      roleIdMap.set(r.id, created.id);
-      await delay(60);
-    } catch {}
+    const existingRole = existingRoles.find(er => er.name === r.name);
+    if (!existingRole) {
+      try {
+        const created = await guild.roles.create({
+          name: r.name,
+          color: r.color,
+          hoist: r.hoist,
+          mentionable: r.mentionable,
+          permissions: BigInt(r.permissions),
+          reason: 'Restore: create missing role'
+        });
+        roleIdMap.set(r.id, created.id);
+        await delay(60);
+      } catch (e) {
+        console.error(`ロール ${r.name} の作成に失敗しました:`, e);
+      }
+    } else {
+      roleIdMap.set(r.id, existingRole.id);
+    }
   }
 
   const channelIdMap = new Map();
-  const categories = backup.channels.filter(c => c.type === ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
+  // ★ 2. 不足しているカテゴリを作成
+  const categories = backup.channels.filter(c => c.type === ChannelType.GuildCategory);
   for (const cat of categories) {
-    try {
-      const created = await guild.channels.create({
-        name: cat.name,
-        type: ChannelType.GuildCategory,
-        position: cat.position,
-        reason: 'Restore: create category'
-      });
-      channelIdMap.set(cat.id, created.id);
-      if (cat.overwrites?.length) {
-        await created.permissionOverwrites.set(
-          cat.overwrites.map(ow => ({
-            id: roleIdMap.get(ow.id) || guild.id,
-            allow: BigInt(ow.allow),
-            deny: BigInt(ow.deny),
-            type: ow.type
-          })),
-          'Restore: set category overwrites'
-        );
+    const existingCat = existingChannels.find(ec => ec.name === cat.name && ec.type === ChannelType.GuildCategory);
+    if (!existingCat) {
+      try {
+        const created = await guild.channels.create({
+          name: cat.name,
+          type: ChannelType.GuildCategory,
+          position: cat.position,
+          reason: 'Restore: create missing category'
+        });
+        channelIdMap.set(cat.id, created.id);
+        if (cat.overwrites?.length) {
+          await created.permissionOverwrites.set(
+            cat.overwrites.map(ow => ({
+              id: roleIdMap.get(ow.id) || guild.id,
+              allow: BigInt(ow.allow),
+              deny: BigInt(ow.deny),
+              type: ow.type
+            })),
+            'Restore: set category overwrites'
+          );
+        }
+        await delay(60);
+      } catch (e) {
+        console.error(`カテゴリ ${cat.name} の作成に失敗しました:`, e);
       }
-      await delay(60);
-    } catch {}
+    } else {
+      channelIdMap.set(cat.id, existingCat.id);
+    }
   }
 
-  const others = backup.channels.filter(c => c.type !== ChannelType.GuildCategory).sort((a, b) => a.position - b.position);
+  // ★ 3. 不足しているテキスト/ボイスチャンネルを作成
+  const others = backup.channels.filter(c => c.type !== ChannelType.GuildCategory);
   for (const ch of others) {
     if (ch.id === LOG_CHANNEL_ID) continue;
-    try {
-      const payload = {
-        name: ch.name,
-        type: ch.type,
-        parent: ch.parentId ? channelIdMap.get(ch.parentId) || null : null,
-        position: ch.position,
-        reason: 'Restore: create channel'
-      };
-      if ([ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum].includes(ch.type)) {
-        payload.topic = ch.topic || null;
-        payload.nsfw = !!ch.nsfw;
-        payload.rateLimitPerUser = ch.rateLimitPerUser || 0;
+    const existingCh = existingChannels.find(ec => ec.name === ch.name && ec.type === ch.type);
+    if (!existingCh) {
+      try {
+        const payload = {
+          name: ch.name,
+          type: ch.type,
+          parent: ch.parentId ? channelIdMap.get(ch.parentId) || null : null,
+          position: ch.position,
+          reason: 'Restore: create missing channel'
+        };
+        if ([ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildForum].includes(ch.type)) {
+          payload.topic = ch.topic || null;
+          payload.nsfw = !!ch.nsfw;
+          payload.rateLimitPerUser = ch.rateLimitPerUser || 0;
+        }
+        if ([ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(ch.type)) {
+          payload.bitrate = ch.bitrate || null;
+          payload.userLimit = ch.userLimit || null;
+        }
+        const created = await guild.channels.create(payload);
+        channelIdMap.set(ch.id, created.id);
+        if (ch.overwrites?.length) {
+          await created.permissionOverwrites.set(
+            ch.overwrites.map(ow => ({
+              id: roleIdMap.get(ow.id) || guild.id,
+              allow: BigInt(ow.allow),
+              deny: BigInt(ow.deny),
+              type: ow.type
+            })),
+            'Restore: set overwrites'
+          );
+        }
+        await delay(60);
+      } catch (e) {
+        console.error(`チャンネル ${ch.name} の作成に失敗しました:`, e);
       }
-      if ([ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(ch.type)) {
-        payload.bitrate = ch.bitrate || null;
-        payload.userLimit = ch.userLimit || null;
-      }
-      const created = await guild.channels.create(payload);
-      channelIdMap.set(ch.id, created.id);
-      if (ch.overwrites?.length) {
-        await created.permissionOverwrites.set(
-          ch.overwrites.map(ow => ({
-            id: roleIdMap.get(ow.id) || guild.id,
-            allow: BigInt(ow.allow),
-            deny: BigInt(ow.deny),
-            type: ow.type
-          })),
-          'Restore: set overwrites'
-        );
-      }
-      await delay(60);
-    } catch {}
+    }
   }
 
   try {
     if (backup.meta?.name && guild.name !== backup.meta.name) await guild.setName(backup.meta.name, 'Restore: guild name');
     if (backup.meta?.iconURL) await guild.setIcon(backup.meta.iconURL, 'Restore: guild icon');
-  } catch {}
+  } catch (e) {
+    console.error('サーバーメタデータの復元に失敗しました:', e);
+  }
 
   try {
     const textChannels = guild.channels.cache.filter(c => c.isTextBased());
     if (textChannels.size > 0) await textChannels.random().send('✅ バックアップを復元完了しました');
-  } catch {}
+  } catch (e) {
+    console.error('復元完了メッセージの送信に失敗しました:', e);
+  }
 
   return true;
 }
