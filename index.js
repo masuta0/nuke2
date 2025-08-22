@@ -1,11 +1,11 @@
+// index.js
+
 require('dotenv').config();
-const fs = require('fs');
-const path = require('path');
 const express = require('express');
 const https = require('https');
-const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent, PermissionsBitField } = require('discord.js');
+const fs = require('fs');
 
-// utils
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
@@ -51,8 +51,7 @@ if (process.env.SELF_URL) {
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  await ensureDropboxInit(); // Dropbox初期化
-
+  await ensureDropboxInit();
   preloadQuizzes();
   await loadAllLocalWeatherPrefsIfAny();
   await loadData();
@@ -152,23 +151,25 @@ client.on('messageCreate', async (message) => {
 });
 
 // ==== 他のイベント（メンバー参加、ロール更新、リアクション、監査ログなど） ====
+client.on('messageUpdate', async (oldMessage, newMessage) => {
+    handleMessageUpdate(oldMessage, newMessage);
+});
 client.on('guildMemberAdd', async (member) => {
   const fetchedMember = await member.guild.members.fetch(member.id).catch(() => null);
   if (!fetchedMember) return;
-
   if (fetchedMember.user.bot) {
     const isKicked = await handleBotAdd(fetchedMember);
     if (isKicked) return;
   }
-
   handleMemberJoin(fetchedMember);
   const logChannel = member.guild.channels.cache.get(JOIN_LOG_CHANNEL_ID);
   if (logChannel) {
     logChannel.send(`🟢 **${fetchedMember.user.tag}** がサーバーに参加しました！`).catch(console.error);
   }
 });
-
-client.on('roleUpdate', handleRoleUpdate);
+client.on('roleUpdate', async (oldRole, newRole) => {
+    handleRoleUpdate(oldRole, newRole);
+});
 client.on('messageReactionAdd', async (reaction, user) => {
   await handleReactionAdd(reaction, user);
   if (user.bot) return;
@@ -176,7 +177,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
     await askQuiz(reaction.message.channel, user, 'mix');
   }
 });
-client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
+client.on('guildAuditLogEntryCreate', async (entry) => {
+    if (entry.action === AuditLogEvent.MEMBER_ROLE_UPDATE || entry.action === AuditLogEvent.CHANNEL_OVERWRITE_UPDATE || entry.action === AuditLogEvent.WEBHOOK_CREATE || entry.action === AuditLogEvent.WEBHOOK_UPDATE) {
+        handleAuditLogEntry(entry);
+    }
+});
 
 // ==== Login ====
 client.login(TOKEN);
