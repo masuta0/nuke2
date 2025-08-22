@@ -4,15 +4,18 @@ require('dotenv').config();
 const express = require('express');
 const https = require('https');
 const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent, PermissionsBitField } = require('discord.js');
-const fs = require('fs');
+
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+if (!global.fetch) global.fetch = fetch;
 
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
-const { ensureDropboxInit, uploadToDropbox, downloadFromDropbox } = require('./utils/storage');
+const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes, askQuiz } = require('./utils/quiz');
-const { loadAllLocalWeatherPrefsIfAny } = require('./utils/weather');
+const { fetchWeather } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
+
 const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry, handleMessageUpdate, handleBotAdd } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
 
@@ -53,7 +56,6 @@ client.once('ready', async () => {
 
   await ensureDropboxInit();
   preloadQuizzes();
-  await loadAllLocalWeatherPrefsIfAny();
   await loadData();
 
   const start = Date.now();
@@ -65,11 +67,10 @@ client.once('ready', async () => {
     const text = `稼働中 | ${h}h ${m}m ${s}s`;
     try {
       client.user.setActivity(text, { type: ActivityType.Watching });
-    } catch (_) {}
+    } catch (_) { }
   };
   updateUptimeStatus();
   setInterval(updateUptimeStatus, 2000);
-
   try {
     await registerSlashCommands(client);
     console.log('✅ スラッシュコマンド登録完了');
@@ -78,7 +79,7 @@ client.once('ready', async () => {
   }
 });
 
-// ==== メッセージイベント ====
+// ==== 荒らし対策とコマンド処理 ====
 client.on('messageCreate', async (message) => {
   await handleMessage(message);
 
@@ -101,8 +102,11 @@ client.on('messageCreate', async (message) => {
 
   switch (command) {
     case 'join':
-      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-      if (await joinVoice(message.guild, message.member.voice.channel)) {
+      if (!message.member?.voice.channel) {
+        return message.reply('❌ ボイスチャンネルに参加してからコマンドを実行してください。');
+      }
+      const joinSuccess = await joinVoice(message.guild, message.member.voice.channel);
+      if (joinSuccess) {
         message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
       } else {
         message.reply('❌ ボイスチャンネルへの参加に失敗しました。');
@@ -110,38 +114,33 @@ client.on('messageCreate', async (message) => {
       break;
 
     case 'play':
-      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
+      if (!message.member?.voice.channel) {
+        return message.reply('❌ ボイスチャンネルに参加してからコマンドを実行してください。');
+      }
       const query = args.join(' ');
-      if (!query) return message.reply('❌ 曲名またはURLを入力してください');
+      if (!query) {
+        return message.reply('❌ 再生したい曲名またはURLを入力してください。');
+      }
       const title = await playUrl(message.guild.id, query, message.channel);
-      message.channel.send(title ? `▶️ 再生キューに追加: **${title}**` : '❌ 曲が見つかりませんでした');
+      if (title) {
+        message.channel.send(`▶️ 再生キューに追加: **${title}**`);
+      } else {
+        message.channel.send('❌ 申し訳ありません、曲が見つかりませんでした。');
+      }
       break;
 
     case 'stop':
       const stopped = stopMusic(message.guild.id);
-      message.channel.send(stopped ? '⏹️ 再生を停止し、キューをクリアしました' : '❌ 再生中の曲はありません');
+      if (stopped) {
+        message.channel.send('⏹️ 再生を停止し、キューをクリアしました。');
+      } else {
+        message.reply('❌ 再生中の曲はありません。');
+      }
       break;
 
     case 'leave':
       await leaveVoice(message.guild.id);
-      message.channel.send('👋 ボイスチャンネルから退出しました');
-      break;
-
-    case 'uploadquiz':
-      if (!fs.existsSync('./quizzes.json')) return message.reply('❌ quizzes.json が存在しません');
-      const contents = fs.readFileSync('./quizzes.json');
-      const result = await uploadToDropbox('/quizzes.json', contents);
-      message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
-      break;
-
-    case 'downloadquiz':
-      const data = await downloadFromDropbox('/quizzes.json');
-      if (data) {
-        fs.writeFileSync('./quizzes.json', JSON.stringify(data, null, 2));
-        message.reply('✅ Dropboxからダウンロードしました');
-      } else {
-        message.reply('❌ ダウンロード失敗');
-      }
+      message.channel.send('👋 ボイスチャンネルから退出しました。');
       break;
 
     default:
@@ -150,38 +149,49 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// ==== 他のイベント（メンバー参加、ロール更新、リアクション、監査ログなど） ====
 client.on('messageUpdate', async (oldMessage, newMessage) => {
-    handleMessageUpdate(oldMessage, newMessage);
+  await handleMessageUpdate(oldMessage, newMessage);
 });
+
 client.on('guildMemberAdd', async (member) => {
   const fetchedMember = await member.guild.members.fetch(member.id).catch(() => null);
   if (!fetchedMember) return;
+
   if (fetchedMember.user.bot) {
     const isKicked = await handleBotAdd(fetchedMember);
     if (isKicked) return;
   }
+
   handleMemberJoin(fetchedMember);
+
   const logChannel = member.guild.channels.cache.get(JOIN_LOG_CHANNEL_ID);
   if (logChannel) {
-    logChannel.send(`🟢 **${fetchedMember.user.tag}** がサーバーに参加しました！`).catch(console.error);
+    const welcomeMessage = `🟢 **${fetchedMember.user.tag}** がサーバーに参加しました！`;
+    logChannel.send(welcomeMessage).catch(console.error);
   }
 });
+
 client.on('roleUpdate', async (oldRole, newRole) => {
     handleRoleUpdate(oldRole, newRole);
 });
+
+
 client.on('messageReactionAdd', async (reaction, user) => {
   await handleReactionAdd(reaction, user);
+
   if (user.bot) return;
-  if (reaction.emoji.name === '👍' && reaction.message.author.id === client.user.id && reaction.message.content.includes('クイズを続けますか？')) {
-    await askQuiz(reaction.message.channel, user, 'mix');
+  if (reaction.emoji.name === '👍') {
+    if (reaction.message.author.id !== client.user.id) return;
+    if (reaction.message.content.includes('クイズを続けますか？')) {
+      await askQuiz(reaction.message.channel, user, 'mix');
+    }
   }
 });
+
 client.on('guildAuditLogEntryCreate', async (entry) => {
     if (entry.action === AuditLogEvent.MEMBER_ROLE_UPDATE || entry.action === AuditLogEvent.CHANNEL_OVERWRITE_UPDATE || entry.action === AuditLogEvent.WEBHOOK_CREATE || entry.action === AuditLogEvent.WEBHOOK_UPDATE) {
         handleAuditLogEntry(entry);
     }
 });
 
-// ==== Login ====
 client.login(TOKEN);
