@@ -718,3 +718,81 @@ async function onGuildMemberRemove(member) {
     }
   }, 1500);
 }
+// utils/anti-raid.js の最後に追加
+module.exports = {
+  // 外部から呼び出したい関数や変数をここに列挙
+  handleMemberJoin,
+  handleMessage,
+  handleReactionAdd,
+  handleRoleUpdate,
+  handleAuditLogEntry,
+  handleMessageUpdate,
+  handleBotAdd,
+  onGuildMemberUpdate,
+  onGuildBanAdd,
+  onGuildMemberRemove,
+  pendingModActions,
+  restoreRoles,
+  hasManageGuildPermission, // この関数は元のindex.jsから移動したため、追加
+  backupServerState,
+  restoreServerState,
+  isReasonAppropriate,
+};
+
+// ユーティリティ関数
+function snippet(text, maxLength = 30) {
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+}
+
+async function safeDelete(message, reason) {
+  try {
+    if (message.deletable) await message.delete();
+  } catch (e) {
+    console.error(`Failed to delete message: ${e.message}`);
+  }
+}
+
+// 権限チェック関数 (index.js から移動)
+function hasManageGuildPermission(member) {
+  return member?.permissions?.has(PermissionsBitField.Flags.ManageGuild) || false;
+}
+
+// 不審行動監視ユーティリティ（新しいもの）
+const executorActionLog = new Map();
+const probationAdmins = new Map();
+
+function isInProbation(userId) {
+  const p = probationAdmins.get(userId);
+  return p && Date.now() - p < PROBATION_MS;
+}
+
+async function stripAllRoles(guild, userId, reason) {
+  const member = guild.members.cache.get(userId);
+  if (!member || !member.manageable) return false;
+  try {
+    await member.roles.set([], `荒らし対策: ${reason}`);
+    probationAdmins.set(userId, Date.now());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function recordAndCheckMassAction(executorId, targetId, actionType) {
+  const now = Date.now();
+  if (!executorActionLog.has(executorId)) {
+    executorActionLog.set(executorId, { KICK: [], BAN: [], TIMEOUT: [] });
+  }
+  const log = executorActionLog.get(executorId)[actionType];
+  log.push({ timestamp: now, target: targetId });
+  const recentActions = log.filter(a => now - a.timestamp <= MASS_ACTION_WINDOW_MS);
+  executorActionLog.get(executorId)[actionType] = recentActions;
+  return recentActions.length > 2; // 閾値は2
+}
+
+async function findExecutorForTarget(guild, actionType, targetId) {
+  const logs = await guild.fetchAuditLogs({ type: actionType, limit: 5 });
+  const entry = logs.entries.find(e => e.target?.id === targetId);
+  return entry?.executor;
+}
