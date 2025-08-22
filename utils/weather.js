@@ -7,16 +7,32 @@ const API_KEY = process.env.WEATHER_API_KEY;
 const WEATHER_DIR = process.env.DROPBOX_WEATHER_DIR || './data/weather';
 
 async function fetchWeather(location) {
-  // ...
+  // ... (既存の fetchWeather 関数は変更なし)
+  try {
+    const response = await axios.get(`https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${API_KEY}&units=metric&lang=ja`);
+    const data = response.data;
+    const weather = data.weather[0].description;
+    const temp = data.main.temp;
+    return `**${data.name}**の天気: ${weather}, 気温: ${temp}°C`;
+  } catch (e) {
+    console.error(`天気情報取得失敗: ${e}`);
+    return null;
+  }
 }
 
 async function saveUserWeatherPref(userId, location) {
   const filePath = path.join(WEATHER_DIR, `${userId}.json`);
   const data = { location, savedAt: new Date().toISOString() };
   try {
-    await ensureFolder(WEATHER_DIR); // Dropboxのフォルダ確保
+    // ★ 修正: ローカルフォルダが存在しない場合に作成
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, JSON.stringify(data, null, 2));
-    await uploadFile(filePath, `${process.env.DROPBOX_WEATHER_DIR}/${userId}.json`); // Dropboxにアップロード
+
+    // ★ 修正: Dropboxフォルダが存在しない場合に作成
+    const dropboxFolderPath = process.env.DROPBOX_WEATHER_DIR || '/weather';
+    await ensureFolder(dropboxFolderPath);
+
+    await uploadFile(filePath, `${dropboxFolderPath}/${userId}.json`);
   } catch (e) {
     console.error(`天気設定の保存に失敗しました: ${e}`);
   }
@@ -25,8 +41,8 @@ async function saveUserWeatherPref(userId, location) {
 async function loadUserWeatherPref(userId) {
   const filePath = path.join(WEATHER_DIR, `${userId}.json`);
   try {
-    // Dropboxからローカルにダウンロード
-    const success = await downloadToLocal(`${process.env.DROPBOX_WEATHER_DIR}/${userId}.json`, filePath);
+    const dropboxFolderPath = process.env.DROPBOX_WEATHER_DIR || '/weather';
+    const success = await downloadToLocal(`${dropboxFolderPath}/${userId}.json`, filePath);
     if (success) {
       const data = await fs.readFile(filePath, 'utf-8');
       const pref = JSON.parse(data);
