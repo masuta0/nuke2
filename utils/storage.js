@@ -1,21 +1,13 @@
 // utils/storage.js
-
 const fs = require('fs');
 const path = require('path');
 const { Dropbox } = require('dropbox');
-
-// `node-fetch` v3以降はESM形式のため、動的インポートを使用
-// Dropbox SDKに明示的に注入
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
-
-// 環境変数から読み込む
 const APP_KEY = process.env.DROPBOX_APP_KEY;
 const APP_SECRET = process.env.DROPBOX_APP_SECRET;
 const REFRESH_TOKEN = process.env.DROPBOX_REFRESH_TOKEN;
-
 let dbx = null;
 
-// Dropboxを初期化し、アクセストークンを自動更新する
 async function ensureDropboxInit() {
   if (!APP_KEY || !APP_SECRET || !REFRESH_TOKEN) {
     console.warn('Dropbox環境変数が設定されていません。Dropbox機能はスキップされます。');
@@ -28,21 +20,18 @@ async function ensureDropboxInit() {
       refreshToken: REFRESH_TOKEN,
       fetch,
     });
-    // アクセストークンの自動更新を有効にする
     dbx.auth.refreshAccessToken();
     console.log("✅ Dropboxクライアントを初期化しました。");
   }
   return dbx;
 }
 
-// ★ 新規: フォルダの存在を確認し、なければ作成する関数
 async function ensureFolder(folderPath) {
   const client = await ensureDropboxInit();
   if (!client) return false;
   try {
     await client.filesCreateFolderV2({ path: folderPath, autorename: false });
   } catch (e) {
-    // フォルダが既に存在する場合、エラーを無視
     if (e.error?.error?.path?.['.tag'] === 'conflict') {
       return true;
     }
@@ -52,7 +41,24 @@ async function ensureFolder(folderPath) {
   return true;
 }
 
-// ファイルをDropboxにアップロードする
+// ★ 新規: ファイルをDropboxからローカルにダウンロードする関数
+async function downloadToLocal(dropboxPath, localPath) {
+  const client = await ensureDropboxInit();
+  if (!client) return false;
+  try {
+    const res = await client.filesDownload({ path: dropboxPath });
+    const ab = res?.result?.fileBinary;
+    if (!ab) return false;
+    fs.mkdirSync(path.dirname(localPath), { recursive: true });
+    fs.writeFileSync(localPath, Buffer.from(ab));
+    console.log(`✅ Dropboxからローカルにダウンロード成功: ${dropboxPath}`);
+    return true;
+  } catch (e) {
+    console.warn('Dropbox読み込み失敗:', e?.error || e?.message || e);
+    return false;
+  }
+}
+
 async function uploadToDropbox(dropboxPath, contents) {
   const client = await ensureDropboxInit();
   if (!client) return false;
@@ -60,7 +66,7 @@ async function uploadToDropbox(dropboxPath, contents) {
     await client.filesUpload({
       path: dropboxPath,
       contents,
-      mode: { '.tag': 'overwrite' },
+      mode: { '.tag': 'overwrite' }
     });
     console.log(`✅ Dropboxにアップロード成功: ${dropboxPath}`);
     return true;
@@ -70,7 +76,6 @@ async function uploadToDropbox(dropboxPath, contents) {
   }
 }
 
-// ファイルをDropboxからダウンロードする
 async function downloadFromDropbox(dropboxPath) {
   const client = await ensureDropboxInit();
   if (!client) return null;
@@ -84,7 +89,6 @@ async function downloadFromDropbox(dropboxPath) {
     return null;
   } catch (err) {
     if (err.status === 409 && err.error?.error?.['.tag'] === 'path' && err.error.error.path['.tag'] === 'not_found') {
-      // ファイルが見つからない場合、nullを返す
       console.warn(`Dropbox読み込み失敗: ファイルが見つかりません: ${dropboxPath}`);
       return null;
     }
@@ -93,10 +97,10 @@ async function downloadFromDropbox(dropboxPath) {
   }
 }
 
-// モジュールとして関数をエクスポート
 module.exports = {
   ensureDropboxInit,
-  ensureFolder, // ★追記
+  ensureFolder,
   uploadToDropbox,
   downloadFromDropbox,
+  downloadToLocal, // ★ 追記
 };
