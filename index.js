@@ -3,7 +3,7 @@
 require('dotenv').config();
 const express = require('express');
 const https = require('https');
-const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent, ChannelType } = require('discord.js');
 
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 if (!global.fetch) global.fetch = fetch;
@@ -16,8 +16,9 @@ const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { fetchWeather } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
-const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry, handleMessageUpdate, handleBotAdd } = require('./utils/anti-raid');
+const { handleMemberJoin, handleMessage, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry, handleMessageUpdate, handleBotAdd, pendingModActions, DANGER_ACTIONS } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
+const { restoreRoles } = require('./utils/anti-raid');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -32,7 +33,9 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.GuildMembers
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildPresences,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction]
 });
@@ -81,6 +84,33 @@ client.once('ready', async () => {
 
 // ==== 荒らし対策とコマンド処理 ====
 client.on('messageCreate', async (message) => {
+  // DMからのメッセージの場合
+  if (message.channel.type === ChannelType.DM) {
+    const pendingAction = pendingModActions.get(message.author.id);
+    if (pendingAction) {
+      const aiResponse = await chat(`ユーザーからの返信: "${message.content}"。
+      この返信が、以前のサーバー操作（${AuditLogEvent[pendingAction.entry.action]}）の適切な理由として妥当かを判断してください。
+      - 妥当と判断した場合は「適切」と、そうでない場合は「不適切」と回答してください。`, message.author.id);
+
+      if (aiResponse.includes('適切')) {
+        await message.reply('✅ 理由が確認されました。');
+        await restoreRoles(await message.client.guilds.cache.get(pendingAction.entry.guild.id).members.fetch(message.author.id));
+        pendingModActions.delete(message.author.id);
+      } else {
+        pendingAction.reasonAttempts++;
+        if (pendingAction.reasonAttempts >= 3) {
+          await message.reply('❌ 理由が不適切と判断されたため、権限を剥奪します。');
+          const member = await message.client.guilds.cache.get(pendingAction.entry.guild.id).members.fetch(message.author.id);
+          await member.roles.set([], 'DMでの理由確認が不適切');
+          pendingModActions.delete(message.author.id);
+        } else {
+          await message.reply(`⚠️ 理由が不適切と判断されました。再提出してください。\n（残り${3 - pendingAction.reasonAttempts}回）`);
+        }
+      }
+    }
+    return;
+  }
+
   await handleMessage(message);
 
   if (message.author.bot) return;
@@ -143,6 +173,23 @@ client.on('messageCreate', async (message) => {
       message.channel.send('👋 ボイスチャンネルから退出しました。');
       break;
 
+    case 'quiz':
+      await askQuiz(message.channel, message.author, args[0]);
+      break;
+
+    case 'weather':
+      if (args.length === 0) {
+        return message.reply('❌ 都市名を入力してください。例: `!weather Tokyo`');
+      }
+      const location = args.join(' ');
+      const weatherInfo = await fetchWeather(location);
+      if (weatherInfo) {
+        message.channel.send(weatherInfo);
+      } else {
+        message.reply('❌ 天気情報の取得に失敗しました。都市名を確認してください。');
+      }
+      break;
+
     default:
       handlePrefixMessage(client, message);
       break;
@@ -188,10 +235,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
   }
 });
 
+// ★ 監査ログエントリ作成時のイベント
 client.on('guildAuditLogEntryCreate', async (entry) => {
-    if (entry.action === AuditLogEvent.MEMBER_ROLE_UPDATE || entry.action === AuditLogEvent.CHANNEL_OVERWRITE_UPDATE || entry.action === AuditLogEvent.WEBHOOK_CREATE || entry.action === AuditLogEvent.WEBHOOK_UPDATE) {
-        handleAuditLogEntry(entry);
-    }
+    await handleAuditLogEntry(entry);
 });
 
 client.login(TOKEN);
