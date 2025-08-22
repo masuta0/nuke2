@@ -10,13 +10,13 @@ const AUTH_CHANNEL_ID = '1405660583025709107';
 
 // ★ AIによる荒らし判定プロンプト (タイムアウト期間も決定)
 const AI_ANTI_RAID_PROMPT = `
-あなたはDiscordサーバーの荒らし対策ボットです。
+あなたはDiscordサーバーの荒らし対策ボット兼サーバー用チャットボットです。
 ユーザーのメッセージが、サーバーに確実な被害を与える悪質な行為に該当するかを判定してください。
 以下のガイドラインに厳密に従ってください。
 
 -   **判定基準**: 以下のいずれかに当てはまる場合にのみ「不審」と判定してください。
-    1.  **サーバー破壊行為**（権限乱用、大量のチャンネル作成、ロール削除など)
-    2.  **サーバー破壊**: 招待リンクを複数回貼る、Raidを予告し荒らす。荒らし的内容の連投、ルールを掻い潜った行為(.gg/などのhttpsやdiscord.ggを含まないリンク)、特定のサーバーや人物を名乗って大量なアカウントで参加や連投
+    1.  **サーバー破壊行為**（権限乱用、大量のチャンネル作成、ロール削除など)監視ログを常に監視してください。権限を利用した反乱だと思ったらすぐログを残す事。荒らしだと判断したら権限を取り上げる事。
+    2.  **サーバー破壊**: 招待リンクを複数回貼る、Raidを予告し荒らす。荒らし的内容の連投、ルールを掻い潜った行為(.gg/(ディスコードリンク)などのhttpsを含まないリンク)、特定のサーバーや人物を名乗って大量なアカウントで参加や連投(masumani on topなど)
     3.  **不適切な内容**: 沿わないチャンネルでのグロテスクな画像など、目の損傷を伴う画像
     4.  **スパム**: メッセージの大量連投。
 -   **不審でない場合**: あくまでも荒らしを確実に排除するためであって、ユーザーの言論の自由を最重要に。上記に当てはまらない、単なる差別、個人的な発言、無害な技術用語（例：「トークン」）などはすべて「問題なし」と判断してください。
@@ -24,7 +24,7 @@ const AI_ANTI_RAID_PROMPT = `
 -   **回答フォーマット**: 以下のフォーマットで、簡潔に回答してください。
     [不審度] | 理由: [具体的な理由] 該当メッセージ: [メッセージ内容]　| 処罰: [タイムアウト期間など]
 権限のない人間の@everyoneや@hereや3人以上のメンションや立て続けのメンションは荒らしと判断してください。
-Masumani on top このサーバーをレイドしました。や ますまに最強！ このサーバーはますまにが包囲した！のような荒らし的な内容は荒らしと判断してください。
+「Masumani on top このサーバーをレイドしました。」や 「ますまに最強！ このサーバーはますまにが包囲した！」のような荒らし的な内容は荒らしと判断して、軽い処罰をしてください。(確実な荒らしな場合)
 処罰した場合、処罰を行ったチャンネルでログを残してください。(雑談チャンネルのメッセージを削除した場合、雑談チャンネルでログを残す))
 -   **不審度の例**:
     -   問題なし: ルールに違反しない場合
@@ -34,12 +34,21 @@ Masumani on top このサーバーをレイドしました。や ますまに最
 メッセージ:
 `;
 
-// AIによる不審度スコア
+const AI_MODERATION_PROMPT = `
+以下のDiscordサーバーの操作に対するユーザーの理由が適切かを判断してください。
+
+[操作]: {action}
+[理由]: {reason}
+
+以下のいずれかで回答してください。
+- 適切
+- 不適切
+`;
+
 const RAID_SCORE_AI_JUDGEMENT = 15;
 
-// 時間帯ごとの設定
-const NIGHT_START_HOUR = 22; // 22時
-const NIGHT_END_HOUR = 6;    // 6時
+const NIGHT_START_HOUR = 22;
+const NIGHT_END_HOUR = 7;
 const config = {
   daytime: {
     RAID_SCORE_THRESHOLD: 20,
@@ -69,41 +78,36 @@ const config = {
   }
 };
 
-// メンバー参加検知
-const RAID_MEMBER_THRESHOLD = 3; // 3人
-const RAID_TIME_WINDOW = 60 * 1000; // 1分
+const RAID_MEMBER_THRESHOLD = 3;
+const RAID_TIME_WINDOW = 60 * 1000;
 
-// 類似メッセージ検知
-const SIMILAR_MESSAGE_THRESHOLD = 2; // 2回
-const SIMILAR_MESSAGE_LENGTH = 5; // 5文字以上
+const SIMILAR_MESSAGE_THRESHOLD = 2;
+const SIMILAR_MESSAGE_LENGTH = 5;
 
-// 連投検知
-const MASS_SPAM_THRESHOLD = 2; // 2メッセージ
-const MASS_SPAM_TIME_WINDOW = 3 * 1000; // 3秒
+const MASS_SPAM_THRESHOLD = 2;
+const MASS_SPAM_TIME_WINDOW = 3 * 1000;
 
-// 荒らしと判断される特定のキーワード
 const RAID_KEYWORDS = [
-  ' this server is raided',
-  ' this server has been raided',
-  ' reidされました',
-  ' on top',
-  ' discord.gg',
-  ' invite.gg',
+  ' this server is raided', ' this server has been raided', ' reidされました', ' on top', ' discord.gg', ' invite.gg',
 ];
 
-// 処罰
-const TIMEOUT_DURATION = 5 * 60 * 1000; // 5分間
-const MARK_DURATION = 48 * 60 * 60 * 1000; // 48時間
+const TIMEOUT_DURATION = 5 * 60 * 1000;
+const MARK_DURATION = 48 * 60 * 60 * 1000;
 
-// 危険な権限
 const DANGEROUS_PERMISSIONS = [
-  PermissionsBitField.Flags.Administrator,
-  PermissionsBitField.Flags.ManageChannels,
-  PermissionsBitField.Flags.ManageRoles,
-  PermissionsBitField.Flags.KickMembers,
-  PermissionsBitField.Flags.BanMembers,
-  PermissionsBitField.Flags.ManageGuild,
+  PermissionsBitField.Flags.Administrator, PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.ManageRoles, PermissionsBitField.Flags.KickMembers, PermissionsBitField.Flags.BanMembers, PermissionsBitField.Flags.ManageGuild,
 ];
+
+const DANGER_ACTIONS = new Set([
+  AuditLogEvent.MEMBER_KICK,
+  AuditLogEvent.MEMBER_BAN_ADD,
+  AuditLogEvent.CHANNEL_CREATE,
+  AuditLogEvent.CHANNEL_DELETE,
+  AuditLogEvent.CHANNEL_UPDATE,
+  AuditLogEvent.ROLE_CREATE,
+  AuditLogEvent.ROLE_DELETE,
+  AuditLogEvent.ROLE_UPDATE,
+]);
 
 // === 内部変数 ===
 const memberJoinLog = new Map();
@@ -115,8 +119,9 @@ const userReactionCounts = new Map();
 const userMessageTimestamps = new Map();
 const adminAbuseLog = new Map();
 const raidAuthData = new Map();
+const massBanLog = new Map();
+const pendingModActions = new Map();
 
-// ★ 新規: 現在の時間帯を取得する関数
 function getCurrentConfig() {
   const now = new Date();
   const jstHour = (now.getUTCHours() + 9) % 24;
@@ -127,14 +132,12 @@ function getCurrentConfig() {
   return config.daytime;
 }
 
-// ★ 新規: メンバーのロールを一時的に保存する関数
 async function saveAndStripRoles(member) {
   const oldRoles = member.roles.cache.map(role => role.id);
   raidAuthData.set(member.id, oldRoles);
   await member.roles.set([], 'Raid対策のため権限を一時剥奪');
 }
 
-// ★ 新規: 認証後のロールを復活させる関数
 async function restoreRoles(member) {
   const oldRoles = raidAuthData.get(member.id);
   if (oldRoles) {
@@ -144,7 +147,6 @@ async function restoreRoles(member) {
   }
 }
 
-// ★ 新規: ボット追加を監視する関数
 async function handleBotAdd(member) {
   if (!member.user.bot) return false;
 
@@ -177,7 +179,6 @@ async function handleBotAdd(member) {
   return false;
 }
 
-// ★ タイムアウト期間をミリ秒に変換するヘルパー関数
 function parseTimeoutDuration(durationStr) {
   const multipliers = {
     '秒': 1000,
@@ -198,7 +199,6 @@ function parseTimeoutDuration(durationStr) {
   return 0;
 }
 
-// ★ 新規: AIによる荒らし判定と処罰
 async function handleAiJudgement(message) {
   const prompt = `${AI_ANTI_RAID_PROMPT}${message.content}`;
   const response = await chat(prompt, message.author.id).catch(() => null);
@@ -208,22 +208,19 @@ async function handleAiJudgement(message) {
     const judgment = parts[0];
     const reason = parts[1] || 'AIによる不審判定';
 
-    // AIからの応答をログに送信
     logRaidAction(
         message.guild,
         `🚨 **AIによる不審判定**: ${message.member.user.tag} が不審な行動を行いました。\n不審度: ${judgment}\n理由: ${reason}`,
         message.channel.name
     );
 
-    // AIの判定をスコアに変換
     if (judgment.includes('不審')) {
-        const score = getCurrentConfig().RAID_SCORE_AI_JUDGEMENT; // AI判定のスコアは固定値
+        const score = getCurrentConfig().RAID_SCORE_AI_JUDGEMENT;
         incrementScore(message.member.id, score, message, `AI判定による不審行動: ${reason}`);
     }
   }
 }
 
-// === メンバー参加を監視 ===
 async function handleMemberJoin(member) {
   const currentConfig = getCurrentConfig();
   if (member.permissions.has('Administrator')) return;
@@ -271,7 +268,6 @@ async function handleMemberJoin(member) {
   }
 }
 
-// === スコア加算と処罰の実行 ===
 async function incrementScore(userId, score, message = null, reason = '不審な行動') {
     const currentConfig = getCurrentConfig();
     const member = message?.member || await message.guild.members.fetch(userId).catch(() => null);
@@ -285,7 +281,6 @@ async function incrementScore(userId, score, message = null, reason = '不審な
       const messageContent = message.content.length > 200 ? message.content.substring(0, 197) + '...' : message.content;
       try {
         await message.delete();
-        // ★ メッセージが削除されたことをログに送信
         logRaidAction(
           member.guild,
           `🚨 **不審メッセージ検知**: ${member.user.tag} が不審なメッセージを投稿しました。\n理由: ${reason} (+${score}点)\n現在のスコア: ${newScore}\n\n**メッセージ内容:**\n\`\`\`\n${messageContent}\n\`\`\``,
@@ -337,7 +332,6 @@ async function incrementScore(userId, score, message = null, reason = '不審な
     }
 }
 
-// === メッセージを監視 ===
 async function handleMessage(message) {
   const currentConfig = getCurrentConfig();
   if (message.author.bot && !message.webhookId) {
@@ -347,10 +341,7 @@ async function handleMessage(message) {
       return;
   }
 
-  // ★ AIによる荒らし判定を呼び出す
-  if (!message.content.startsWith('!')) { // コマンド以外のメッセージをAIに判定させる
-    await handleAiJudgement(message);
-  }
+  await handleAiJudgement(message);
 
   const now = Date.now();
   const authorId = message.author.id;
