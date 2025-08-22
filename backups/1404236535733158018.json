@@ -3,7 +3,7 @@
     "guildId": "1404236535733158018",
     "name": "ますまに共栄圏",
     "iconURL": "https://cdn.discordapp.com/icons/1404236535733158018/ad75e53266142ab1e61862951db4ef04.webp?size=512",
-    "savedAt": "2025-08-14T23:29:21.129Z"
+    "savedAt": "2025-08-22T02:32:15.090Z"
   },
   "roles": [
     {
@@ -13,14 +13,32 @@
       "hoist": false,
       "position": 0,
       "mentionable": false,
-      "permissions": "106519588081217"
+      "permissions": "106521735564865"
+    },
+    {
+      "id": "1407742829991563422",
+      "name": "level5",
+      "color": 0,
+      "hoist": false,
+      "position": 1,
+      "mentionable": false,
+      "permissions": "0"
+    },
+    {
+      "id": "1407710884108828824",
+      "name": "ちょい",
+      "color": 0,
+      "hoist": false,
+      "position": 2,
+      "mentionable": false,
+      "permissions": "8"
     },
     {
       "id": "1405660563358617680",
       "name": "Quarantine",
       "color": 11765828,
       "hoist": false,
-      "position": 1,
+      "position": 5,
       "mentionable": false,
       "permissions": "0"
     },
@@ -29,7 +47,7 @@
       "name": "権限",
       "color": 0,
       "hoist": false,
-      "position": 6,
+      "position": 7,
       "mentionable": false,
       "permissions": "8"
     }
@@ -46,7 +64,14 @@
       "topic": null,
       "bitrate": null,
       "userLimit": null,
-      "overwrites": []
+      "overwrites": [
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
     },
     {
       "id": "1405660576708952075",
@@ -116,7 +141,7 @@
     },
     {
       "id": "1405660583025709106",
-      "name": "wick-logs",
+      "name": "nuke-logs",
       "type": 0,
       "parentId": null,
       "position": 1,
@@ -127,15 +152,15 @@
       "userLimit": null,
       "overwrites": [
         {
-          "id": "1405660563358617680",
-          "allow": "0",
-          "deny": "377957125121",
-          "type": 0
-        },
-        {
           "id": "1404236535733158018",
           "allow": "0",
           "deny": "1024",
+          "type": 0
+        },
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "377957125121",
           "type": 0
         }
       ]
@@ -161,10 +186,10 @@
       ]
     },
     {
-      "id": "1405660586318102710",
-      "name": "再建",
+      "id": "1405660596858257508",
+      "name": "📬｜お知らせ",
       "type": 0,
-      "parentId": "1405660570123898941",
+      "parentId": "1405660568454697124",
       "position": 2,
       "rateLimitPerUser": 0,
       "nsfw": false,
@@ -172,6 +197,12 @@
       "bitrate": null,
       "userLimit": null,
       "overwrites": [
+        {
+          "id": "1404236535733158018",
+          "allow": "1024",
+          "deny": "2048",
+          "type": 0
+        },
         {
           "id": "1405660563358617680",
           "allow": "0",
@@ -181,8 +212,8 @@
       ]
     },
     {
-      "id": "1405687138103853179",
-      "name": "💬｜雑談",
+      "id": "1406236139685412935",
+      "name": "├再建",
       "type": 0,
       "parentId": "1405660570123898941",
       "position": 3,
@@ -201,10 +232,10 @@
       ]
     },
     {
-      "id": "1405660592986914826",
-      "name": "💬｜聞き専",
+      "id": "1407937489397612635",
+      "name": "💬｜雑談",
       "type": 0,
-      "parentId": "1405660573869281360",
+      "parentId": "1405660570123898941",
       "position": 4,
       "rateLimitPerUser": 0,
       "nsfw": false,
@@ -221,11 +252,180 @@
       ]
     },
     {
-      "id": "1405660596858257508",
-      "name": "📬｜お知らせ",
+      "id": "1405914582895169556",
+      "name": "├提携鯖",
+      "type": 15,
+      "parentId": "1405660570123898941",
+      "position": 5,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1404236535733158018",
+          "allow": "1024",
+          "deny": "274877908992",
+          "type": 0
+        },
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1406236759301296230",
+      "name": "💬｜聞き専",
+      "type": 0,
+      "parentId": "1405660573869281360",
+      "position": 6,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1407298579453710418",
+      "name": "├nukeの使い方",
       "type": 0,
       "parentId": "1405660568454697124",
-      "position": 5,
+      "position": 7,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1404236535733158018",
+          "allow": "0",
+          "deny": "2048",
+          "type": 0
+        },
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1407358549570621551",
+      "name": "🤖｜bot",
+      "type": 0,
+      "parentId": "1405660570123898941",
+      "position": 8,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1407669514425860136",
+      "name": "入室ログ",
+      "type": 0,
+      "parentId": null,
+      "position": 9,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1404236535733158018",
+          "allow": "0",
+          "deny": "1024",
+          "type": 0
+        },
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "377957125121",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1407707908506128484",
+      "name": "modlogs",
+      "type": 0,
+      "parentId": null,
+      "position": 10,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1404236535733158018",
+          "allow": "262144",
+          "deny": "1024",
+          "type": 0
+        },
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "1024",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1407717252945543250",
+      "name": "verify-here",
+      "type": 0,
+      "parentId": null,
+      "position": 11,
+      "rateLimitPerUser": 0,
+      "nsfw": false,
+      "topic": null,
+      "bitrate": null,
+      "userLimit": null,
+      "overwrites": [
+        {
+          "id": "1404236535733158018",
+          "allow": "328704",
+          "deny": "105226700865",
+          "type": 0
+        },
+        {
+          "id": "1405660563358617680",
+          "allow": "0",
+          "deny": "66560",
+          "type": 0
+        }
+      ]
+    },
+    {
+      "id": "1405915417385635992",
+      "name": "くらげの集い",
+      "type": 11,
+      "parentId": "1405914582895169556",
       "rateLimitPerUser": 0,
       "nsfw": false,
       "topic": null,
