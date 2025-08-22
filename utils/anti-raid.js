@@ -1,5 +1,5 @@
 // utils/anti-raid.js
-// Discord.js v14 統合版
+// Discord.js v14 完全統合版 + 自動復元 + バックアップ機能
 
 const fs = require('fs');
 const path = require('path');
@@ -10,21 +10,6 @@ const {
   EmbedBuilder,
 } = require('discord.js');
 
-// ===== 設定（必要に応じて .env や config に移してOK）=====
-const LOG_CHANNEL_ID = 1405660583025709106
-const AUTH_CHANNEL_ID = process.env.ANTI_RAID_AUTH_CHANNEL_ID || 'YOUR_AUTH_CHANNEL_ID';
-const JOIN_LOG_CHANNEL_ID = 1407669514425860136
-
-// ホワイトリスト（ユーザー / ロール）
-const WHITELIST_USERS = (process.env.ANTI_RAID_WHITELIST_USERS || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-const WHITELIST_ROLES = (process.env.ANTI_RAID_WHITELIST_ROLES || '')
-  .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-
 // AI 判定（任意）: utils/ai.js の chat() を使う
 const USE_AI_JUDGEMENT = (process.env.ANTI_RAID_USE_AI || 'false').toLowerCase() === 'true';
 let chat = null;
@@ -32,27 +17,39 @@ if (USE_AI_JUDGEMENT) {
   try { ({ chat } = require('./ai')); } catch {}
 }
 
-// ===== スコア永続化（JSON）=====
+// ===== 設定 =====
+const LOG_CHANNEL_ID = process.env.ANTI_RAID_LOG_CHANNEL_ID || `1405660583025709106`;
+const AUTH_CHANNEL_ID = process.env.ANTI_RAID_AUTH_CHANNEL_ID || 'YOUR_AUTH_CHANNEL_ID';
+const JOIN_LOG_CHANNEL_ID = process.env.JOIN_LOG_CHANNEL_ID || `1407669514425860136`;
+
+// ホワイトリスト（ユーザー / ロール）
+const WHITELIST_USERS = (process.env.ANTI_RAID_WHITELIST_USERS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const WHITELIST_ROLES = (process.env.ANTI_RAID_WHITELIST_ROLES || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+
+// ===== JSON永続化 =====
 const DATA_DIR = path.join(__dirname, '../data');
 const SCORE_PATH = path.join(DATA_DIR, 'raidScores.json');
 const MARK_PATH = path.join(DATA_DIR, 'raidMarks.json');
+const BACKUP_PATH = path.join(DATA_DIR, 'serverBackup.json');
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 let scores = {};
 let markedUsersStore = {};
+let serverBackup = {};
+
 try { if (fs.existsSync(SCORE_PATH)) scores = JSON.parse(fs.readFileSync(SCORE_PATH, 'utf8')); } catch {}
 try { if (fs.existsSync(MARK_PATH)) markedUsersStore = JSON.parse(fs.readFileSync(MARK_PATH, 'utf8')); } catch {}
+try { if (fs.existsSync(BACKUP_PATH)) serverBackup = JSON.parse(fs.readFileSync(BACKUP_PATH, 'utf8')); } catch {}
 
-function saveScores() {
-  try { fs.writeFileSync(SCORE_PATH, JSON.stringify(scores, null, 2)); } catch {}
-}
-function saveMarks() {
-  try { fs.writeFileSync(MARK_PATH, JSON.stringify(markedUsersStore, null, 2)); } catch {}
-}
+function saveScores() { try { fs.writeFileSync(SCORE_PATH, JSON.stringify(scores, null, 2)); } catch {} }
+function saveMarks() { try { fs.writeFileSync(MARK_PATH, JSON.stringify(markedUsersStore, null, 2)); } catch {} }
+function saveBackup() { try { fs.writeFileSync(BACKUP_PATH, JSON.stringify(serverBackup, null, 2)); } catch {} }
 
 // ===== 閾値（昼/夜で可変）=====
-const NIGHT_START_HOUR = 22; // JST
+const NIGHT_START_HOUR = 22;
 const NIGHT_END_HOUR = 7;
 
 const cfg = {
@@ -67,18 +64,18 @@ function currentCfg() {
 }
 
 // ===== ルール定数 =====
-const RAID_MEMBER_THRESHOLD = 3; // 1分でこの人数以上 join
+const RAID_MEMBER_THRESHOLD = 3;
 const RAID_TIME_WINDOW = 60 * 1000;
-const MASS_SPAM_THRESHOLD = 2; // 3秒で2件以上
+const MASS_SPAM_THRESHOLD = 2;
 const MASS_SPAM_WINDOW = 3 * 1000;
 const SIMILAR_MESSAGE_THRESHOLD = 2;
 const SIMILAR_MESSAGE_LENGTH = 5;
-const TIMEOUT_MS = 5 * 60 * 1000; // 5分
-const MARK_EXPIRE_MS = 48 * 60 * 60 * 1000; // 48h
+const TIMEOUT_MS = 5 * 60 * 1000;
+const MARK_EXPIRE_MS = 48 * 60 * 60 * 1000;
 
-const MASS_ACTION_WINDOW_MS = 2 * 60 * 1000; // 2分
-const MASS_ACTION_THRESHOLD = 2; // 2人以上
-const PROBATION_MS = 24 * 60 * 60 * 1000; // 24時間
+const MASS_ACTION_WINDOW_MS = 2 * 60 * 1000;
+const MASS_ACTION_THRESHOLD = 2;
+const PROBATION_MS = 24 * 60 * 60 * 1000;
 
 const RAID_KEYWORDS = [
   ' this server is raided', ' this server has been raided', ' reidされました', ' on top', ' discord.gg',
@@ -104,10 +101,10 @@ const userReactTime = new Map();
 const userMsgTs = new Map();
 const pendingModActions = new Map();
 const raidAuthRoles = new Map();
-
-// 第二モジュールから統合した状態
 const executorActionLog = new Map();
 const probationAdmins = new Map();
+const massBanLog = new Map();
+const massNukeLog = new Map();
 
 // ===== ユーティリティ =====
 function hasDangerousPerms(permBits) {
@@ -194,9 +191,7 @@ async function sendLogEmbed(guild, { title, member, description, fields = [], co
 
 async function sendPlainLog(guild, channelId, content) {
   try {
-    const ch = guild.channels.cache.get(channelId) ||
-               guild.systemChannel ||
-               guild.channels.cache.find(c => c.type === ChannelType.GuildText);
+    const ch = guild.channels.cache.get(channelId) || guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText);
     if (ch) await ch.send(content);
   } catch (e) {
     console.error('[anti-raid] Failed to send plain log:', e);
@@ -240,46 +235,43 @@ async function createOneTimeInvite(guild) {
   }
 }
 
-function recordAndCheckMassAbuse(executorId, victimId, action) {
-  const now = Date.now();
-  const list = executorActionLog.get(executorId) || [];
-  list.push({ t: now, victimId, action });
-  const recent = list.filter(x => now - x.t <= MASS_ACTION_WINDOW_MS);
-  executorActionLog.set(executorId, recent);
-  const uniqueVictims = new Set(recent.map(x => x.victimId));
-  return uniqueVictims.size >= MASS_ACTION_THRESHOLD;
+async function isReasonAppropriate(entry, reason) {
+  if (!chat) return reason.length > 10;
+  const prompt = `以下のDiscordサーバーの操作に対するユーザーの理由が適切かを判断してください。\n\n[操作]: ${AuditLogEvent[entry.action]}\n[理由]: ${reason}\n\n「適切」または「不適切」で回答してください。`;
+  const res = await chat(prompt, entry.executor.id);
+  return res && res.includes('適切');
 }
 
-function isInProbation(userId) {
-  const until = probationAdmins.get(userId);
-  return until && until > Date.now();
-}
-
-async function stripAllRoles(guild, userId, reason) {
+function backupServerState(guild) {
   try {
-    const m = await guild.members.fetch(userId);
-    if (m?.manageable) {
-      await m.roles.set([], reason);
-      return true;
+    const data = {
+      roles: guild.roles.cache.map(r => ({ id: r.id, permissions: r.permissions.bitfield })),
+      channels: guild.channels.cache.map(c => ({ id: c.id, type: c.type, name: c.name })),
+    };
+    serverBackup[guild.id] = data;
+    saveBackup();
+  } catch (e) { console.error('[anti-raid] backupServerState error:', e); }
+}
+
+async function restoreServerState(guild) {
+  const data = serverBackup[guild.id];
+  if (!data) return;
+  try {
+    for (const r of data.roles) {
+      const role = guild.roles.cache.get(r.id);
+      if (role) await role.setPermissions(r.permissions, 'バックアップ復元');
     }
-    return false;
-  } catch (e) {
-    console.error('[anti-raid] stripAllRoles error:', e);
-    return false;
-  }
+    for (const c of data.channels) {
+      const channel = guild.channels.cache.get(c.id);
+      if (channel && channel.name !== c.name) {
+        await channel.setName(c.name, 'バックアップ復元');
+      }
+    }
+    await sendPlainLog(guild, LOG_CHANNEL_ID, '✅ サーバーをバックアップ状態に復元しました。');
+  } catch (e) { console.error('[anti-raid] restoreServerState error:', e); }
 }
 
-async function findExecutorForTarget(guild, type, targetId) {
-  try {
-    const logs = await guild.fetchAuditLogs({ type, limit: 5 });
-    const entry = logs.entries.find(e => (e.target?.id === targetId));
-    return entry?.executor || null;
-  } catch (e) {
-    console.error('[anti-raid] fetchAuditLogs error:', e);
-    return null;
-  }
-}
-
+// ===== 処罰段階 =====
 async function punishByScore(member, reason, channelName) {
   if (!member || isWhitelisted(member) || probationAdmins.has(member.id)) return;
   const c = currentCfg();
@@ -399,7 +391,6 @@ async function handleMessage(message) {
   const now = Date.now();
   const uid = member.id;
 
-  // 3秒間の連投
   const list = userMsgTs.get(uid) || [];
   list.push(now);
   const recent = list.filter(t => now - t < MASS_SPAM_WINDOW);
@@ -415,7 +406,6 @@ async function handleMessage(message) {
 
   const content = (message.content || '').toLowerCase();
 
-  // 危険キーワード
   if (RAID_KEYWORDS.some(k => content.includes(k))) {
     const s = addScore(uid, c.KEYWORD);
     await safeDelete(message, 'NGワード');
@@ -425,8 +415,8 @@ async function handleMessage(message) {
     return punishByScore(member, 'NGワード', message.channel?.name);
   }
 
-  // 過度な改行
-  if ((content.match(/\n/g) || []).length > 10) {
+  const newlineCount = (content.match(/\n/g) || []).length;
+  if (newlineCount > 10) {
     const s = addScore(uid, c.NEWLINES);
     await safeDelete(message, '過度な改行');
     await sendLogEmbed(message.guild, {
@@ -435,7 +425,6 @@ async function handleMessage(message) {
     return punishByScore(member, '過度な改行', message.channel?.name);
   }
 
-  // Zalgo
   const zalgo = (message.content.match(/[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]/g) || []).length;
   if (zalgo > 5) {
     const s = addScore(uid, c.ZALGO);
@@ -446,7 +435,6 @@ async function handleMessage(message) {
     return punishByScore(member, 'Zalgo 乱用', message.channel?.name);
   }
 
-  // 類似メッセージ連投
   const gid = message.guild.id;
   const normalized = content.replace(/\s/g, '');
   if (normalized.length >= SIMILAR_MESSAGE_LENGTH) {
@@ -465,7 +453,6 @@ async function handleMessage(message) {
     }
   }
 
-  // コマンド連打
   if (content.startsWith('!') || content.startsWith('/')) {
     const last = userCmdTime.get(uid) || 0;
     if (now - last < 1000) {
@@ -505,29 +492,74 @@ async function handleReactionAdd(reaction, user) {
 }
 
 // ====== 監査ログ / 危険操作 ======
+
+// --- 新機能：大量操作検知と連鎖的処罰 ---
+async function checkAndPunishMassAction(entry) {
+  const { executor, action, guild, target } = entry;
+  const executorMember = guild.members.cache.get(executor.id);
+  if (!executorMember || executorMember.bot || isWhitelisted(executorMember) || isInProbation(executor.id)) return false;
+
+  const now = Date.now();
+  const executorId = executor.id;
+  const logMap = (action === AuditLogEvent.MemberBanAdd) ? executorActionLog.massBan : executorActionLog.massNuke;
+
+  if (!logMap.has(executorId)) logMap.set(executorId, []);
+  const logArray = logMap.get(executorId);
+  logArray.push({ timestamp: now, targetId: target?.id });
+  const recentActions = logArray.filter(a => now - a.timestamp <= MASS_ACTION_WINDOW_MS);
+  logMap.set(executorId, recentActions);
+
+  if (recentActions.length >= MASS_ACTION_THRESHOLD) {
+    let reason = '不審な大量操作';
+    if (action === AuditLogEvent.MemberBanAdd) { reason = '不審な大量BAN'; }
+    else if (action === AuditLogEvent.ChannelDelete) { reason = '不審なチャンネル削除'; }
+    else if (action === AuditLogEvent.RoleDelete) { reason = '不審なロール削除'; }
+
+    try {
+      // 処罰実行
+      const ok = await stripAllRoles(guild, executor.id, reason);
+      await sendLogEmbed(guild, {
+        title: `🚨 大量操作を検知・権限剥奪`, member: executorMember, description: `理由: ${reason}\n成功: ${ok}`, color: 0xff4757,
+      });
+
+      // 連鎖的処罰: ロールを渡した人間を追跡
+      const auditLogs = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberRoleUpdate, limit: 100 });
+      const recentGrants = auditLogs.entries.filter(e => e.target.id === executor.id && e.changes.some(c => c.key === '$add'));
+      for (const grant of recentGrants) {
+        const giver = grant.executor;
+        if (giver && !giver.bot && giver.id !== executor.id) {
+          const giverMember = guild.members.cache.get(giver.id);
+          if (giverMember && !isWhitelisted(giverMember)) {
+            const ok2 = await stripAllRoles(guild, giver.id, '不審なユーザーに危険なロールを付与');
+            await sendLogEmbed(guild, {
+              title: `🚨 連鎖的処罰`, member: giverMember, description: `理由: 不審なユーザーに危険なロールを付与\n成功: ${ok2}`, color: 0xff4757,
+            });
+          }
+        }
+      }
+    } catch { return false; }
+    return true;
+  }
+  return false;
+}
+
 async function handleAuditLogEntry(entry) {
   const { guild, executor, action, target } = entry;
-  if (!executor || executor.bot) return;
+  const member = guild.members.cache.get(executor.id);
+  if (!member || member.user.bot || isWhitelisted(member)) return;
 
-  if (DANGER_ACTIONS.has(action)) {
-    const member = guild.members.cache.get(executor.id);
-    if (!member) return;
+  // 大量操作検知 (BAN / 削除)
+  if (
+    action === AuditLogEvent.MemberBanAdd ||
+    action === AuditLogEvent.ChannelDelete ||
+    action === AuditLogEvent.RoleDelete
+  ) {
+    const punished = await checkAndPunishMassAction(entry);
+    if (punished) return;
+  }
 
-    if (isWhitelisted(member)) return;
-
-    const c = currentCfg();
-    const now = Date.now();
-
-    // スコア加算
-    const s = addScore(executor.id, c.AUDIT_ABUSE);
-    await sendLogEmbed(guild, {
-      title: '🚨 不審な監査ログ操作', member, description: `アクション: ${AuditLogEvent[action]} → +${c.AUDIT_ABUSE}\n現在: ${s}/${c.THRESHOLD}`,
-      color: 0xff4757,
-    });
-    // スコアベースの処罰も適用
-    await punishByScore(member, `不審な監査ログ操作 (${AuditLogEvent[action]})`, 'system');
-
-    // 危険操作時は DM で理由確認 → 未回答なら剥奪
+  // DM で理由確認
+  if (DANGER_ACTIONS.has(action) && !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
     if (pendingModActions.has(executor.id)) {
       const p = pendingModActions.get(executor.id);
       p.reasonAttempts++;
@@ -539,22 +571,20 @@ async function handleAuditLogEntry(entry) {
     }
 
     try {
-      if (!member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        await saveAndStripRoles(member);
-        const actionText = `アクション: ${AuditLogEvent[action]} / 対象: ${target?.tag || target?.name || target?.id}`;
-        const dmText = `サーバーで重要な操作を行いました。\n${actionText}\nこのDMに **3分以内** に理由を返信してください。未回答なら権限剥奪を継続します。`;
-        await executor.send(dmText).catch(() => {});
-        pendingModActions.set(executor.id, { entry, timestamp: now, reasonAttempts: 0 });
+      await saveAndStripRoles(member);
+      const actionText = `アクション: ${AuditLogEvent[action]} / 対象: ${target?.tag || target?.name || target?.id}`;
+      const dmText = `サーバーで重要な操作を行いました。\n${actionText}\nこのDMに **3分以内** に理由を返信してください。未回答なら権限剥奪を継続します。`;
+      await executor.send(dmText).catch(() => {});
+      pendingModActions.set(executor.id, { entry, timestamp: Date.now(), reasonAttempts: 0 });
 
-        setTimeout(async () => {
-          const pending = pendingModActions.get(executor.id);
-          if (!pending) return;
-          await sendLogEmbed(guild, {
-            title: '⚠️ DM未応答につき権限剥奪継続', member, description: '重要操作の理由確認に未応答', color: 0xffa200,
-          });
-          pendingModActions.delete(executor.id);
-        }, 3 * 60 * 1000);
-      }
+      setTimeout(async () => {
+        const p = pendingModActions.get(executor.id);
+        if (!p) return;
+        await sendLogEmbed(guild, {
+          title: '⚠️ DM未応答につき権限剥奪継続', member, description: '重要操作の理由確認に未応答', color: 0xffa200,
+        });
+        pendingModActions.delete(executor.id);
+      }, 3 * 60 * 1000);
     } catch {}
   }
 }
@@ -603,46 +633,40 @@ async function handleRoleUpdate(oldRole, newRole) {
   } catch {}
 }
 
-// ====== 第二モジュールからの統合部分 ======
+async function onGuildMemberUpdate(oldMember, newMember) {
+  if (newMember.user.bot || isWhitelisted(newMember)) return;
 
-async function onGuildMemberUpdate(memberBefore, memberAfter) {
-  if (memberAfter.user.bot) return;
+  const beforePerms = oldMember.permissions?.bitfield ?? 0n;
+  const afterPerms = newMember.permissions?.bitfield ?? 0n;
 
-  const beforePerms = memberBefore.permissions?.bitfield ?? 0n;
-  const afterPerms = memberAfter.permissions?.bitfield ?? 0n;
-
+  // 危険権限の付与を監視
   if (!hasDangerousPerms(beforePerms) && hasDangerousPerms(afterPerms)) {
-    await sendPlainLog(memberAfter.guild, LOG_CHANNEL_ID,
-      `⚠️ **危険権限付与検知**: <@${memberAfter.id}> に危険権限が付与されました。`);
+    const executor = await findExecutorForTarget(newMember.guild, AuditLogEvent.MemberRoleUpdate, newMember.id);
+    if (executor && !isWhitelisted(executor) && !isInProbation(executor.id)) {
+      const newScore = addScore(executor.id, currentCfg().AUDIT_ABUSE);
+      await sendLogEmbed(newMember.guild, {
+        title: '⚠️ 危険権限付与を検知', member: newMember, description: `実行者: <@${executor.id}> が危険権限を付与しました。\n現在スコア: ${newScore}/${currentCfg().THRESHOLD}`, color: 0xffa200,
+      });
+      await punishByScore(executor, '不審な権限付与', newMember.guild.channels.cache.random()?.name);
+    }
   }
 
-  const beforeAdmin = new PermissionsBitField(beforePerms).has(PermissionsBitField.Flags.Administrator);
-  const afterAdmin = new PermissionsBitField(afterPerms).has(PermissionsBitField.Flags.Administrator);
-  if (!beforeAdmin && afterAdmin) {
-    const until = Date.now() + PROBATION_MS;
-    probationAdmins.set(memberAfter.id, until);
-    await sendPlainLog(memberAfter.guild, LOG_CHANNEL_ID,
-      `⏱️ **新管理者クールダウン開始**: <@${memberAfter.id}> は ${new Date(until).toLocaleString()} まで処罰行為（BAN/Kick/Timeout）を行うと権限剥奪されます。`);
-  }
-
-  const beforeUntil = memberBefore.communicationDisabledUntilTimestamp || 0;
-  const afterUntil = memberAfter.communicationDisabledUntilTimestamp || 0;
-  const timeoutAdded = beforeUntil === 0 && afterUntil > 0;
-  if (timeoutAdded) {
-    const executor = await findExecutorForTarget(memberAfter.guild, AuditLogEvent.MemberUpdate, memberAfter.id);
-    if (executor && (isInProbation(executor.id) || recordAndCheckMassAbuse(executor.id, memberAfter.id, 'TIMEOUT'))) {
+  // Timeout が付与された場合の処罰者監視
+  const beforeUntil = oldMember.communicationDisabledUntilTimestamp || 0;
+  const afterUntil = newMember.communicationDisabledUntilTimestamp || 0;
+  if (beforeUntil === 0 && afterUntil > 0) {
+    const executor = await findExecutorForTarget(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id);
+    if (executor && (isInProbation(executor.id) || recordAndCheckMassAbuse(executor.id, newMember.id, 'TIMEOUT'))) {
       try {
-        await memberAfter.timeout(null, '荒らし検知: Timeout解除');
+        await newMember.timeout(null, '荒らし検知: Timeout解除');
       } catch (e) {}
-      const ok = await stripAllRoles(memberAfter.guild, executor.id, '荒らし検知: クールダウン中の処罰 or 大量処罰');
-      await sendLogEmbed(memberAfter.guild, {
-        title: '🚨 不審なTimeout検知',
-        description: `実行者 <@${executor.id}> を権限剥奪（成功:${ok}）。\n対象: <@${memberAfter.id}> のTimeoutは解除しました。`,
-        member: memberAfter,
+      const ok = await stripAllRoles(newMember.guild, executor.id, '荒らし検知: クールダウン中の処罰 or 大量処罰');
+      await sendLogEmbed(newMember.guild, {
+        title: '🚨 不審なTimeout検知', member: newMember, description: `実行者 <@${executor.id}> を権限剥奪（成功:${ok}）。\n対象: <@${newMember.id}> のTimeoutは解除しました。`,
       });
       try {
-        const dm = await memberAfter.createDM();
-        const url = await createOneTimeInvite(memberAfter.guild);
+        const dm = await newMember.createDM();
+        const url = await createOneTimeInvite(newMember.guild);
         await dm.send(`すみません。サーバー側で不正なTimeoutを検知し、解除しました。\n` +
           (url ? `よろしければ再参加・確認はこちら: ${url}` : `再参加招待の作成に失敗しました。管理者へご連絡ください。`));
       } catch {}
@@ -655,12 +679,11 @@ async function onGuildBanAdd(ban) {
   setTimeout(async () => {
     const executor = await findExecutorForTarget(guild, AuditLogEvent.MemberBanAdd, user.id);
     if (!executor) return;
-    if (isInProbation(executor.id) || recordAndCheckMassAbuse(executor.id, user.id, 'BAN')) {
+    if (isWhitelisted(executor) || isInProbation(executor.id) || recordAndCheckMassAction(executor.id, user.id, 'BAN')) {
       try { await guild.members.unban(user.id, '荒らし検知: 誤BAN救済'); } catch {}
       const ok = await stripAllRoles(guild, executor.id, '荒らし検知: クールダウン中の処罰 or 大量処罰');
       await sendLogEmbed(guild, {
-        title: '🚨 不審なBAN検知',
-        description: `実行者 <@${executor.id}> を権限剥奪（成功:${ok}）。\n対象: **${user.tag}** はBAN解除しました。`,
+        title: '🚨 不審なBAN検知', description: `実行者 <@${executor.id}> を権限剥奪（成功:${ok}）。\n対象: **${user.tag}** はBAN解除しました。`,
       });
       try {
         const url = await createOneTimeInvite(guild);
@@ -673,18 +696,18 @@ async function onGuildBanAdd(ban) {
 }
 
 async function onGuildMemberRemove(member) {
-  const guild = member.guild;
+  const { guild } = member;
   setTimeout(async () => {
     const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberKick, limit: 5 }).catch(() => null);
     const entry = logs?.entries?.find(e => e.target?.id === member.id);
     if (!entry) return;
     const executor = entry.executor;
     if (!executor) return;
-    if (isInProbation(executor.id) || recordAndCheckMassAbuse(executor.id, member.id, 'KICK')) {
+    const executorMember = guild.members.cache.get(executor.id);
+    if (!executorMember || isWhitelisted(executorMember) || isInProbation(executor.id) || recordAndCheckMassAction(executor.id, member.id, 'KICK')) {
       const ok = await stripAllRoles(guild, executor.id, '荒らし検知: クールダウン中の処罰 or 大量処罰');
       await sendLogEmbed(guild, {
-        title: '🚨 不審なKick検知',
-        description: `実行者 <@${executor.id}> を権限剥奪（成功:${ok}）。\n対象: **${member.user?.tag || member.id}** にはお詫びDMを送ります。`,
+        title: '🚨 不審なKick検知', description: `実行者 <@${executor.id}> を権限剥奪（成功:${ok}）。\n対象: **${member.user?.tag || member.id}** にはお詫びDMを送ります。`,
       });
       try {
         const url = await createOneTimeInvite(guild);
@@ -695,32 +718,3 @@ async function onGuildMemberRemove(member) {
     }
   }, 1500);
 }
-
-// ====== 補助関数 ======
-async function safeDelete(message, why) {
-  if (!message?.deletable) return;
-  try { await message.delete(); } catch {}
-}
-function snippet(text, max = 140) {
-  if (!text) return '';
-  return text.length > max ? text.slice(0, max) + '…' : text;
-}
-
-// ====== エクスポート ======
-module.exports = {
-  handleMemberJoin,
-  handleMessage,
-  handleReactionAdd,
-  handleRoleUpdate,
-  handleAuditLogEntry,
-  handleMessageUpdate,
-  handleBotAdd,
-  onGuildMemberUpdate,
-  onGuildBanAdd,
-  onGuildMemberRemove,
-  pendingModActions,
-  DANGER_ACTIONS,
-  restoreRoles,
-  probationAdmins,
-  executorActionLog,
-};
