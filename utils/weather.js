@@ -8,19 +8,38 @@ const { ensureFolder, uploadToDropbox, downloadFromDropbox } = require('./storag
 const API_KEY = process.env.WEATHER_API_KEY;
 const WEATHER_DIR = process.env.DROPBOX_WEATHER_DIR || '/weather';
 
+/**
+ * 日本語の地名から不要な接尾辞（区、市など）を削除します。
+ * @param {string} location - ユーザーが入力した地名
+ * @returns {string} 接尾辞が削除された地名
+ */
+function removeSuffixes(location) {
+  const suffixes = ['市', '区', '郡', '町', '村'];
+  let newLocation = location;
+  for (const suffix of suffixes) {
+    if (newLocation.endsWith(suffix)) {
+      newLocation = newLocation.slice(0, -suffix.length);
+    }
+  }
+  return newLocation;
+}
+
 async function fetchWeather(location) {
-  let englishLocation = location;
+  // まず、地名から「区」「市」などの接尾辞を削除
+  const cleanedLocation = removeSuffixes(location);
+
+  let englishLocation = cleanedLocation;
 
   // 日本語が含まれているかチェック
-  if (/[一-龠ぁ-んァ-ヶ]/.test(location)) {
+  if (/[一-龠ぁ-んァ-ヶ]/.test(cleanedLocation)) {
     try {
-      const res = await translate(location, { from: 'ja', to: 'en' });
+      const res = await translate(cleanedLocation, { from: 'ja', to: 'en' });
       englishLocation = res.text;
-      console.log(`✅ 地名「${location}」を「${englishLocation}」に翻訳しました。`);
+      console.log(`✅ 地名「${cleanedLocation}」を「${englishLocation}」に翻訳しました。`);
     } catch (e) {
       console.error('❌ 地名翻訳に失敗しました:', e);
       // 翻訳失敗時は元の地名をそのまま使用
-      englishLocation = location;
+      englishLocation = cleanedLocation;
     }
   }
 
