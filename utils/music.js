@@ -11,7 +11,7 @@ const {
 const { google } = require('googleapis');
 const ytdl = require('ytdl-core');
 
-const TOKEN = process.env.DISCORD_TOKEN;
+const TOKEN = process.env.TOKEN;
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 
 const youtube = google.youtube({
