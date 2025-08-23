@@ -48,5 +48,19 @@ async function loadUserWeatherPref(userId) {
   }
   return null;
 }
-
 module.exports = { fetchWeather, saveUserWeatherPref, loadUserWeatherPref };
+async function saveUserWeatherPref(userId, location) {
+  console.log(`ユーザーID ${userId} の天気設定を保存しようとしています...`);
+  // ... 既存のコード ...
+  const success = await uploadToDropbox(...);
+  console.log(`Dropboxへのアップロード結果: ${success ? '成功' : '失敗'}`);
+  return success;
+}
+
+async function loadUserWeatherPref(userId) {
+  console.log(`ユーザーID ${userId} の天気設定を読み込もうとしています...`);
+  // ... 既存のコード ...
+  const data = await downloadFromDropbox(...);
+  console.log(`Dropboxからのダウンロード結果: ${data ? '成功' : '失敗'}`);
+  return data;
+}
