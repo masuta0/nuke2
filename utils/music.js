@@ -199,5 +199,3 @@ client.on('messageCreate', async (message) => {
 client.once('ready', () => {
   console.log(`✅ ログイン完了: ${client.user.tag}`);
 });
-
-client.login(TOKEN);
