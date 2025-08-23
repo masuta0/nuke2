@@ -41,24 +41,6 @@ async function ensureFolder(folderPath) {
   return true;
 }
 
-// ★ 新規: ファイルをDropboxからローカルにダウンロードする関数
-async function downloadToLocal(dropboxPath, localPath) {
-  const client = await ensureDropboxInit();
-  if (!client) return false;
-  try {
-    const res = await client.filesDownload({ path: dropboxPath });
-    const ab = res?.result?.fileBinary;
-    if (!ab) return false;
-    fs.mkdirSync(path.dirname(localPath), { recursive: true });
-    fs.writeFileSync(localPath, Buffer.from(ab));
-    console.log(`✅ Dropboxからローカルにダウンロード成功: ${dropboxPath}`);
-    return true;
-  } catch (e) {
-    console.warn('Dropbox読み込み失敗:', e?.error || e?.message || e);
-    return false;
-  }
-}
-
 async function uploadToDropbox(dropboxPath, contents) {
   const client = await ensureDropboxInit();
   if (!client) return false;
@@ -76,6 +58,7 @@ async function uploadToDropbox(dropboxPath, contents) {
   }
 }
 
+// downloadFromDropbox 関数を修正
 async function downloadFromDropbox(dropboxPath) {
   const client = await ensureDropboxInit();
   if (!client) return null;
@@ -84,7 +67,8 @@ async function downloadFromDropbox(dropboxPath) {
     const buffer = response.result.fileBinary;
     if (buffer) {
       console.log(`✅ Dropboxからダウンロード成功: ${dropboxPath}`);
-      return JSON.parse(Buffer.from(buffer).toString('utf-8'));
+      // ここを修正: JSONをパースせずに、文字列として返す
+      return Buffer.from(buffer).toString('utf-8');
     }
     return null;
   } catch (err) {
@@ -102,5 +86,4 @@ module.exports = {
   ensureFolder,
   uploadToDropbox,
   downloadFromDropbox,
-  downloadToLocal, // ★ 追記
 };
