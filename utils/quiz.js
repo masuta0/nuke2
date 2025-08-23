@@ -24,7 +24,6 @@ function getRandomQuiz(category = null) {
   let categories = Object.keys(quizzes);
   if (categories.length === 0) return null;
 
-  // 'mix'カテゴリに対応
   if (category === 'mix') {
     const allQuestions = Object.values(quizzes).flat();
     if (allQuestions.length === 0) return null;
@@ -41,13 +40,11 @@ function getRandomQuiz(category = null) {
     categories = [category];
   }
 
-  const randomCategory =
-    categories[Math.floor(Math.random() * categories.length)];
+  const randomCategory = categories[Math.floor(Math.random() * categories.length)];
   const questions = quizzes[randomCategory];
   if (!questions || questions.length === 0) return null;
 
-  const randomQuestion =
-    questions[Math.floor(Math.random() * questions.length)];
+  const randomQuestion = questions[Math.floor(Math.random() * questions.length)];
 
   return { 
     category: randomCategory, 
@@ -100,7 +97,6 @@ async function askQuiz(channel, user, category) {
     return;
   }
 
-  // 選択肢を番号付きリストに整形
   const choicesText = quiz.choices
     .map((choice, index) => `${index + 1}. ${choice}`)
     .join("\n");
@@ -118,9 +114,7 @@ async function askQuiz(channel, user, category) {
     });
 
     const answer = collected.first().content.trim();
-
     const isCorrectByText = answer.toLowerCase() === quiz.answer.toLowerCase();
-
     const normalizedAnswer = answer.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
     const answerNumber = parseInt(normalizedAnswer, 10);
     const answerIndex = quiz.choices.findIndex(c => c === quiz.answer);
@@ -135,10 +129,31 @@ async function askQuiz(channel, user, category) {
     await channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。${isChatChannel ? `\n**${user}さん、残りクイズ回数は ${remaining} 回です。**` : ''}`);
   }
 
+  // --- クイズを続けるための新しいロジックを追加 ---
   const followMsg = await channel.send(
     "📝 クイズを続けますか？ 👍 を押すと次の問題を出します"
   );
   await followMsg.react("👍");
+
+  try {
+    const filter = (reaction, reactor) => {
+      return reaction.emoji.name === '👍' && reactor.id === user.id;
+    };
+
+    const reactions = await followMsg.awaitReactions({ filter, max: 1, time: 30000, errors: ["time"] });
+
+    // リアクションが収集されたら、次のクイズを出題
+    if (reactions.size > 0) {
+      // 古いメッセージを削除
+      await followMsg.delete();
+      // 次のクイズを出題
+      await askQuiz(channel, user, category);
+    }
+  } catch (err) {
+    // 時間内にリアクションがなかった場合
+    console.log(`クイズの継続を停止: ${user.tag}が時間内に👍リアクションしませんでした。`);
+    await channel.send(`⌛ クイズの継続を終了します。またいつでも\`!クイズ\`で遊んでね！`);
+  }
 }
 
 module.exports = { preloadQuizzes, getRandomQuiz, askQuiz };
