@@ -537,26 +537,35 @@ async function checkAndPunishMassAction(entry) {
           }
         }
       }
-    } catch { return false; }
-    return true;
+  } catch { return false; }
+      return true;
+    }
+    return false;
   }
-  return false;
-}
 
-async function handleAuditLogEntry(entry) {
-  const { guild, executor, action, target } = entry;
-  const member = guild.members.cache.get(executor.id);
-  if (!member || member.user.bot || isWhitelisted(member)) return;
+  async function handleAuditLogEntry(entry) {
+    const { guild, executor, action, target } = entry;
 
-  // 大量操作検知 (BAN / 削除)
-  if (
-    action === AuditLogEvent.MemberBanAdd ||
-    action === AuditLogEvent.ChannelDelete ||
-    action === AuditLogEvent.RoleDelete
-  ) {
-    const punished = await checkAndPunishMassAction(entry);
-    if (punished) return;
-  }
+    // ギルドと実行者が存在するか最初にチェック
+    if (!guild || !executor) {
+      console.warn('監査ログエントリにギルドまたは実行者の情報がありません。');
+      return;
+    }
+
+    const member = guild.members.cache.get(executor.id);
+
+    // メンバーが見つからない、またはボット、ホワイトリストの場合は処理を中断
+    if (!member || member.user.bot || isWhitelisted(member)) return;
+
+    // 大量操作検知 (BAN / 削除)
+    if (
+      action === AuditLogEvent.MemberBanAdd ||
+      action === AuditLogEvent.ChannelDelete ||
+      action === AuditLogEvent.RoleDelete
+    ) {
+      const punished = await checkAndPunishMassAction(entry);
+      if (punished) return;
+    }
 
   // DM で理由確認
   if (DANGER_ACTIONS.has(action) && !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
