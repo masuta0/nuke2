@@ -1,93 +1,63 @@
-// music.js
+// index.js
+require('dotenv').config();
+const { Client, GatewayIntentBits } = require('discord.js');
 const {
   joinVoiceChannel,
   createAudioPlayer,
   createAudioResource,
   AudioPlayerStatus,
-  NoSubscriberBehavior
+  NoSubscriberBehavior,
 } = require('@discordjs/voice');
-const ytdl = require('ytdl-core');
 const { google } = require('googleapis');
-const urlModule = require('url');
+const ytdl = require('ytdl-core');
 
-// YouTube APIクライアント
+const TOKEN = process.env.DISCORD_TOKEN;
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+
 const youtube = google.youtube({
   version: 'v3',
-  auth: process.env.YOUTUBE_API_KEY // .envにAPIキーを入れてね
+  auth: YOUTUBE_API_KEY,
+});
+
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates,
+  ],
 });
 
 // サーバーごとのキュー管理
 const queues = new Map();
 
-/**
- * 短縮URLや通常URLからvideoIdを抽出する
- */
-function extractVideoId(queryOrUrl) {
-  try {
-    const parsed = new urlModule.URL(queryOrUrl);
-    if (parsed.hostname === 'youtu.be') {
-      return parsed.pathname.slice(1);
-    }
-    if (parsed.searchParams.has('v')) {
-      return parsed.searchParams.get('v');
-    }
-    return null;
-  } catch {
-    return null;
-  }
+function extractVideoId(url) {
+  const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
 }
 
-/**
- * ギルドのキューを作成
- */
-function initQueue(guildId) {
-  if (!queues.has(guildId)) {
-    queues.set(guildId, {
-      connection: null,
-      player: createAudioPlayer({
-        behaviors: {
-          noSubscriber: NoSubscriberBehavior.Pause
-        }
-      }),
-      queue: []
-    });
-  }
+function createQueue(guildId, voiceChannel) {
+  const connection = joinVoiceChannel({
+    channelId: voiceChannel.id,
+    guildId: guildId,
+    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+  });
+
+  const player = createAudioPlayer({
+    behaviors: { noSubscriber: NoSubscriberBehavior.Pause },
+  });
+
+  connection.subscribe(player);
+
+  queues.set(guildId, {
+    voiceChannel,
+    connection,
+    player,
+    queue: [],
+    playing: false,
+  });
 }
 
-/**
- * 次の曲を再生
- */
-async function _playNext(guildId, textChannel) {
-  const data = queues.get(guildId);
-  if (!data) return;
-
-  const song = data.queue.shift();
-  if (!song) {
-    data.connection?.destroy();
-    queues.delete(guildId);
-    return;
-  }
-
-  try {
-    const stream = ytdl(song.url, { filter: 'audioonly', highWaterMark: 1 << 25 });
-    const resource = createAudioResource(stream);
-    data.player.play(resource);
-
-    if (textChannel) {
-      textChannel.send(`▶️ 再生中: **${song.title}**`).catch(() => {});
-    }
-  } catch (e) {
-    console.error(`❌ 再生エラー: ${e}`);
-    if (textChannel) {
-      textChannel.send(`❌ 再生できませんでした: **${song.title}**`).catch(() => {});
-    }
-    _playNext(guildId, textChannel);
-  }
-}
-
-/**
- * 音楽を再生 (URL または 検索ワード)
- */
 async function playUrl(guildId, queryOrUrl, textChannel) {
   const data = queues.get(guildId);
   if (!data) return null;
@@ -112,26 +82,34 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
         }
       }
     } else {
+      // 🔑 API検索
       const apiResults = await youtube.search.list({
         q: queryOrUrl,
         part: 'snippet',
         type: 'video',
-        maxResults: 1
+        maxResults: 1,
       });
+
       if (apiResults?.data?.items?.length) {
         videoId = apiResults.data.items[0].id.videoId;
         url = `https://www.youtube.com/watch?v=${videoId}`;
         title = apiResults.data.items[0].snippet.title;
+      } else {
+        // 🔄 フォールバック
+        const info = await ytdl.getInfo(queryOrUrl).catch(() => null);
+        if (info) {
+          url = info.videoDetails.video_url;
+          title = info.videoDetails.title;
+        }
       }
     }
   } catch (e) {
-    console.error('❌ YouTube APIでの情報取得に失敗しました:', e);
-    return null;
+    console.error('❌ YouTube情報取得エラー:', e);
   }
 
   if (!url || !title) {
     if (textChannel) {
-      textChannel.send('❌ 曲が見つかりませんでした').catch(() => {});
+      textChannel.send('❌ 曲が見つかりませんでした (APIキー or URLエラー)').catch(() => {});
     }
     return null;
   }
@@ -143,58 +121,83 @@ async function playUrl(guildId, queryOrUrl, textChannel) {
   return title;
 }
 
-/**
- * VCへ参加
- */
-function join(voiceChannel) {
-  initQueue(voiceChannel.guild.id);
-  const data = queues.get(voiceChannel.guild.id);
-
-  if (!data.connection) {
-    data.connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: voiceChannel.guild.id,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator
-    });
-    data.connection.subscribe(data.player);
-    data.player.on(AudioPlayerStatus.Idle, () => _playNext(voiceChannel.guild.id, voiceChannel));
+function _playNext(guildId, textChannel) {
+  const data = queues.get(guildId);
+  if (!data || data.queue.length === 0) {
+    data.playing = false;
+    return;
   }
 
-  return data;
+  const song = data.queue.shift();
+  if (!song) return;
+
+  const stream = ytdl(song.url, {
+    filter: 'audioonly',
+    quality: 'highestaudio',
+    highWaterMark: 1 << 25,
+  });
+
+  const resource = createAudioResource(stream);
+  data.player.play(resource);
+  data.playing = true;
+
+  textChannel.send(`🎶 再生中: **${song.title}**`).catch(() => {});
+
+  data.player.once(AudioPlayerStatus.Idle, () => {
+    _playNext(guildId, textChannel);
+  });
 }
 
-/**
- * 再生をスキップ
- */
-function skip(guildId, textChannel) {
-  const data = queues.get(guildId);
-  if (!data) return;
-  if (data.player) {
-    data.player.stop();
-    if (textChannel) {
-      textChannel.send('⏭️ スキップしました').catch(() => {});
+// 🎵 メッセージコマンド
+client.on('messageCreate', async (message) => {
+  if (message.author.bot || !message.guild) return;
+
+  const args = message.content.trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  if (command === '!play') {
+    const query = args.join(' ');
+    if (!query) {
+      return message.reply('❌ 再生したい曲名またはURLを入力してください。');
+    }
+
+    const voiceChannel = message.member?.voice?.channel;
+    if (!voiceChannel) {
+      return message.reply('❌ 先にボイスチャンネルに参加してください。');
+    }
+
+    if (!queues.has(message.guild.id)) {
+      createQueue(message.guild.id, voiceChannel);
+    }
+
+    const title = await playUrl(message.guild.id, query, message.channel);
+    if (title) {
+      message.channel.send(`✅ キューに追加: **${title}**`).catch(() => {});
     }
   }
-}
 
-/**
- * 停止
- */
-function stop(guildId, textChannel) {
-  const data = queues.get(guildId);
-  if (!data) return;
-  data.queue = [];
-  data.player.stop();
-  data.connection?.destroy();
-  queues.delete(guildId);
-  if (textChannel) {
-    textChannel.send('⏹️ 停止しました').catch(() => {});
+  if (command === '!skip') {
+    const data = queues.get(message.guild.id);
+    if (data) {
+      data.player.stop();
+      message.channel.send('⏭️ スキップしました').catch(() => {});
+    }
   }
-}
 
-module.exports = {
-  join,
-  playUrl,
-  skip,
-  stop
-};
+  if (command === '!stop') {
+    const data = queues.get(message.guild.id);
+    if (data) {
+      data.queue = [];
+      data.player.stop();
+      data.connection.destroy();
+      queues.delete(message.guild.id);
+      message.channel.send('🛑 再生を停止しました').catch(() => {});
+    }
+  }
+});
+
+client.once('ready', () => {
+  console.log(`✅ ログイン完了: ${client.user.tag}`);
+});
+
+client.login(TOKEN);
