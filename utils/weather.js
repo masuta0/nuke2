@@ -1,7 +1,7 @@
 // utils/weather.js
 
 const axios = require('axios');
-const translate = require('google-translate-api-free');
+const translate = require('@iamtraction/google-translate');
 const fs = require('fs').promises;
 const path = require('path');
 const { ensureFolder, uploadToDropbox, downloadFromDropbox } = require('./storage');

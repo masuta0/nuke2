@@ -7,7 +7,8 @@ const {
   clearMessages,
   addRoleToAll,
 } = require("../utils/guild");
-const { translateWithRetry, chat } = require("../utils/ai");
+// utils/aiからtranslateWithRetryを削除
+const { chat } = require("../utils/ai");
 const {
   saveUserWeatherPref,
   loadUserWeatherPref,
@@ -15,6 +16,7 @@ const {
 } = require("../utils/weather");
 const { askQuiz } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
+const translate = require('@iamtraction/google-translate');
 
 const cooldown = new Map();
 const aiCooldown = new Map();
@@ -214,8 +216,9 @@ module.exports = async function handlePrefixMessage(client, msg) {
         if (!to) return;
         const text = args.join(" ").trim();
         if (!text) return;
-        const res = await translateWithRetry(text, { to });
-        await msg.reply(res || "翻訳できませんでした");
+        // ★ 修正: translateWithRetryからtranslateに変更
+        const res = await translate(text, { to });
+        await msg.reply(res.text || "翻訳できませんでした");
       }
     }
   } catch (e) {
