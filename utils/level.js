@@ -16,8 +16,13 @@ async function loadData() {
     try {
         await ensureDropboxInit();
         const data = await downloadFromDropbox(DROPBOX_LEVEL_DATA_PATH);
-        userLevels = data || {};
-        console.log('✅ ユーザーレベルデータをDropboxからロードしました。');
+        if (data) {
+            userLevels = JSON.parse(data);
+            console.log('✅ ユーザーレベルデータをDropboxからロードしました。');
+        } else {
+            console.warn('⚠️ ユーザーレベルデータがDropboxに見つかりませんでした。新規作成します。');
+            userLevels = {};
+        }
     } catch (err) {
         console.error('❌ Failed to load user levels data from Dropbox:', err);
         userLevels = {};
@@ -33,7 +38,10 @@ async function loadData() {
 
 async function saveData() {
     try {
-        await uploadToDropbox(DROPBOX_LEVEL_DATA_PATH, JSON.stringify(userLevels, null, 2));
+        const success = await uploadToDropbox(DROPBOX_LEVEL_DATA_PATH, JSON.stringify(userLevels, null, 2));
+        if (!success) {
+            console.error('❌ Failed to save user levels data to Dropbox: Upload function returned false.');
+        }
     } catch (err) {
         console.error('❌ Failed to save user levels data to Dropbox:', err);
     }
@@ -45,22 +53,29 @@ async function addXp(member) {
     }
     const userId = member.id;
     const guildId = member.guild.id;
+
+    // ユーザーとギルドのデータが存在するか確認し、なければ初期化
     if (!userLevels[guildId]) userLevels[guildId] = {};
     if (!userLevels[guildId][userId]) {
         userLevels[guildId][userId] = { level: 0, xp: 0 };
     }
+
     const userData = userLevels[guildId][userId];
     const oldLevel = userData.level;
     const addedXp = Math.floor(Math.random() * 11) + 15;
     userData.xp += addedXp;
     let newLevel = oldLevel;
+
+    // レベルアップのチェック
     while (levelSettings[newLevel + 1] && userData.xp >= levelSettings[newLevel + 1].xp) {
         newLevel++;
     }
+
     if (newLevel > oldLevel) {
         userData.level = newLevel;
         await handleLevelUp(member, newLevel);
     }
+
     await saveData();
     xpCooldown.add(member.id);
     setTimeout(() => {
@@ -89,7 +104,6 @@ async function handleLevelUp(member, newLevel) {
     }
 }
 
-// ★ 新規: レベル情報を取得する関数
 function getLevelData(guildId, userId) {
   if (!userLevels[guildId] || !userLevels[guildId][userId]) {
     return { level: 0, xp: 0 };
@@ -97,14 +111,12 @@ function getLevelData(guildId, userId) {
   return userLevels[guildId][userId];
 }
 
-// ★ 新規: レベルを設定する関数
-async function setLevelAndXp(guildId, userId, newLevel) {
+async function setLevelAndXp(guildId, userId, newLevel, newXp) {
   if (!userLevels[guildId]) userLevels[guildId] = {};
-  userLevels[guildId][userId] = { level: newLevel, xp: 0 };
+  userLevels[guildId][userId] = { level: newLevel, xp: newXp };
   await saveData();
 }
 
-// ★ 新規: 次のレベルまでの必要XPを計算する関数
 function calculateRequiredXp(level) {
   const levelData = levelSettings[level];
   return levelData ? levelData.xp : null;
