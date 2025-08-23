@@ -31,6 +31,7 @@ async function ensureFolder(folderPath) {
   if (!client) return false;
   try {
     await client.filesCreateFolderV2({ path: folderPath, autorename: false });
+    return true;
   } catch (e) {
     if (e.error?.error?.path?.['.tag'] === 'conflict') {
       return true;
@@ -38,16 +39,15 @@ async function ensureFolder(folderPath) {
     console.error('Dropbox ensureFolder失敗:', e?.error || e?.message || e);
     return false;
   }
-  return true;
 }
 
 async function uploadToDropbox(dropboxPath, contents) {
   const client = await ensureDropboxInit();
   if (!client) return false;
   try {
-    await client.filesUpload({
+    const response = await client.filesUpload({
       path: dropboxPath,
-      contents,
+      contents: contents, // contentsはそのまま渡す
       mode: { '.tag': 'overwrite' }
     });
     console.log(`✅ Dropboxにアップロード成功: ${dropboxPath}`);
@@ -58,7 +58,6 @@ async function uploadToDropbox(dropboxPath, contents) {
   }
 }
 
-// downloadFromDropbox 関数を修正
 async function downloadFromDropbox(dropboxPath) {
   const client = await ensureDropboxInit();
   if (!client) return null;
@@ -67,7 +66,6 @@ async function downloadFromDropbox(dropboxPath) {
     const buffer = response.result.fileBinary;
     if (buffer) {
       console.log(`✅ Dropboxからダウンロード成功: ${dropboxPath}`);
-      // ここを修正: JSONをパースせずに、文字列として返す
       return Buffer.from(buffer).toString('utf-8');
     }
     return null;

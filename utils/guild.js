@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
 const { LOG_CHANNEL_ID } = require('./anti-raid');
+const { uploadToDropbox, ensureFolder } = require('./storage'); // storage.jsから関数をインポート
 
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -67,21 +68,27 @@ async function collectBackup(guild) {
   return { meta, roles, channels };
 }
 
-function saveBackup(guildId, data) {
-  const file = path.join(BACKUP_DIR, `${guildId}.json`);
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
-  return file;
-}
+// ローカルへの保存関数は削除
+// function saveBackup(guildId, data) { ... }
+// function loadBackup(guildId) { ... }
 
-function loadBackup(guildId) {
-  const file = path.join(BACKUP_DIR, `${guildId}.json`);
-  if (!fs.existsSync(file)) return null;
-  return JSON.parse(fs.readFileSync(file, 'utf-8'));
-}
-
+// Dropboxにバックアップを保存する関数
 async function backupServer(guild) {
   const data = await collectBackup(guild);
-  saveBackup(guild.id, data);
+  const BACKUP_DIR_DROPBOX = '/bot_backups';
+
+  await ensureFolder(BACKUP_DIR_DROPBOX);
+
+  const success = await uploadToDropbox(
+    `${BACKUP_DIR_DROPBOX}/${guild.id}.json`,
+    JSON.stringify(data, null, 2)
+  );
+
+  if (success) {
+    console.log(`✅ バックアップをDropboxにアップロードしました: ${guild.id}.json`);
+  } else {
+    console.error(`❌ バックアップのDropboxアップロードに失敗しました。`);
+  }
 }
 
 async function getOrCreateLogChannel(guild) {
@@ -102,18 +109,20 @@ async function getOrCreateLogChannel(guild) {
   return logChannel;
 }
 
+// 復元機能もDropboxから読み込むように修正
+const { downloadFromDropbox } = require('./storage'); // downloadFromDropboxをインポート
 async function restoreServer(guild, feedbackChannel) {
-  const backup = loadBackup(guild.id);
+  const backup = await downloadFromDropbox(`/bot_backups/${guild.id}.json`);
   if (!backup) return false;
 
+  const backupData = JSON.parse(backup);
   const existingRoles = guild.roles.cache;
   const existingChannels = guild.channels.cache;
 
   const roleIdMap = new Map();
-  roleIdMap.set(guild.id, guild.id); // @everyone ロールをマッピング
+  roleIdMap.set(guild.id, guild.id);
 
-  // ★ 1. 不足しているロールを作成
-  for (const r of backup.roles) {
+  for (const r of backupData.roles) {
     if (r.id === guild.id) continue;
     const existingRole = existingRoles.find(er => er.name === r.name);
     if (!existingRole) {
@@ -137,8 +146,7 @@ async function restoreServer(guild, feedbackChannel) {
   }
 
   const channelIdMap = new Map();
-  // ★ 2. 不足しているカテゴリを作成
-  const categories = backup.channels.filter(c => c.type === ChannelType.GuildCategory);
+  const categories = backupData.channels.filter(c => c.type === ChannelType.GuildCategory);
   for (const cat of categories) {
     const existingCat = existingChannels.find(ec => ec.name === cat.name && ec.type === ChannelType.GuildCategory);
     if (!existingCat) {
@@ -170,8 +178,7 @@ async function restoreServer(guild, feedbackChannel) {
     }
   }
 
-  // ★ 3. 不足しているテキスト/ボイスチャンネルを作成
-  const others = backup.channels.filter(c => c.type !== ChannelType.GuildCategory);
+  const others = backupData.channels.filter(c => c.type !== ChannelType.GuildCategory);
   for (const ch of others) {
     if (ch.id === LOG_CHANNEL_ID) continue;
     const existingCh = existingChannels.find(ec => ec.name === ch.name && ec.type === ch.type);
@@ -214,8 +221,8 @@ async function restoreServer(guild, feedbackChannel) {
   }
 
   try {
-    if (backup.meta?.name && guild.name !== backup.meta.name) await guild.setName(backup.meta.name, 'Restore: guild name');
-    if (backup.meta?.iconURL) await guild.setIcon(backup.meta.iconURL, 'Restore: guild icon');
+    if (backupData.meta?.name && guild.name !== backupData.meta.name) await guild.setName(backupData.meta.name, 'Restore: guild name');
+    if (backupData.meta?.iconURL) await guild.setIcon(backupData.meta.iconURL, 'Restore: guild icon');
   } catch (e) {
     console.error('サーバーメタデータの復元に失敗しました:', e);
   }
