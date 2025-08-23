@@ -40,6 +40,7 @@ const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const JOIN_LOG_CHANNEL_ID = '1407669514425860136'; // Join log channel ID
+const AI_COOLDOWN_EXEMPT_ROLE = '1408879622870925525'; // AIクールダウンを無効にするロールID
 
 const client = new Client({
   intents: [
