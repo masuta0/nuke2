@@ -5,12 +5,12 @@ const express = require('express');
 const https = require('https');
 const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent, PermissionsBitField, ChannelType } = require('discord.js');
 const path = require('path');
-const fs = require('fs');
+const fs = require('fs').promises; // fsをpromises版に変更
 
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
-const { ensureDropboxInit, uploadToDropbox, downloadFromDropbox } = require('./utils/storage');
+const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { fetchWeather } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
@@ -26,11 +26,16 @@ const {
   onGuildMemberUpdate,
   onGuildBanAdd,
   onGuildMemberRemove,
+  hasManageGuildPermission,
+  backupServerState,
+  restoreServerState,
   pendingModActions,
   restoreRoles,
 } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
-const { hasManageGuildPermission, backupServerState, restoreServerState } = require('./utils/anti-raid');
+
+// ログファイルのパスを定義
+const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -91,14 +96,20 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
+  // ユーザーのメッセージごとにXPを付与
   await addXp(message.member);
   await handleMessage(message);
 
   if (message.channel.type === ChannelType.DM) {
     const pendingAction = pendingModActions.get(message.author.id);
     if (pendingAction) {
-      const isAppropriate = await isReasonAppropriate(pendingAction.entry, message.content);
-      if (isAppropriate === '適切') {
+      // AIを使ってDMの理由をチェック
+      const prompt = `以下の理由が、Discordサーバーのルール違反に対する妥当な理由かどうか判断してください。「適切」か「不適切」のいずれかで回答してください。理由: ${message.content}`;
+      const aiResponse = await chat(prompt);
+
+      const isAppropriate = aiResponse.includes('適切');
+
+      if (isAppropriate) {
         await message.reply('✅ 理由が適切と判断されました。ロールを復元します。');
         await restoreRoles(await message.client.guilds.cache.get(pendingAction.entry.guildId).members.fetch(message.author.id));
         pendingModActions.delete(message.author.id);
@@ -144,18 +155,29 @@ client.on('messageCreate', async (message) => {
       message.channel.send('👋 ボイスチャンネルから退出しました');
       break;
     case 'uploadquiz':
-      if (!fs.existsSync('./quizzes.json')) return message.reply('❌ quizzes.json が存在しません');
-      const contents = fs.readFileSync('./quizzes.json');
-      const result = await uploadToDropbox('/quizzes.json', contents);
-      message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
+      try {
+        const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
+        const result = await uploadToDropbox('/quizzes.json', contents.toString());
+        message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
+      } catch (err) {
+        if (err.code === 'ENOENT') {
+          message.reply('❌ quizzes.json が存在しません');
+        } else {
+          message.reply(`❌ アップロード中にエラーが発生しました: ${err.message}`);
+        }
+      }
       break;
     case 'downloadquiz':
-      const data = await downloadFromDropbox('/quizzes.json');
-      if (data) {
-        fs.writeFileSync('./quizzes.json', JSON.stringify(data, null, 2));
-        message.reply('✅ Dropboxからダウンロードしました');
-      } else {
-        message.reply('❌ ダウンロード失敗');
+      try {
+        const data = await downloadFromDropbox('/quizzes.json');
+        if (data) {
+          await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
+          message.reply('✅ Dropboxからダウンロードしました');
+        } else {
+          message.reply('❌ ダウンロード失敗');
+        }
+      } catch (err) {
+        message.reply(`❌ ダウンロード中にエラーが発生しました: ${err.message}`);
       }
       break;
     case 'backup':
@@ -167,6 +189,53 @@ client.on('messageCreate', async (message) => {
       if (!hasManageGuildPermission(message.member)) return message.reply('⚠️ 管理者権限が必要です');
       await restoreServerState(message.guild);
       message.reply('✅ サーバー構成を復元しました');
+      break;
+    case 'monitor':
+      if (!hasManageGuildPermission(message.member)) return message.reply("⚠️ このコマンドは管理者のみが使用できます。");
+      try {
+        await fs.access(LOG_PATH);
+        const logContent = await fs.readFile(LOG_PATH, 'utf-8');
+        if (logContent.trim().length === 0) {
+          await message.channel.send("✅ 監視ログは空です。");
+        } else {
+          await message.channel.send({
+            content: "**サーバー監視ログ**\n```\n" + logContent + "\n```",
+            files: [{ attachment: Buffer.from(logContent), name: 'anti_raid.log' }]
+          });
+          await message.channel.send("✅ 監視ログを正常に確認しました。");
+        }
+        await fs.unlink(LOG_PATH);
+        await message.channel.send("✅ 監視ログを削除しました。");
+      } catch (e) {
+        if (e.code === 'ENOENT') {
+          await message.channel.send("⚠️ 監視ログファイルが見つかりませんでした。");
+        } else {
+          console.error("監視ログの処理中にエラーが発生しました:", e);
+          await message.channel.send("❌ 監視ログの処理中にエラーが発生しました。");
+        }
+      }
+      break;
+    case 'raid_report':
+      if (!hasManageGuildPermission(message.member)) {
+        return message.reply("⚠️ このコマンドはサーバー管理者のみが使用できます。");
+      }
+      await message.channel.send("AIが荒らしレポートを作成中です...少々お待ちください。");
+      try {
+        const messages = await message.channel.messages.fetch({ limit: 50 });
+        const recentMessages = messages.map(m => {
+          if (m.author.bot) return null;
+          return `[${m.author.username}]: ${m.content}`;
+        }).filter(Boolean).reverse().join('\n');
+        if (!recentMessages) {
+          return message.channel.send('直近のメッセージ履歴がありません。');
+        }
+        const prompt = `以下のDiscordサーバーの最近のメッセージ履歴を分析してください。どのような荒らし行為が行われているか、その傾向（例：スパム、不適切な画像、Fワードの連呼など）を日本語で簡潔にまとめてください。荒らし行為が見られない場合は、その旨を報告してください。\n\nログ:\n${recentMessages}`;
+        const aiResponse = await chat(prompt);
+        await message.channel.send(`**サーバー荒らしレポート**\n${aiResponse || 'AIによる分析に失敗しました。'}`);
+      } catch (e) {
+        console.error('荒らしレポートの作成に失敗しました:', e);
+        await message.channel.send('レポートの作成中にエラーが発生しました。');
+      }
       break;
     default:
       handlePrefixMessage(client, message);
