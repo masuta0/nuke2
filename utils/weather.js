@@ -24,13 +24,25 @@ function removeSuffixes(location) {
   return newLocation;
 }
 
-async function fetchWeather(location) {
-  // まず、地名から「区」「市」などの接尾辞を削除
-  const cleanedLocation = removeSuffixes(location);
+// 天気アイコンを絵文字に変換するマップ
+const weatherEmojis = {
+  'clear sky': '☀️',
+  'few clouds': '🌤️',
+  'scattered clouds': '☁️',
+  'broken clouds': '☁️',
+  'overcast clouds': '☁️',
+  'shower rain': '🌧️',
+  'rain': '🌧️',
+  'light rain': '🌦️',
+  'thunderstorm': '⛈️',
+  'snow': '🌨️',
+  'mist': '🌫️',
+};
 
+async function fetchWeather(location) {
+  const cleanedLocation = removeSuffixes(location);
   let englishLocation = cleanedLocation;
 
-  // 日本語が含まれているかチェック
   if (/[一-龠ぁ-んァ-ヶ]/.test(cleanedLocation)) {
     try {
       const res = await translate(cleanedLocation, { from: 'ja', to: 'en' });
@@ -38,7 +50,6 @@ async function fetchWeather(location) {
       console.log(`✅ 地名「${cleanedLocation}」を「${englishLocation}」に翻訳しました。`);
     } catch (e) {
       console.error('❌ 地名翻訳に失敗しました:', e);
-      // 翻訳失敗時は元の地名をそのまま使用
       englishLocation = cleanedLocation;
     }
   }
@@ -48,7 +59,23 @@ async function fetchWeather(location) {
     const data = response.data;
     const weather = data.weather[0].description;
     const temp = data.main.temp;
-    return `**${data.name}**の天気: ${weather}, 気温: ${temp}°C`;
+    const feelsLike = data.main.feels_like;
+    const humidity = data.main.humidity;
+    const windSpeed = data.wind.speed;
+    const emoji = weatherEmojis[data.weather[0].description] || '❓';
+
+    // 見やすいメッセージに整形
+    const weatherMessage = `
+**${location}**の現在の天気 ${emoji}
+--------------------
+**天気**: ${weather}
+**気温**: ${temp}°C (体感温度: ${feelsLike}°C)
+**湿度**: ${humidity}%
+**風速**: ${windSpeed} m/s
+--------------------
+    `;
+
+    return weatherMessage;
   } catch (e) {
     if (e.response && e.response.status === 404) {
       console.error(`天気情報取得失敗: 地名が見つかりません: ${location} (${englishLocation})`);
