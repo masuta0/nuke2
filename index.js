@@ -134,8 +134,9 @@ client.on('messageCreate', async (message) => {
   switch (command) {
     case 'join':
       if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-      if (await joinVoice(message.guild, message.member.voice.channel)) {
-        message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
+      const voiceChannel = message.member.voice.channel;
+      if (await joinVoice(message.guild, voiceChannel)) {
+        message.channel.send(`✅ **${voiceChannel.name}** に参加しました！`);
       } else {
         message.reply('❌ ボイスチャンネルへの参加に失敗しました。');
       }
