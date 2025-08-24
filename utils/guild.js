@@ -3,13 +3,16 @@ const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
 const { LOG_CHANNEL_ID } = require('./anti-raid');
-const { uploadToDropbox, ensureFolder } = require('./storage'); // storage.jsから関数をインポート
+const { uploadToDropbox, ensureFolder, downloadFromDropbox } = require('./storage'); // storage.jsから必要な関数をインポート
 
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
 function hasManageGuildPermission(member) {
-  return member?.permissions?.has(PermissionsBitField.Flags.ManageGuild);
+  if (!member || !member.permissions) {
+    return false;
+  }
+  return member.permissions.has(PermissionsBitField.Flags.ManageGuild);
 }
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
@@ -68,10 +71,6 @@ async function collectBackup(guild) {
   return { meta, roles, channels };
 }
 
-// ローカルへの保存関数は削除
-// function saveBackup(guildId, data) { ... }
-// function loadBackup(guildId) { ... }
-
 // Dropboxにバックアップを保存する関数
 async function backupServer(guild) {
   const data = await collectBackup(guild);
@@ -110,7 +109,6 @@ async function getOrCreateLogChannel(guild) {
 }
 
 // 復元機能もDropboxから読み込むように修正
-const { downloadFromDropbox } = require('./storage'); // downloadFromDropboxをインポート
 async function restoreServer(guild, feedbackChannel) {
   const backup = await downloadFromDropbox(`/bot_backups/${guild.id}.json`);
   if (!backup) return false;
@@ -347,6 +345,52 @@ async function addRoleToAll(guild, roleName) {
   }
 }
 
+async function lockChannels(guild, roleId) {
+    const everyoneRole = guild.roles.everyone;
+    const targetRole = guild.roles.cache.get(roleId);
+
+    if (!targetRole) {
+        console.error('指定されたロールが見つかりません:', roleId);
+        return false;
+    }
+
+    let lockedCount = 0;
+    let unlockedCount = 0;
+
+    for (const [channelId, channel] of guild.channels.cache) {
+        if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildVoice) {
+            continue;
+        }
+
+        if (!channel.name.includes('認証')) {
+            try {
+                await channel.permissionOverwrites.edit(everyoneRole, {
+                    ViewChannel: false,
+                });
+                await channel.permissionOverwrites.edit(targetRole, {
+                    ViewChannel: true,
+                });
+                lockedCount++;
+            } catch (e) {
+                console.error(`チャンネル ${channel.name} のロックに失敗しました:`, e);
+            }
+        } else {
+            try {
+                await channel.permissionOverwrites.edit(everyoneRole, {
+                    ViewChannel: true,
+                });
+                await channel.permissionOverwrites.edit(targetRole, {
+                    ViewChannel: true,
+                });
+                unlockedCount++;
+            } catch (e) {
+                console.error(`チャンネル ${channel.name} のアンロックに失敗しました:`, e);
+            }
+        }
+    }
+    return { locked: lockedCount, unlocked: unlockedCount };
+}
+
 module.exports = {
   hasManageGuildPermission,
   backupServer,
@@ -354,4 +398,5 @@ module.exports = {
   nukeChannel,
   clearMessages,
   addRoleToAll,
+  lockChannels,
 };

