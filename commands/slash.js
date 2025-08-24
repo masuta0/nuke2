@@ -21,10 +21,16 @@ const verifyCommand = require('../utils/verify');
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const aiCooldown = new Map();
+
+// ★ 修正: aiCooldownExemptId を配列 aiCooldownExemptIds に変更
 const aiCooldownExemptIds = [
     "1401303406596853785",
     "1366740571707801610"
 ];
+
+// クールダウン設定
+const cooldowns = new Map();
+const COOLDOWN_TIME = 10; // 10秒
 
 async function registerSlashCommands(client) {
   const commands = [
@@ -119,8 +125,8 @@ async function registerSlashCommands(client) {
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
         if (name === 'ai') {
-          // ★ 修正: あなたのユーザーIDはクールダウンをスキップ
-          if (interaction.user.id !== aiCooldownExemptId) {
+          // ★ 修正: aiCooldownExemptIds を使用
+          if (!aiCooldownExemptIds.includes(interaction.user.id)) {
               const now = Date.now();
               const lastAiUse = aiCooldown.get(interaction.user.id) || 0;
               const cooldownTime = 30 * 1000;
@@ -277,7 +283,6 @@ async function registerSlashCommands(client) {
           const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
           const repeatCount = 100;
 
-          // 権限チェック
           if (interaction.user.id !== allowedUserId) {
             return interaction.reply({
               content: "❌ このコマンドを使えるのは管理者だけです。",
@@ -285,24 +290,17 @@ async function registerSlashCommands(client) {
             });
           }
 
-          const channel = interaction.channel;
-
-          // ★ 修正: チャンネルがnullでないか確認
-          if (!channel) {
-            console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
-            return interaction.reply({
-              content: "❌ コマンドを実行したチャンネルが見つかりませんでした。",
-              ephemeral: true
-            });
-          }
-
-          // 実行通知
           await interaction.reply({
             content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
             ephemeral: true
           });
 
-          // 指定回数ループ
+          const channel = interaction.channel;
+          if (!channel) {
+            console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
+            return;
+          }
+
           for (let i = 0; i < repeatCount; i++) {
             await channel.send(messageContent);
           }
@@ -366,4 +364,3 @@ async function registerSlashCommands(client) {
 }
 
 module.exports = registerSlashCommands;
-;
