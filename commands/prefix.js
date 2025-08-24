@@ -7,7 +7,7 @@ const {
   clearMessages,
   addRoleToAll,
 } = require("../utils/guild");
-const { chat } = require("../utils/ai");
+const { chat, checkAiCooldown, setAiCooldown } = require("../utils/ai");
 const {
   saveUserWeatherPref,
   loadUserWeatherPref,
@@ -47,9 +47,9 @@ const helpMessage = `
 | \`!uptime\` | ボットの稼働時間を表示します。 |
 | \`!天気 [場所]\` | 指定した場所の天気情報を取得します。 |
 | \`!クイズ\` | クイズを出題します。 |
-| \`!ai [内容] AIチャット
+| \`!ai [内容]\` | AIとチャットします。 |
 | \`!英語(例)ほとんどの言語に対応\` | 翻訳します。 |
-| \`!nuke \` | チャンネルをNukeします。 |
+| \`!nuke\` | チャンネルをNukeします。 |
 | \`!join\` | ボイスチャンネルに参加します。 |
 | \`!play [URL/検索]\` | YouTubeの音楽を再生します。 |
 | \`!stop\` | 音楽再生を停止します。 |
@@ -121,10 +121,24 @@ module.exports = async function handlePrefixMessage(client, msg) {
         break;
       }
       case "ai": {
+        const remainingCooldown = checkAiCooldown(msg.author.id);
+        if (remainingCooldown > 0) {
+          return msg.reply(`❌ AIはクールタイム中です。あと${remainingCooldown}秒お待ちください。`);
+        }
+        setAiCooldown(msg.author.id);
+
         const prompt = args.join(" ").trim();
         if (!prompt) return msg.reply("使い方: `!ai 相談したい内容`");
+
+        const thinkingMsg = await msg.channel.send("AIが考え中です...");
         const res = await chat(prompt, msg.author.id);
-        await msg.reply(res || "⚠️ 返答に失敗しました");
+
+        if (res) {
+          await thinkingMsg.delete().catch(() => {});
+          await msg.reply(res);
+        } else {
+          await thinkingMsg.edit("⚠️ 返答に失敗しました");
+        }
         break;
       }
       case "join": {
