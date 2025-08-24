@@ -24,7 +24,6 @@ const aiCooldown = new Map();
 
 // ★ 修正: あなたのユーザーIDをここに設定
 const aiCooldownExemptId = "1401303406596853785";
-const aiCooldownExemptId = "1366740571707801610";
 async function registerSlashCommands(client) {
   const commands = [
     new SlashCommandBuilder().setName('ai')
