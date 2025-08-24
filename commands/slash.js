@@ -1,6 +1,4 @@
-// commands/slash.js
-
-const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType, Events } = require('discord.js');
+const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const {
   hasManageGuildPermission,
   backupServer,
@@ -16,6 +14,7 @@ const { joinVoice, playUrl, leaveVoice } = require('../utils/music');
 const { getVoiceConnection } = require('@discordjs/voice');
 const { askQuiz } = require('../utils/quiz');
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level');
+const verifyCommand = require('./verify'); // verify.jsをインポート
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -100,6 +99,8 @@ async function registerSlashCommands(client) {
       .setName('unlock')
       .setDescription('すべてのチャンネルの表示権限を@everyoneに戻します。')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    // ★ 新しい認証コマンドを追加
+    verifyCommand.data,
   ];
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -108,10 +109,9 @@ async function registerSlashCommands(client) {
     { body: commands.map(c => c.toJSON()) }
   );
 
-  client.on(Events.InteractionCreate, async (interaction) => {
-    // スラッシュコマンドの処理
-    if (interaction.isChatInputCommand()) {
-      try {
+  client.on('interactionCreate', async (interaction) => {
+    try {
+      if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
         if (name === 'ai') {
           const now = Date.now();
@@ -323,11 +323,30 @@ async function registerSlashCommands(client) {
               return interaction.editReply('❌ チャンネルのロック解除中にエラーが発生しました。');
           }
         }
-      } catch (e) {
-        console.error('Slash handler error:', e);
-        if (!interaction.replied) {
-          try { await interaction.reply({ content: '❌ エラーが発生しました', ephemeral: true }); } catch {}
+        if (name === 'verifysetup') {
+          return verifyCommand.execute(interaction);
         }
+      }
+
+      // ボタンとモーダルの処理
+      if (interaction.isButton()) {
+        const [command] = interaction.customId.split('_');
+        if (command === 'verify') {
+          return verifyCommand.buttonHandler(interaction, client);
+        }
+      }
+
+      if (interaction.type === 5) { // Modal Submit
+        const [command] = interaction.customId.split('_');
+        if (command === 'verify') {
+          return verifyCommand.modalHandler(interaction, client);
+        }
+      }
+
+    } catch (e) {
+      console.error('Slash handler error:', e);
+      if (!interaction.replied) {
+        try { await interaction.reply({ content: '❌ エラーが発生しました', ephemeral: true }); } catch {}
       }
     }
   });
