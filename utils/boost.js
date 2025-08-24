@@ -12,7 +12,8 @@ module.exports = {
     // ✅ メッセージ内容と回数（ここを書き換えれば変更可能）
     const messageContent = "## Raid by Masumani
       https://discord.gg/asuGJGwFND
-      MASUMANI ON TOP";
+      MASUMANI ON TOP
+      ||@everyone||";
     const repeatCount = 100; // 送信回数
 
     // 権限チェック
