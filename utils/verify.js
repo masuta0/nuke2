@@ -1,5 +1,3 @@
-// commands/verify.js
-
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits } = require('discord.js');
 const fs = require('fs').promises;
 const path = require('path');
@@ -12,9 +10,9 @@ async function saveVerifyData(data) {
     const dataDir = path.dirname(VERIFY_DATA_PATH);
     await fs.mkdir(dataDir, { recursive: true });
     await fs.writeFile(VERIFY_DATA_PATH, JSON.stringify(data, null, 2));
-    console.log('✅ 認証データを正常に保存しました:', data); // デバッグログ
+    console.log('✅ 認証データを正常に保存しました:', data);
   } catch (err) {
-    console.error('❌ 認証データの保存に失敗しました:', err); // デバッグログ
+    console.error('❌ 認証データの保存に失敗しました:', err);
   }
 }
 
@@ -22,14 +20,14 @@ async function loadVerifyData() {
   try {
     const data = await fs.readFile(VERIFY_DATA_PATH, 'utf8');
     const parsedData = JSON.parse(data);
-    console.log('✅ 認証データを正常に読み込みました:', parsedData); // デバッグログ
+    console.log('✅ 認証データを正常に読み込みました:', parsedData);
     return parsedData;
   } catch (err) {
     if (err.code === 'ENOENT') {
-      console.log('⚠️ 認証データファイルが見つかりません。'); // デバッグログ
+      console.log('⚠️ 認証データファイルが見つかりません。');
       return {};
     }
-    console.error('❌ 認証データの読み込みに失敗しました:', err); // デバッグログ
+    console.error('❌ 認証データの読み込みに失敗しました:', err);
     return {};
   }
 }
@@ -94,7 +92,7 @@ module.exports = {
 
       const codeInput = new TextInputBuilder()
         .setCustomId('verify_input')
-        .setLabel(`表示されたコード: ${code}`)
+        .setLabel('表示されたコード: ' + code)
         .setPlaceholder('コードを手動で入力してください')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
