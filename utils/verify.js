@@ -30,10 +30,11 @@ module.exports = {
 
     // ロールIDをサーバーごとに保存
     VERIFY_ROLE_ID_MAP.set(interaction.guild.id, roleId);
+    console.log(`✅ サーバー ${interaction.guild.name} の認証ロールを ${role.name} に設定しました。`);
 
     const verifyEmbed = new EmbedBuilder()
       .setTitle('🛡️ サーバー認証')
-      .setDescription(`サーバーに参加するには、「認証する」ボタンを押し、表示されるコードを入力してください。\n認証後は、**${role.name}** ロールが付与されます。`)
+      .setDescription(`サーバーに参加するには、「認証する」ボタンを押し、DMで送られたコードを入力してください。\n認証後は、**${role.name}** ロールが付与されます。`)
       .setColor('Blue');
 
     const row = new ActionRowBuilder().addComponents(
@@ -51,15 +52,20 @@ module.exports = {
       const code = generateCode();
       userCodes.set(interaction.user.id, code);
 
+      try {
+        await interaction.user.send(`🔐 認証コード: **${code}**\nサーバーの認証モーダルに入力してください。`);
+      } catch (err) {
+        return interaction.reply({ content: '❌ DMを送れませんでした。DM設定を「フレンドとサーバーメンバーから許可」にしてください。', ephemeral: true });
+      }
+
       const modal = new ModalBuilder()
         .setCustomId('verify_modal')
         .setTitle('認証コード入力');
 
       const codeInput = new TextInputBuilder()
         .setCustomId('verify_input')
-        .setLabel('表示されたコードを入力してください')
+        .setLabel('DMで送られた6文字コードを入力してください')
         .setStyle(TextInputStyle.Short)
-        .setValue(code) // 修正: ここに発行したコードを自動でセット
         .setRequired(true);
 
       const row = new ActionRowBuilder().addComponents(codeInput);
