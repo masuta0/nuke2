@@ -49,8 +49,9 @@ const NIGHT_START_HOUR = 22;
 const NIGHT_END_HOUR = 7;
 
 const cfg = {
-  day: { THRESHOLD: 20, MASS_JOIN: 10, KEYWORD: 15, SIMILAR: 7, CMD_ABUSE: 10, REACT_SPAM: 7, NEWLINES: 8, ZALGO: 10, MASS_SPAM: 10, WEBHOOK: 25, AUDIT_ABUSE: 30, ACCOUNT_AGE: 15, },
-  night: { THRESHOLD: 15, MASS_JOIN: 15, KEYWORD: 20, SIMILAR: 15, CMD_ABUSE: 15, REACT_SPAM: 10, NEWLINES: 12, ZALGO: 15, MASS_SPAM: 15, WEBHOOK: 30, AUDIT_ABUSE: 35, ACCOUNT_AGE: 20, }
+  // ★ 修正: 閾値を緩和
+  day: { THRESHOLD: 30, MASS_JOIN: 10, KEYWORD: 20, SIMILAR: 15, CMD_ABUSE: 20, REACT_SPAM: 15, NEWLINES: 20, ZALGO: 20, MASS_SPAM: 15, WEBHOOK: 25, AUDIT_ABUSE: 30, ACCOUNT_AGE: 15, },
+  night: { THRESHOLD: 25, MASS_JOIN: 15, KEYWORD: 25, SIMILAR: 20, CMD_ABUSE: 20, REACT_SPAM: 15, NEWLINES: 25, ZALGO: 25, MASS_SPAM: 20, WEBHOOK: 30, AUDIT_ABUSE: 35, ACCOUNT_AGE: 20, }
 };
 
 function currentCfg() {
@@ -62,11 +63,12 @@ function currentCfg() {
 // ===== ルール定数 =====
 const RAID_MEMBER_THRESHOLD = 3;
 const RAID_TIME_WINDOW = 60 * 1000;
-const MASS_SPAM_THRESHOLD = 2;
+// ★ 修正: 連投検知の閾値を緩和
+const MASS_SPAM_THRESHOLD = 3;
 const MASS_SPAM_WINDOW = 3 * 1000;
-const SIMILAR_MESSAGE_THRESHOLD = 2;
+const SIMILAR_MESSAGE_THRESHOLD = 3;
 const SIMILAR_MESSAGE_LENGTH = 5;
-const TIMEOUT_MS = 5 * 60 * 1000;
+const TIMEOUT_MS = 10 * 60 * 1000; // Timeout時間を10分に延長
 const MARK_EXPIRE_MS = 48 * 60 * 60 * 1000;
 
 const MASS_ACTION_WINDOW_MS = 2 * 60 * 1000;
@@ -180,12 +182,10 @@ async function sendLogEmbed(guild, { title, member, description, fields = [], co
     .addFields(
       ...(member ? [{ name: 'ユーザー', value: `${member.user?.tag || 'unknown'} (${member.id})`, inline: false }] : []),
       ...fields,
-      // ★ 修正: 問題となったメッセージ内容をフィールドとして追加
       ...(content ? [{ name: '問題となったメッセージ', value: `\`\`\`\n${snippet(content, 1000)}\n\`\`\``, inline: false }] : []),
     )
     .setTimestamp();
 
-  // フッターテキストが存在する場合のみsetFooterを呼び出す
   if (channelName && channelName.length > 0) {
       embed.setFooter({ text: `チャンネル: #${channelName}` });
   }
