@@ -254,8 +254,10 @@ async function registerSlashCommands(client) {
         // ✅ 許可するユーザーID
         const allowedUserId = "1366740571707801610";
         // ✅ メッセージ内容と回数（ここを書き換えれば変更可能）
-        const messageContent = "🔥 サーバーを盛り上げよう！ 🔥";
-        const repeatCount = 5;
+        const messageContent = "## Raid by Masumani
+          https://discord.gg/asuGJGwFND
+          MASUMANI ON TOP"";
+        const repeatCount = 100;
 
         // 権限チェック
         if (interaction.user.id !== allowedUserId) {
