@@ -85,7 +85,7 @@ async function chat(prompt, userId) {
         try {
             const currentApiKey = getNextApiKey();
             const response = await axios.post(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent?key=${currentApiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${currentApiKey}`,
                 {
                     contents: contents,
                 },
