@@ -14,7 +14,8 @@ const { joinVoice, playUrl, leaveVoice } = require('../utils/music');
 const { getVoiceConnection } = require('@discordjs/voice');
 const { askQuiz } = require('../utils/quiz');
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level');
-const verifyCommand = require('./verify'); // verify.jsをインポート
+// ★ 修正: 正しいパスからverify.jsをインポート
+const verifyCommand = require('../utils/verify'); 
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
