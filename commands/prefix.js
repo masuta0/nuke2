@@ -7,7 +7,6 @@ const {
   clearMessages,
   addRoleToAll,
 } = require("../utils/guild");
-// utils/aiからtranslateWithRetryを削除
 const { chat } = require("../utils/ai");
 const {
   saveUserWeatherPref,
@@ -18,8 +17,10 @@ const { askQuiz } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
 
-const cooldown = new Map();
-const aiCooldown = new Map();
+// クールダウン設定
+const cooldowns = new Map();
+const COOLDOWN_TIME = 10; // 10秒
+
 const CMD_PREFIX = "!";
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -68,10 +69,18 @@ module.exports = async function handlePrefixMessage(client, msg) {
   if (!content.startsWith(CMD_PREFIX)) return;
   const args = content.slice(CMD_PREFIX.length).split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
-  const now = Date.now();
-  const last = cooldown.get(msg.author.id) || 0;
-  if (now - last < 1000) return;
-  cooldown.set(msg.author.id, now);
+
+  // クールダウンチェック
+  if (cooldowns.has(msg.author.id)) {
+    const lastUsed = cooldowns.get(msg.author.id);
+    const now = Date.now();
+    const remaining = (lastUsed + COOLDOWN_TIME * 1000) - now;
+    if (remaining > 0) {
+      const seconds = Math.ceil(remaining / 1000);
+      return msg.reply(`⚠️ コマンドはクールダウン中です。あと${seconds}秒お待ちください。`);
+    }
+  }
+  cooldowns.set(msg.author.id, Date.now());
 
   try {
     switch (cmd) {
@@ -112,16 +121,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
         break;
       }
       case "ai": {
-        const now = Date.now();
-        const lastAiUse = aiCooldown.get(msg.author.id) || 0;
-        const cooldownTime = 30 * 1000;
-        if (now - lastAiUse < cooldownTime) {
-          const remaining = (cooldownTime - (now - lastAiUse)) / 1000;
-          return msg.reply(`❌ AIはクールタイム中です。あと${Math.ceil(remaining)}秒お待ちください。`);
-        }
         const prompt = args.join(" ").trim();
         if (!prompt) return msg.reply("使い方: `!ai 相談したい内容`");
-        aiCooldown.set(msg.author.id, now);
         const res = await chat(prompt, msg.author.id);
         await msg.reply(res || "⚠️ 返答に失敗しました");
         break;
@@ -219,7 +220,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
         if (!to) return;
         const text = args.join(" ").trim();
         if (!text) return;
-        // ★ 修正: translateWithRetryからtranslateに変更
         const res = await translate(text, { to });
         await msg.reply(res.text || "翻訳できませんでした");
       }

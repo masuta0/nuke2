@@ -24,7 +24,7 @@ const aiCooldown = new Map();
 
 // ★ 修正: あなたのユーザーIDをここに設定
 const aiCooldownExemptId = "1401303406596853785";
-
+const aiCooldownExemptId = "1366740571707801610";
 async function registerSlashCommands(client) {
   const commands = [
     new SlashCommandBuilder().setName('ai')
@@ -333,7 +333,6 @@ async function registerSlashCommands(client) {
         }
       }
 
-      // ボタンとモーダルの処理
       if (interaction.isButton()) {
         const [command] = interaction.customId.split('_');
         if (command === 'verify') {
@@ -341,7 +340,7 @@ async function registerSlashCommands(client) {
         }
       }
 
-      if (interaction.type === 5) { // Modal Submit
+      if (interaction.type === 5) {
         const [command] = interaction.customId.split('_');
         if (command === 'verify') {
           return verifyCommand.modalHandler(interaction, client);
@@ -358,3 +357,4 @@ async function registerSlashCommands(client) {
 }
 
 module.exports = registerSlashCommands;
+;
