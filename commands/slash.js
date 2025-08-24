@@ -269,7 +269,7 @@ async function registerSlashCommands(client) {
         }
         if (name === 'boost') {
           const allowedUserId = "1366740571707801610";
-          const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
+          const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP \n ||@everyone||`;
           const repeatCount = 100;
 
           if (interaction.user.id !== allowedUserId) {
