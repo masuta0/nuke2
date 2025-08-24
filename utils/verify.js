@@ -1,33 +1,40 @@
+// commands/verify.js
+
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs').promises;
+const fs = require('fs').promises; // ローカルファイルは不要だが、一部ロジックのために残す
 const path = require('path');
+const { uploadToDropbox, downloadFromDropbox, ensureFolder } = require('../utils/storage');
 
 const userCodes = new Map();
-const VERIFY_DATA_PATH = path.join(__dirname, '../data/verifyData.json');
+const DROPBOX_VERIFY_DATA_PATH = '/bot_data/verifyData.json';
 
 async function saveVerifyData(data) {
   try {
-    const dataDir = path.dirname(VERIFY_DATA_PATH);
-    await fs.mkdir(dataDir, { recursive: true });
-    await fs.writeFile(VERIFY_DATA_PATH, JSON.stringify(data, null, 2));
-    console.log('✅ 認証データを正常に保存しました:', data);
+    // Dropboxに認証データをアップロード
+    const success = await uploadToDropbox(DROPBOX_VERIFY_DATA_PATH, JSON.stringify(data, null, 2));
+    if (success) {
+      console.log('✅ 認証データをDropboxに正常に保存しました:', data);
+    } else {
+      console.error('❌ 認証データのDropboxへの保存に失敗しました。');
+    }
   } catch (err) {
-    console.error('❌ 認証データの保存に失敗しました:', err);
+    console.error('❌ 認証データの保存中にエラーが発生しました:', err);
   }
 }
 
 async function loadVerifyData() {
   try {
-    const data = await fs.readFile(VERIFY_DATA_PATH, 'utf8');
-    const parsedData = JSON.parse(data);
-    console.log('✅ 認証データを正常に読み込みました:', parsedData);
-    return parsedData;
-  } catch (err) {
-    if (err.code === 'ENOENT') {
-      console.log('⚠️ 認証データファイルが見つかりません。');
-      return {};
+    // Dropboxから認証データをダウンロード
+    const data = await downloadFromDropbox(DROPBOX_VERIFY_DATA_PATH);
+    if (data) {
+      const parsedData = JSON.parse(data);
+      console.log('✅ 認証データをDropboxから正常に読み込みました:', parsedData);
+      return parsedData;
     }
-    console.error('❌ 認証データの読み込みに失敗しました:', err);
+    console.log('⚠️ 認証データがDropboxに見つかりません。');
+    return {};
+  } catch (err) {
+    console.error('❌ 認証データの読み込み中にエラーが発生しました:', err);
     return {};
   }
 }
