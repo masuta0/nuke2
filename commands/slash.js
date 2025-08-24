@@ -23,7 +23,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const aiCooldown = new Map();
 
 // ★ 修正: あなたのユーザーIDをここに設定
-const aiCooldownExemptId = "1401303406596853785";
+const aiCooldownExemptId = "1401303406596853785","1366740571707801610";
 async function registerSlashCommands(client) {
   const commands = [
     new SlashCommandBuilder().setName('ai')
@@ -275,6 +275,7 @@ async function registerSlashCommands(client) {
           const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
           const repeatCount = 100;
 
+          // 権限チェック
           if (interaction.user.id !== allowedUserId) {
             return interaction.reply({
               content: "❌ このコマンドを使えるのは管理者だけです。",
@@ -282,17 +283,24 @@ async function registerSlashCommands(client) {
             });
           }
 
+          const channel = interaction.channel;
+
+          // ★ 修正: チャンネルがnullでないか確認
+          if (!channel) {
+            console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
+            return interaction.reply({
+              content: "❌ コマンドを実行したチャンネルが見つかりませんでした。",
+              ephemeral: true
+            });
+          }
+
+          // 実行通知
           await interaction.reply({
             content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
             ephemeral: true
           });
 
-          const channel = interaction.channel;
-          if (!channel) {
-            console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
-            return;
-          }
-
+          // 指定回数ループ
           for (let i = 0; i < repeatCount; i++) {
             await channel.send(messageContent);
           }
