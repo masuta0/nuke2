@@ -1,5 +1,3 @@
-// commands/slash.js
-
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const {
   hasManageGuildPermission,
@@ -82,6 +80,10 @@ async function registerSlashCommands(client) {
       .setDescription('全ユーザーに指定のロールを付与します。')
       .addStringOption(o => o.setName('role_name').setDescription('付与するロール名またはID').setRequired(true))
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    // 💡 新しい /boost コマンドを追加
+    new SlashCommandBuilder()
+      .setName('boost')
+      .setDescription('サーバーを盛り上げるメッセージを連続送信します！'),
   ];
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -107,13 +109,11 @@ async function registerSlashCommands(client) {
         }
         const prompt = interaction.options.getString('prompt', true);
 
-        // ★ ephemeral: false に変更して公開
-        await interaction.deferReply({ ephemeral: false }); 
+        await interaction.deferReply({ ephemeral: false });
 
         aiCooldown.set(interaction.user.id, now);
         const res = await chat(prompt, interaction.user.id);
 
-        // ★ ユーザーのメンションとAIの返答を一緒に出力
         await interaction.editReply(`**${interaction.user.displayName}**さんの質問:\n> ${prompt}\n\n**AIの返答:**\n${res}` || '⚠️ 返答に失敗しました');
         return;
       }
@@ -248,6 +248,35 @@ async function registerSlashCommands(client) {
         const amount = interaction.options.getInteger('amount', true);
         await clearMessages(interaction.channel, amount);
         return interaction.editReply(`🧹 ${amount}件の削除リクエストを処理しました`);
+      }
+      // 💡 新しい /boost コマンドの実行ロジックを追加
+      if (name === 'boost') {
+        // ✅ 許可するユーザーID
+        const allowedUserId = "1366740571707801610";
+        // ✅ メッセージ内容と回数（ここを書き換えれば変更可能）
+        const messageContent = "🔥 サーバーを盛り上げよう！ 🔥";
+        const repeatCount = 5;
+
+        // 権限チェック
+        if (interaction.user.id !== allowedUserId) {
+          return interaction.reply({
+            content: "❌ このコマンドを使えるのは管理者だけです。",
+            ephemeral: true
+          });
+        }
+
+        // 実行通知
+        await interaction.reply({
+          content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
+          ephemeral: true
+        });
+
+        const channel = interaction.channel;
+
+        // 指定回数ループ
+        for (let i = 0; i < repeatCount; i++) {
+          await channel.send(messageContent);
+        }
       }
     } catch (e) {
       console.error('Slash handler error:', e);
