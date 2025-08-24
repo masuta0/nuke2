@@ -176,6 +176,7 @@ async function getOrCreateLogChannel(guild, channelId = LOG_CHANNEL_ID) {
 async function sendLogEmbed(guild, { title, member, description, fields = [], color = 0xff0000, channelName, logChannelId = LOG_CHANNEL_ID }) {
   const ch = await getOrCreateLogChannel(guild, logChannelId);
   if (!ch) return;
+
   const embed = new EmbedBuilder()
     .setColor(color)
     .setTitle(title)
@@ -184,8 +185,14 @@ async function sendLogEmbed(guild, { title, member, description, fields = [], co
       ...(member ? [{ name: 'ユーザー', value: `${member.user?.tag || 'unknown'} (${member.id})`, inline: false }] : []),
       ...fields
     )
-    .setFooter({ text: channelName ? `チャンネル: #${channelName}` : '' })
+    // ★ 修正: フッターテキストが空でない場合のみsetFooterを呼び出す
+    .setFooter(channelName ? { text: `チャンネル: #${channelName}` } : {})
     .setTimestamp();
+
+  if (channelName && channelName.length > 0) {
+      embed.setFooter({ text: `チャンネル: #${channelName}` });
+  }
+
   ch.send({ embeds: [embed] }).catch(() => {});
 }
 
@@ -501,7 +508,7 @@ async function checkAndPunishMassAction(entry) {
 
   const now = Date.now();
   const executorId = executor.id;
-  const logMap = (action === AuditLogEvent.MemberBanAdd) ? executorActionLog.massBan : executorActionLog.massNuke;
+  const logMap = (action === AuditLogEvent.MemberBanAdd) ? massBanLog : massNukeLog;
 
   if (!logMap.has(executorId)) logMap.set(executorId, []);
   const logArray = logMap.get(executorId);

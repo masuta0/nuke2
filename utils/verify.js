@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 
 const userCodes = new Map(); // ユーザーごとの認証コードを保存
+const VERIFY_ROLE_ID_MAP = new Map(); // サーバーIDとロールIDを紐づけて保存
 
 function generateCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -26,6 +27,10 @@ module.exports = {
   async execute(interaction) {
     const role = interaction.options.getRole('role');
 
+    // 認証ロールのIDを保存
+    VERIFY_ROLE_ID_MAP.set(interaction.guild.id, role.id);
+    console.log(`✅ サーバー ${interaction.guild.name} の認証ロールを ${role.name} に設定しました。`);
+
     const verifyEmbed = new EmbedBuilder()
       .setTitle('🛡️ サーバー認証')
       .setDescription(`サーバーに参加するには、「認証する」ボタンを押し、DMで送られたコードを入力してください。\n認証後は、**${role.name}** ロールが付与されます。`)
@@ -33,7 +38,7 @@ module.exports = {
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`verify_button_${role.id}`) // ロールIDをカスタムIDに含める
+        .setCustomId('verify_button')
         .setLabel('認証する')
         .setStyle(ButtonStyle.Primary)
     );
@@ -41,56 +46,50 @@ module.exports = {
     await interaction.reply({ embeds: [verifyEmbed], components: [row] });
   },
 
-  async buttonHandler(interaction) {
-    const [command, roleId] = interaction.customId.split('_');
+  async buttonHandler(interaction, client) {
+    if (interaction.customId === 'verify_button') {
+      const code = generateCode();
+      userCodes.set(interaction.user.id, code);
 
-    if (command === 'verify' && roleId === 'button') { // `verify_button_<roleId>` の形式で判断
-      // ユーザーにコードが未発行なら発行してDM送信
-      if (!userCodes.has(interaction.user.id)) {
-        const code = generateCode();
-        userCodes.set(interaction.user.id, { code, roleId }); // ロールIDも一緒に保存
-
-        try {
-          await interaction.user.send(`🔐 認証コード: **${code}**\nサーバーで入力してください！`);
-        } catch (err) {
-          return interaction.reply({ content: '❌ DMを送れませんでした。DMを解放してください。', ephemeral: true });
-        }
-      }
-
-      // モーダル作成
       const modal = new ModalBuilder()
-        .setCustomId(`verify_modal_${roleId}`) // ロールIDをカスタムIDに含める
+        .setCustomId('verify_modal')
         .setTitle('認証コード入力');
 
-      const input = new TextInputBuilder()
-        .setCustomId('verify_input')
+      const codeInput = new TextInputBuilder()
+        .setCustomId('verify_code_input')
         .setLabel('DMで送られた6文字コードを入力してください')
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
-      const row = new ActionRowBuilder().addComponents(input);
-      modal.addComponents(row);
+      const dmPromptInput = new TextInputBuilder()
+        .setCustomId('verify_code_prompt')
+        .setLabel(`🔐 DMに送信されたコード（${code}）をここに貼り付け`)
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      const firstRow = new ActionRowBuilder().addComponents(codeInput);
+      const secondRow = new ActionRowBuilder().addComponents(dmPromptInput);
+      modal.addComponents(firstRow, secondRow);
 
       await interaction.showModal(modal);
     }
   },
 
-  async modalHandler(interaction) {
-    const [command, roleId] = interaction.customId.split('_');
+  async modalHandler(interaction, client) {
+    if (interaction.customId === 'verify_modal') {
+      const inputCode = interaction.fields.getTextInputValue('verify_code_input');
+      const correctCode = userCodes.get(interaction.user.id);
 
-    if (command === 'verify' && roleId === 'modal') { // `verify_modal_<roleId>` の形式で判断
-      const input = interaction.fields.getTextInputValue('verify_input');
-      const userData = userCodes.get(interaction.user.id);
+      if (inputCode === correctCode) {
+        const roleId = VERIFY_ROLE_ID_MAP.get(interaction.guild.id);
+        if (!roleId) {
+          return interaction.reply({ content: '❌ 認証ロールが設定されていません。管理者に連絡してください。', ephemeral: true });
+        }
 
-      if (!userData) {
-        return interaction.reply({ content: '❌ 認証コードが発行されていません。もう一度ボタンを押してください。', ephemeral: true });
-      }
-
-      if (input === userData.code) {
         try {
           const member = await interaction.guild.members.fetch(interaction.user.id);
-          await member.roles.add(userData.roleId);
-          userCodes.delete(interaction.user.id); // 1回限り
+          await member.roles.add(roleId);
+          userCodes.delete(interaction.user.id);
 
           await interaction.reply({ content: '✅ 認証に成功しました！ロールを付与しました。', ephemeral: true });
         } catch (err) {
