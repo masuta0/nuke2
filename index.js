@@ -33,6 +33,7 @@ const {
   restoreRoles,
 } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
+const { restoreVerifyMessage } = require('./commands/verify');
 
 const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 const TOKEN = process.env.TOKEN;
@@ -66,6 +67,7 @@ client.once('ready', async () => {
   await ensureDropboxInit();
   preloadQuizzes();
   await loadData();
+  await restoreVerifyMessage(client);
 
   const start = Date.now();
   const updateUptimeStatus = () => {
@@ -198,7 +200,7 @@ client.on('messageCreate', async (message) => {
         } else {
           await message.channel.send({
             content: "**サーバー監視ログ**\n```\n" + logContent + "\n```",
-            files: [{ attachment: Buffer.from(logContent), name: 'anti_raid.log' }]
+            files: [{ attachment: Buffer.from(logContent), name: 'anti-raid.log' }]
           });
           await message.channel.send("✅ 監視ログを正常に確認しました。");
         }
@@ -245,7 +247,43 @@ client.on('messageUpdate', async (oldMessage, newMessage) => {
   await handleMessageUpdate(oldMessage, newMessage);
 });
 
-client.on('guildMemberAdd', handleMemberJoin);
+// 新規メンバー参加時のウェルカムメッセージ
+client.on('guildMemberAdd', async member => {
+  const targetChannelId = '1407717252945543250';
+  const channel = member.guild.channels.cache.get(targetChannelId);
+
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    console.log(`指定されたチャンネルが見つからないか、テキストチャンネルではありません。ID: ${targetChannelId}`);
+    return;
+  }
+
+  try {
+    const welcomeMessage = await channel.send(`<@${member.id}> さん、サーバーへようこそ！`);
+
+    setTimeout(() => {
+      welcomeMessage.delete()
+        .then(() => console.log(`メッセージを削除しました。`))
+        .catch(error => {
+          console.error('メッセージの削除中にエラーが発生しました:', error);
+        });
+    }, 5000);
+  } catch (error) {
+    console.error('メッセージの送信中にエラーが発生しました:', error);
+  }
+});
+
+// 退出メンバーへのDM送信機能
+client.on('guildMemberRemove', async member => {
+    const leaveMessage = `「**${member.guild.name}**」からの退出は許されていません。\n https://discord.gg/dmTWfKg6T5`;
+
+    try {
+        await member.user.send(leaveMessage);
+        console.log(`✅ ${member.user.tag} に退出DMを送信しました。`);
+    } catch (error) {
+        console.error(`❌ ${member.user.tag} にDMを送信できませんでした。`, error);
+    }
+});
+
 client.on('guildMemberRemove', onGuildMemberRemove);
 client.on('guildMemberUpdate', onGuildMemberUpdate);
 client.on('guildBanAdd', onGuildBanAdd);
@@ -254,28 +292,3 @@ client.on('messageReactionAdd', handleReactionAdd);
 client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
 
 client.login(TOKEN);
-
-// ユーザー参加時にメンションして5秒後に削除する機能
-client.on('guildMemberAdd', async member => {
-    const targetChannelId = '1407717252945543250';
-    const channel = member.guild.channels.cache.get(targetChannelId);
-
-    if (!channel || channel.type !== 0) {
-        console.log(`指定されたチャンネルが見つからないか、テキストチャンネルではありません。ID: ${targetChannelId}`);
-        return;
-    }
-
-    try {
-        const welcomeMessage = await channel.send(`<@${member.id}> さん、サーバーへようこそ！`);
-
-        setTimeout(() => {
-            welcomeMessage.delete()
-                .then(() => console.log(`メッセージを削除しました。`))
-                .catch(error => {
-                    console.error('メッセージの削除中にエラーが発生しました:', error);
-                });
-        }, 5000);
-    } catch (error) {
-        console.error('メッセージの送信中にエラーが発生しました:', error);
-    }
-});
