@@ -21,9 +21,11 @@ const verifyCommand = require('../utils/verify');
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const aiCooldown = new Map();
+const aiCooldownExemptIds = [
+    "1401303406596853785",
+    "1366740571707801610"
+];
 
-// ★ 修正: あなたのユーザーIDをここに設定
-const aiCooldownExemptId = "1401303406596853785","1366740571707801610";
 async function registerSlashCommands(client) {
   const commands = [
     new SlashCommandBuilder().setName('ai')
