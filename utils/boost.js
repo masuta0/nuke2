@@ -7,8 +7,8 @@ module.exports = {
 
   async execute(interaction) {
     // ✅ 許可するユーザーID
-    const allowedUserId = "1366740571707801610";"1401303406596853785";
-
+    const allowedUserId = "1366740571707801610";
+    const allowedUserId = "1401303406596853785";
     // ✅ メッセージ内容と回数（ここを書き換えれば変更可能）
     const messageContent = "## Raid by Masumani
       https://discord.gg/asuGJGwFND
