@@ -44,9 +44,9 @@ try { if (fs.existsSync(SCORE_PATH)) scores = JSON.parse(fs.readFileSync(SCORE_P
 try { if (fs.existsSync(MARK_PATH)) markedUsersStore = JSON.parse(fs.readFileSync(MARK_PATH, 'utf8')); } catch {}
 try { if (fs.existsSync(BACKUP_PATH)) serverBackup = JSON.parse(fs.readFileSync(BACKUP_PATH, 'utf8')); } catch {}
 
-function saveScores() { try { fs.writeFileSync(SCORE_PATH, JSON.stringify(scores, null, 2)); } catch {} }
-function saveMarks() { try { fs.writeFileSync(MARK_PATH, JSON.stringify(markedUsersStore, null, 2)); } catch {} }
-function saveBackup() { try { fs.writeFileSync(BACKUP_PATH, JSON.stringify(serverBackup, null, 2)); } catch {} }
+function saveScores() { try { fs.writeFileSync(SCORE_PATH, JSON.stringify(scores, null, 2)); } }
+function saveMarks() { try { fs.writeFileSync(MARK_PATH, JSON.stringify(markedUsersStore, null, 2)); } }
+function saveBackup() { try { fs.writeFileSync(BACKUP_PATH, JSON.stringify(serverBackup, null, 2)); } }
 
 // ===== 閾値（昼/夜で可変）=====
 const NIGHT_START_HOUR = 22;
@@ -173,7 +173,7 @@ async function getOrCreateLogChannel(guild, channelId = LOG_CHANNEL_ID) {
   }
 }
 
-async function sendLogEmbed(guild, { title, member, description, fields = [], color = 0xff0000, channelName, logChannelId = LOG_CHANNEL_ID }) {
+async function sendLogEmbed(guild, { title, member, description, fields = [], color = 0xff0000, channelName, logChannelId = LOG_CHANNEL_ID, content = null }) {
   const ch = await getOrCreateLogChannel(guild, logChannelId);
   if (!ch) return;
 
@@ -183,12 +183,13 @@ async function sendLogEmbed(guild, { title, member, description, fields = [], co
     .setDescription(description || '')
     .addFields(
       ...(member ? [{ name: 'ユーザー', value: `${member.user?.tag || 'unknown'} (${member.id})`, inline: false }] : []),
-      ...fields
+      ...fields,
+      // ★ 修正: 問題となったメッセージ内容をフィールドとして追加
+      ...(content ? [{ name: '問題となったメッセージ', value: `\`\`\`\n${snippet(content, 1000)}\n\`\`\``, inline: false }] : []),
     )
-    // ★ 修正: フッターテキストが空でない場合のみsetFooterを呼び出す
-    .setFooter(channelName ? { text: `チャンネル: #${channelName}` } : {})
     .setTimestamp();
 
+  // フッターテキストが存在する場合のみsetFooterを呼び出す
   if (channelName && channelName.length > 0) {
       embed.setFooter({ text: `チャンネル: #${channelName}` });
   }
@@ -336,7 +337,7 @@ async function handleAiJudgement(message) {
       const added = addScore(member.id, 15);
       await sendLogEmbed(message.guild, {
         title: '🤖 AI 不審判定', member, description: `理由: ${reason}\n付与: +15\n現在: ${added}/${currentCfg().THRESHOLD}`,
-        channelName: message.channel?.name, color: 0x6c5ce7,
+        channelName: message.channel?.name, color: 0x6c5ce7, content: message.content,
       });
       await punishByScore(member, reason, message.channel?.name);
     }
@@ -406,7 +407,7 @@ async function handleMessage(message) {
     const s = addScore(uid, c.MASS_SPAM);
     await safeDelete(message, 'メッセージ連投');
     await sendLogEmbed(message.guild, {
-      title: '🚧 連投検知', member, description: `+${c.MASS_SPAM} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200,
+      title: '🚧 連投検知', member, description: `+${c.MASS_SPAM} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200, content: message.content,
     });
     return punishByScore(member, 'メッセージ連投', message.channel?.name);
   }
@@ -417,7 +418,7 @@ async function handleMessage(message) {
     const s = addScore(uid, c.KEYWORD);
     await safeDelete(message, 'NGワード');
     await sendLogEmbed(message.guild, {
-      title: '🚨 NGキーワード', member, description: `+${c.KEYWORD} / 現在 ${s}/${c.THRESHOLD}\n内容（抜粋）: ${snippet(message.content)}`, channelName: message.channel?.name,
+      title: '🚨 NGキーワード', member, description: `+${c.KEYWORD} / 現在 ${s}/${c.THRESHOLD}\n内容（抜粋）: ${snippet(message.content)}`, channelName: message.channel?.name, content: message.content,
     });
     return punishByScore(member, 'NGワード', message.channel?.name);
   }
@@ -427,7 +428,7 @@ async function handleMessage(message) {
     const s = addScore(uid, c.NEWLINES);
     await safeDelete(message, '過度な改行');
     await sendLogEmbed(message.guild, {
-      title: '🚧 過度な改行', member, description: `+${c.NEWLINES} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200,
+      title: '🚧 過度な改行', member, description: `+${c.NEWLINES} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200, content: message.content,
     });
     return punishByScore(member, '過度な改行', message.channel?.name);
   }
@@ -437,7 +438,7 @@ async function handleMessage(message) {
     const s = addScore(uid, c.ZALGO);
     await safeDelete(message, 'Zalgo 乱用');
     await sendLogEmbed(message.guild, {
-      title: '🚧 Zalgo 乱用', member, description: `+${c.ZALGO} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200,
+      title: '🚧 Zalgo 乱用', member, description: `+${c.ZALGO} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200, content: message.content,
     });
     return punishByScore(member, 'Zalgo 乱用', message.channel?.name);
   }
@@ -454,7 +455,7 @@ async function handleMessage(message) {
       const s = addScore(uid, c.SIMILAR);
       await safeDelete(message, '類似メッセージ連投');
       await sendLogEmbed(message.guild, {
-        title: '🚧 類似メッセージ', member, description: `+${c.SIMILAR} / 現在 ${s}/${c.THRESHOLD}\n内容（抜粋）: ${snippet(message.content)}`, channelName: message.channel?.name, color: 0xffa200,
+        title: '🚧 類似メッセージ', member, description: `+${c.SIMILAR} / 現在 ${s}/${c.THRESHOLD}\n内容（抜粋）: ${snippet(message.content)}`, channelName: message.channel?.name, color: 0xffa200, content: message.content,
       });
       return punishByScore(member, '類似メッセージ連投', message.channel?.name);
     }
@@ -465,7 +466,7 @@ async function handleMessage(message) {
     if (now - last < 1000) {
       const s = addScore(uid, c.CMD_ABUSE);
       await sendLogEmbed(message.guild, {
-        title: '🚧 コマンド連打', member, description: `+${c.CMD_ABUSE} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200,
+        title: '🚧 コマンド連打', member, description: `+${c.CMD_ABUSE} / 現在 ${s}/${c.THRESHOLD}`, channelName: message.channel?.name, color: 0xffa200, content: message.content,
       });
       return punishByScore(member, 'コマンド連打', message.channel?.name);
     }
@@ -672,7 +673,7 @@ async function onGuildMemberUpdate(oldMember, newMember) {
   const afterUntil = newMember.communicationDisabledUntilTimestamp || 0;
   if (beforeUntil === 0 && afterUntil > 0) {
     const executor = await findExecutorForTarget(newMember.guild, AuditLogEvent.MemberUpdate, newMember.id);
-    if (executor && (isInProbation(executor.id) || recordAndCheckMassAbuse(executor.id, newMember.id, 'TIMEOUT'))) {
+    if (executor && (isInProbation(executor.id) || recordAndCheckMassAction(executor.id, newMember.id, 'TIMEOUT'))) {
       try {
         await newMember.timeout(null, '荒らし検知: Timeout解除');
       } catch (e) {}
