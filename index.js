@@ -5,7 +5,7 @@ const express = require('express');
 const https = require('https');
 const { Client, GatewayIntentBits, ActivityType, Partials, AuditLogEvent, PermissionsBitField, ChannelType } = require('discord.js');
 const path = require('path');
-const fs = require('fs').promises; // fsをpromises版に変更
+const fs = require('fs').promises;
 
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
@@ -34,13 +34,11 @@ const {
 } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
 
-// ログファイルのパスを定義
 const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
-
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
-const JOIN_LOG_CHANNEL_ID = '1407669514425860136'; // Join log channel ID
-const AI_COOLDOWN_EXEMPT_ROLE = '1408879622870925525'; // AIクールダウンを無効にするロールID
+const JOIN_LOG_CHANNEL_ID = '1407669514425860136';
+const AI_COOLDOWN_EXEMPT_ROLE = '1408879622870925525';
 
 const client = new Client({
   intents: [
@@ -53,7 +51,7 @@ const client = new Client({
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildBans, // guildBanAddで必要
+    GatewayIntentBits.GuildBans,
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
@@ -97,14 +95,12 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // ユーザーのメッセージごとにXPを付与
   await addXp(message.member);
   await handleMessage(message);
 
   if (message.channel.type === ChannelType.DM) {
     const pendingAction = pendingModActions.get(message.author.id);
     if (pendingAction) {
-      // AIを使ってDMの理由をチェック
       const prompt = `以下の理由が、Discordサーバーのルール違反に対する妥当な理由かどうか判断してください。「適切」か「不適切」のいずれかで回答してください。理由: ${message.content}`;
       const aiResponse = await chat(prompt);
 
@@ -145,8 +141,8 @@ client.on('messageCreate', async (message) => {
       if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       const query = args.join(' ');
       if (!query) return message.reply('❌ 曲名またはURLを入力してください');
-      const title = await playUrl(message.guild.id, query, message.channel);
-      message.channel.send(title ? `▶️ 再生キューに追加: **${title}**` : '❌ 曲が見つかりませんでした');
+      const musicTitle = await playUrl(message.guild.id, query, message.channel);
+      message.channel.send(musicTitle ? `▶️ 再生キューに追加: **${musicTitle}**` : '❌ 曲が見つかりませんでした');
       break;
     case 'stop':
       const stopped = stopMusic(message.guild.id);
@@ -258,3 +254,28 @@ client.on('messageReactionAdd', handleReactionAdd);
 client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
 
 client.login(TOKEN);
+
+// ユーザー参加時にメンションして5秒後に削除する機能
+client.on('guildMemberAdd', async member => {
+    const targetChannelId = '1407717252945543250';
+    const channel = member.guild.channels.cache.get(targetChannelId);
+
+    if (!channel || channel.type !== 0) {
+        console.log(`指定されたチャンネルが見つからないか、テキストチャンネルではありません。ID: ${targetChannelId}`);
+        return;
+    }
+
+    try {
+        const welcomeMessage = await channel.send(`<@${member.id}> さん、サーバーへようこそ！`);
+
+        setTimeout(() => {
+            welcomeMessage.delete()
+                .then(() => console.log(`メッセージを削除しました。`))
+                .catch(error => {
+                    console.error('メッセージの削除中にエラーが発生しました:', error);
+                });
+        }, 5000);
+    } catch (error) {
+        console.error('メッセージの送信中にエラーが発生しました:', error);
+    }
+});
