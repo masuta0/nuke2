@@ -121,14 +121,14 @@ async function registerSlashCommands(client) {
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
 
-        // ★ 全体的な変更: コマンドの実行がサーバー内かDMかを最初にチェック
+        // ★ グローバルコマンドに対応するため、最初にサーバー内での実行かチェック
         if (!interaction.guild) {
-          // DMで実行されたコマンドは、AIチャットや天気予報など、サーバーに依存しない機能のみ許可
-          if (name === 'ai' || name === '天気') {
-             // DMでの処理をここに書くか、専用の関数に振り分ける
-             return interaction.reply('DMでのコマンド実行はAIチャットと天気予報のみ対応しています。');
-          } else {
-             return interaction.reply('❌ このコマンドはサーバー内でのみ実行できます。');
+          // サーバーに依存するコマンドはDMでは実行できない
+          if (name !== 'ai' && name !== '天気') {
+            return interaction.reply({
+              content: '❌ このコマンドはサーバー内でのみ実行できます。',
+              ephemeral: true
+            });
           }
         }
 
@@ -297,16 +297,16 @@ async function registerSlashCommands(client) {
             });
           }
 
-          await interaction.reply({
-            content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
-            ephemeral: true
-          });
-
           const channel = interaction.channel;
           if (!channel) {
             console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
             return;
           }
+
+          await interaction.reply({
+            content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
+            ephemeral: true
+          });
 
           for (let i = 0; i < repeatCount; i++) {
             await channel.send(messageContent);
