@@ -23,18 +23,18 @@ module.exports = {
         .setDescription('認証後に付与するロール')
         .setRequired(true)
     )
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels), // 管理者のみ実行可能
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+
   async execute(interaction) {
     const role = interaction.options.getRole('role');
     const roleId = role.id;
 
-    // ロールIDをサーバーごとに保存
     VERIFY_ROLE_ID_MAP.set(interaction.guild.id, roleId);
     console.log(`✅ サーバー ${interaction.guild.name} の認証ロールを ${role.name} に設定しました。`);
 
     const verifyEmbed = new EmbedBuilder()
       .setTitle('🛡️ サーバー認証')
-      .setDescription(`サーバーに参加するには、「認証する」ボタンを押し、DMで送られたコードを入力してください。\n認証後は、**${role.name}** ロールが付与されます。`)
+      .setDescription(`サーバーに参加するには、「認証する」ボタンを押し、表示されるコードを入力してください。\n認証後は、**${role.name}** ロールが付与されます。`)
       .setColor('Blue');
 
     const row = new ActionRowBuilder().addComponents(
@@ -52,19 +52,14 @@ module.exports = {
       const code = generateCode();
       userCodes.set(interaction.user.id, code);
 
-      try {
-        await interaction.user.send(`🔐 認証コード: **${code}**\nサーバーの認証モーダルに入力してください。`);
-      } catch (err) {
-        return interaction.reply({ content: '❌ DMを送れませんでした。DM設定を「フレンドとサーバーメンバーから許可」にしてください。', ephemeral: true });
-      }
-
       const modal = new ModalBuilder()
         .setCustomId('verify_modal')
         .setTitle('認証コード入力');
 
       const codeInput = new TextInputBuilder()
         .setCustomId('verify_input')
-        .setLabel('DMで送られた6文字コードを入力してください')
+        .setLabel(`表示されたコード: ${code}`) // 修正: コードをラベルに表示
+        .setPlaceholder('コードを手動で入力してください') // 修正: プレースホルダーを追加
         .setStyle(TextInputStyle.Short)
         .setRequired(true);
 
