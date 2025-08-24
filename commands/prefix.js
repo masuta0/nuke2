@@ -130,11 +130,13 @@ module.exports = async function handlePrefixMessage(client, msg) {
         const prompt = args.join(" ").trim();
         if (!prompt) return msg.reply("使い方: `!ai 相談したい内容`");
 
+        // AIの応答を待機中に「考え中...」と表示
         const thinkingMsg = await msg.channel.send("AIが考え中です...");
         const res = await chat(prompt, msg.author.id);
 
         if (res) {
           await thinkingMsg.delete().catch(() => {});
+          // 元のメッセージにリプライする形で応答を送信
           await msg.reply(res);
         } else {
           await thinkingMsg.edit("⚠️ 返答に失敗しました");
