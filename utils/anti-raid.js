@@ -40,16 +40,9 @@ let scores = {};
 let markedUsersStore = {};
 let serverBackup = {};
 
-try { if (fs.existsSync(SCORE_PATH)) scores = JSON.parse(fs.readFileSync(SCORE_PATH, 'utf8')); } catch {}
-try { if (fs.existsSync(MARK_PATH)) markedUsersStore = JSON.parse(fs.readFileSync(MARK_PATH, 'utf8')); } catch {}
-try { if (fs.existsSync(BACKUP_PATH)) serverBackup = JSON.parse(fs.readFileSync(BACKUP_PATH, 'utf8')); } catch {}
-
 function saveScores() { try { fs.writeFileSync(SCORE_PATH, JSON.stringify(scores, null, 2)); } catch {} }
 function saveMarks() { try { fs.writeFileSync(MARK_PATH, JSON.stringify(markedUsersStore, null, 2)); } catch {} }
 function saveBackup() { try { fs.writeFileSync(BACKUP_PATH, JSON.stringify(serverBackup, null, 2)); } catch {} }
-
-function saveMarks() { try { fs.writeFileSync(MARK_PATH, JSON.stringify(markedUsersStore, null, 2)); } }
-function saveBackup() { try { fs.writeFileSync(BACKUP_PATH, JSON.stringify(serverBackup, null, 2)); } }
 
 // ===== 閾値（昼/夜で可変）=====
 const NIGHT_START_HOUR = 22;
