@@ -33,7 +33,7 @@ const {
   restoreRoles,
 } = require('./utils/anti-raid');
 const { loadData, addXp } = require('./utils/level');
-const { restoreVerifyMessage } = require('./commands/verify');
+const { restoreVerifyMessage } = require('./utils/verify');
 
 const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 const TOKEN = process.env.TOKEN;
