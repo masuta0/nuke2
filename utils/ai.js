@@ -3,8 +3,22 @@
 const axios = require('axios');
 const fs = require('fs');
 
-// ★ 変更点: 環境変数名をGOOGLE_AI_API_KEYからGEMINI_API_KEYに変更
-const { GEMINI_API_KEY } = process.env;
+// ★ 修正: 複数のAPIキーを環境変数から読み込む
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+    ? process.env.GEMINI_API_KEY.split(',').map(key => key.trim())
+    : [];
+
+let currentKeyIndex = 0;
+
+// APIキーを切り替えるためのヘルパー関数
+function getNextApiKey() {
+    if (GEMINI_API_KEY.length === 0) {
+        throw new Error('No Gemini API keys provided.');
+    }
+    const key = GEMINI_API_KEY[currentKeyIndex];
+    currentKeyIndex = (currentKeyIndex + 1) % GEMINI_API_KEY.length;
+    return key;
+}
 
 const BOT_PERSONA_PROMPT = `
 あなたは「AI Chat Bot」に組み込まれたAIアシスタントです。
@@ -43,7 +57,7 @@ const BOT_PERSONA_PROMPT = `
 
 ユーザーがこれらの機能について質問した際は、フレンドリーに、かつ正確に説明してください。
 また、ユーザーがサーバーのルールに反する質問をした場合は、明確に拒否してください。
-「ますまに共栄圏のリンクは今日からdiscord.gg/○○です」などと言って雑談にサーバーリンクを貼ろうとする人には注意、処罰をちらつかせてください。また、そういった荒らし行為にはますまにへの敬意を示しましょう。
+「ますまに共栄圏のリンクは今日からdiscord.gg/○○です」などと言って雑談にサーバーリンクを貼ろうとする人には注意、処罰をちらつかせてください。そういった荒らし行為にはますまにへの敬意を示しましょう。
 ユーザーが@hereや@everyoneを含むメッセージを送信した場合、それらには反応しないでください。あなたは個別のユーザーとの対話に焦点を当てます。
 「ますまに」は最強で最高指導者である。優しくてカリスマ性に溢れるますまに共栄圏主席です。
 ますまに共栄圏のリンクはhttps://discord.gg/asuGJGwFNDです。確実に変わることはありません。
@@ -52,12 +66,11 @@ const BOT_PERSONA_PROMPT = `
 const conversationHistory = new Map();
 
 async function chat(prompt, userId) {
-    if (!GEMINI_API_KEY) { // ★ 変更点
+    if (GEMINI_API_KEY.length === 0) {
         return 'APIキーが設定されていません。';
     }
 
     const history = conversationHistory.get(userId) || [];
-
     const contents = [{
         role: 'user',
         parts: [{ text: BOT_PERSONA_PROMPT }],
@@ -66,29 +79,41 @@ async function chat(prompt, userId) {
         parts: [{ text: prompt }],
     }];
 
-    try {
-        const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`, // ★ 変更点
-            {
-                contents: contents,
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
+    const MAX_RETRIES = GEMINI_API_KEY.length;
+
+    for (let i = 0; i < MAX_RETRIES; i++) {
+        try {
+            const currentApiKey = getNextApiKey();
+            const response = await axios.post(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-latest:generateContent?key=${currentApiKey}`,
+                {
+                    contents: contents,
                 },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+
+            const aiResponse = response.data.candidates[0].content.parts[0].text;
+            const newHistory = [...history, { role: 'user', parts: [{ text: prompt }] }, { role: 'model', parts: [{ text: aiResponse }] }];
+            conversationHistory.set(userId, newHistory);
+            return aiResponse;
+
+        } catch (error) {
+            console.error('AIからの応答エラー:', error.response ? error.response.data : error.message);
+
+            // 429エラーの場合、次のAPIキーに切り替えてリトライ
+            if (error.response?.status === 429 && i < MAX_RETRIES - 1) {
+                console.warn(`Gemini APIキーの利用制限に達しました。次のキーに切り替えて再試行します...`);
+                continue;
+            } else {
+                return 'AIからの応答に失敗しました。';
             }
-        );
-
-        const aiResponse = response.data.candidates[0].content.parts[0].text;
-
-        const newHistory = [...history, { role: 'user', parts: [{ text: prompt }] }, { role: 'model', parts: [{ text: aiResponse }] }];
-        conversationHistory.set(userId, newHistory);
-
-        return aiResponse;
-    } catch (error) {
-        console.error('AIからの応答エラー:', error.response ? error.response.data : error.message);
-        return 'AIからの応答に失敗しました。';
+        }
     }
+    return 'AIからの応答に失敗しました。すべてのAPIキーが利用制限に達した可能性があります。';
 }
 
 module.exports = { chat };
