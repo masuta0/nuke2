@@ -12,20 +12,24 @@ async function saveVerifyData(data) {
     const dataDir = path.dirname(VERIFY_DATA_PATH);
     await fs.mkdir(dataDir, { recursive: true });
     await fs.writeFile(VERIFY_DATA_PATH, JSON.stringify(data, null, 2));
+    console.log('✅ 認証データを正常に保存しました:', data); // デバッグログ
   } catch (err) {
-    console.error('認証データの保存に失敗しました:', err);
+    console.error('❌ 認証データの保存に失敗しました:', err); // デバッグログ
   }
 }
 
 async function loadVerifyData() {
   try {
     const data = await fs.readFile(VERIFY_DATA_PATH, 'utf8');
-    return JSON.parse(data);
+    const parsedData = JSON.parse(data);
+    console.log('✅ 認証データを正常に読み込みました:', parsedData); // デバッグログ
+    return parsedData;
   } catch (err) {
     if (err.code === 'ENOENT') {
+      console.log('⚠️ 認証データファイルが見つかりません。'); // デバッグログ
       return {};
     }
-    console.error('認証データの読み込みに失敗しました:', err);
+    console.error('❌ 認証データの読み込みに失敗しました:', err); // デバッグログ
     return {};
   }
 }
@@ -72,7 +76,6 @@ module.exports = {
     const channelId = interaction.channel.id;
     const guildId = interaction.guild.id;
 
-    // 認証データを保存
     await saveVerifyData({ channelId, roleId, guildId });
     console.log(`✅ サーバー ${interaction.guild.name} の認証設定を保存しました。`);
 
@@ -141,20 +144,18 @@ module.exports = {
         const role = await guild.roles.fetch(verifyData.roleId);
 
         if (channel && channel.isTextBased() && role) {
-          // 既存のメッセージを削除
           const messages = await channel.messages.fetch({ limit: 100 });
           const oldBotMessage = messages.find(m => m.author.id === client.user.id && m.embeds[0]?.title === '🛡️ サーバー認証');
           if (oldBotMessage) {
             await oldBotMessage.delete().catch(() => {});
           }
 
-          // 新しいメッセージを送信
           const messagePayload = await createVerifyMessageEmbedAndComponents(role.name);
           await channel.send(messagePayload);
           console.log('✅ 認証メッセージを自動再設置しました。');
         }
       } catch (err) {
-        console.error('認証メッセージの自動再設置に失敗しました:', err);
+        console.error('❌ 認証メッセージの自動再設置に失敗しました:', err);
       }
     }
   },
