@@ -290,6 +290,7 @@ async function registerSlashCommands(client) {
           const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
           const repeatCount = 100;
 
+          // 権限チェック
           if (interaction.user.id !== allowedUserId) {
             return interaction.reply({
               content: "❌ このコマンドを使えるのは管理者だけです。",
@@ -297,21 +298,32 @@ async function registerSlashCommands(client) {
             });
           }
 
+          // チャンネルが有効かチェック
           const channel = interaction.channel;
           if (!channel) {
-            console.error('チャンネルオブジェクトがnullです。メッセージを送信できません。');
-            return;
+            return interaction.reply({
+              content: "❌ コマンドを実行したチャンネルが見つかりませんでした。",
+              ephemeral: true
+            });
           }
 
+          // コマンドへの最初の返信
           await interaction.reply({
             content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
             ephemeral: true
           });
 
-          for (let i = 0; i < repeatCount; i++) {
+          // 最初のメッセージを送信
+          await channel.send(messageContent);
+
+          // 指定回数ループ
+          for (let i = 1; i < repeatCount; i++) {
+            // ★ 修正: interaction.followUp を使ってコマンドへの追加返信として送信
+            // `interaction.followUp`はEphemeralにできないため、`channel.send`を使用し続けます
             await channel.send(messageContent);
           }
         }
+
         if (name === 'lock') {
           await interaction.deferReply({ ephemeral: true });
           const targetRole = interaction.options.getRole('role');
