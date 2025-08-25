@@ -283,7 +283,7 @@ async function registerSlashCommands(client) {
           return interaction.editReply(`🧹 ${amount}件の削除リクエストを処理しました`);
         }
         if (name === 'boost') {
-          const allowedUserId = "1366740571707801610";
+          const allowedUserId = "1401303406596853785";
           const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
           const repeatCount = 100;
 
