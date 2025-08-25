@@ -121,14 +121,12 @@ async function registerSlashCommands(client) {
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
 
-        // ★ グローバルコマンドに対応するため、最初にサーバー内での実行かチェック
-        if (!interaction.guild) {
-          if (name !== 'ai' && name !== '天気') {
-            return interaction.reply({
-              content: '❌ このコマンドはサーバー内でのみ実行できます。',
-              ephemeral: true
-            });
-          }
+        // ★ サーバー専用コマンドのDMでの実行を防止
+        if (!interaction.guild && ['boost', 'level', 'クイズ', 'join', 'play', 'stop', 'leave', 'backup', 'restore', 'addrole', 'nuke', 'clear', 'lock', 'unlock', 'verifysetup'].includes(name)) {
+          return interaction.reply({
+            content: '❌ このコマンドはサーバー内でのみ実行できます。',
+            ephemeral: true
+          });
         }
 
         if (name === 'ai') {
