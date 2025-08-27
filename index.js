@@ -100,12 +100,14 @@ client.on('messageCreate', async (message) => {
   await addXp(message.member);
   await handleMessage(message);
 
-  if (message.channel.type === ChannelType.DM) {
-    const pendingAction = pendingModActions.get(message.author.id);
-    if (pendingAction) {
-      const prompt = `以下の理由が、Discordサーバーのルール違反に対する妥当な理由かどうか判断してください。「適切」か「不適切」のいずれかで回答してください。理由: ${message.content}`;
-      const aiResponse = await chat(prompt);
-
+      if (message.channel && message.channel.type === ChannelType.DM) {
+          const pendingAction = pendingModActions.get(message.author.id);
+          if (pendingAction) {
+              const prompt = `以下の理由が、Discordサーバーのルール違反に対する妥当な理由かどうか判断してください。「適切」か「不適切」のいずれかで回答してください。理由: ${message.content}`;
+              const aiResponse = await chat(prompt);
+              // ここで aiResponse を処理
+          }
+      }
       const isAppropriate = aiResponse.includes('適切');
 
       if (isAppropriate) {
