@@ -117,17 +117,17 @@ client.on('messageCreate', async (message) => {
       } else {
         pendingAction.reasonAttempts++;
         if (pendingAction.reasonAttempts >= 3) {
-          await message.reply('❌ 理由が不適切と判断されたため、権限剥奪を継続します。');
-          pendingModActions.delete(message.author.id);
-        } else {
-          await message.reply(`⚠️ 理由が不適切と判断されました。再提出してください。（残り${3 - pendingAction.reasonAttempts}回）`);
-        }
-      }
-      return;
-    }
-  }
+await message.reply('❌ 理由が不適切と判断されたため、権限剥奪を継続します。');
+pendingModActions.delete(message.author.id);
+} else {
+  await message.reply(`⚠️ 理由が不適切と判断されました。再提出してください。（残り${3 - pendingAction.reasonAttempts}回）`);
+}
+return;
+}
 
-  if (!message.content.startsWith('!')) return;
+// ← このあたりの余計な `}` を消す
+if (!message.content.startsWith('!')) return;
+
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
