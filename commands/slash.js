@@ -23,6 +23,7 @@ const aiCooldown = new Map();
 const aiCooldownExemptIds = [
     "1401303406596853785",
     "1366740571707801610"
+    "1409820488301023257"
 ];
 
 const cooldowns = new Map();
