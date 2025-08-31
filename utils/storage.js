@@ -14,14 +14,19 @@ async function ensureDropboxInit() {
     return null;
   }
   if (!dbx) {
-    dbx = new Dropbox({
-      clientId: APP_KEY,
-      clientSecret: APP_SECRET,
-      refreshToken: REFRESH_TOKEN,
-      fetch,
-    });
-    dbx.auth.refreshAccessToken();
-    console.log("✅ Dropboxクライアントを初期化しました。");
+    try {
+      dbx = new Dropbox({
+        clientId: APP_KEY,
+        clientSecret: APP_SECRET,
+        refreshToken: REFRESH_TOKEN,
+        fetch,
+      });
+      await dbx.auth.refreshAccessToken();
+      console.log("✅ Dropboxクライアントを初期化しました。");
+    } catch (e) {
+      console.error('❌ Dropboxクライアントの初期化に失敗しました。認証情報を確認してください:', e);
+      return null;
+    }
   }
   return dbx;
 }
@@ -31,28 +36,34 @@ async function ensureFolder(folderPath) {
   if (!client) return false;
   try {
     await client.filesCreateFolderV2({ path: folderPath, autorename: false });
+    console.log(`✅ Dropboxにフォルダを作成しました: ${folderPath}`);
     return true;
   } catch (e) {
     if (e.error?.error?.path?.['.tag'] === 'conflict') {
+      console.log(`⚠️ Dropboxフォルダは既に存在します: ${folderPath}`);
       return true;
     }
-    console.error('Dropbox ensureFolder失敗:', e?.error || e?.message || e);
+    console.error('❌ Dropbox ensureFolder失敗:', e?.error || e?.message || e);
     return false;
   }
 }
 
 async function uploadToDropbox(dropboxPath, contents) {
   const client = await ensureDropboxInit();
-  if (!client) return false;
+  if (!client) {
+    console.error('❌ Dropboxクライアントの初期化に失敗しました。');
+    return false;
+  }
   try {
-    const response = await client.filesUpload({
+    await client.filesUpload({
       path: dropboxPath,
-      contents: contents, // contentsはそのまま渡す
+      contents,
       mode: { '.tag': 'overwrite' }
     });
     console.log(`✅ Dropboxにアップロード成功: ${dropboxPath}`);
     return true;
   } catch (err) {
+    // ★ 修正: エラー内容をコンソールに出力する
     console.error(`❌ Dropboxアップロード失敗:`, err?.error || err?.message || err);
     return false;
   }

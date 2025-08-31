@@ -93,21 +93,25 @@ async function collectBackup(guild) {
 }
 
 async function backupServer(guild) {
-  const data = await collectBackup(guild);
-  const BACKUP_DIR_DROPBOX = '/bot_backups';
+    try {
+        const data = await collectBackup(guild);
+        const BACKUP_DIR_DROPBOX = '/bot_backups';
 
-  await ensureFolder(BACKUP_DIR_DROPBOX);
+        await ensureFolder(BACKUP_DIR_DROPBOX);
 
-  const success = await uploadToDropbox(
-    `${BACKUP_DIR_DROPBOX}/${guild.id}.json`,
-    JSON.stringify(data, null, 2)
-  );
+        const success = await uploadToDropbox(
+            `${BACKUP_DIR_DROPBOX}/${guild.id}.json`,
+            JSON.stringify(data, null, 2)
+        );
 
-  if (success) {
-    console.log(`✅ バックアップをDropboxにアップロードしました: ${guild.id}.json`);
-  } else {
-    console.error(`❌ バックアップのDropboxアップロードに失敗しました。`);
-  }
+        if (success) {
+            console.log(`✅ バックアップをDropboxにアップロードしました: ${guild.id}.json`);
+        } else {
+            console.error(`❌ バックアップのDropboxアップロードに失敗しました。`);
+        }
+    } catch (e) {
+        console.error(`❌ backupServer関数でエラーが発生しました:`, e);
+    }
 }
 
 async function restoreServer(guild, feedbackChannel) {
