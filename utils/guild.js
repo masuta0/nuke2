@@ -122,7 +122,6 @@ async function restoreServer(guild, feedbackChannel) {
   const roleIdMap = new Map();
   roleIdMap.set(guild.id, guild.id);
 
-  // ★ 1. ロールの作成と権限設定
   const backupRolesSorted = backupData.roles.sort((a, b) => a.position - b.position);
   for (const r of backupRolesSorted) {
     if (r.id === guild.id) continue;
@@ -153,7 +152,6 @@ async function restoreServer(guild, feedbackChannel) {
     }
   }
 
-  // ★ 2. メンバーにロールを再付与
   for (const r of backupData.roles) {
     const newRoleId = roleIdMap.get(r.id);
     if (newRoleId && r.members) {
@@ -170,7 +168,6 @@ async function restoreServer(guild, feedbackChannel) {
     }
   }
 
-  // ★ 3. チャンネルの復元
   const channelIdMap = new Map();
   const categories = backupData.channels.filter(c => c.type === ChannelType.GuildCategory);
   const otherChannels = backupData.channels.filter(c => c.type !== ChannelType.GuildCategory);
@@ -247,14 +244,12 @@ async function restoreServer(guild, feedbackChannel) {
     }
   }
 
-  // ★ 4. チャンネルの表示順序を復元
   const channelPositions = backupData.channels.map(ch => ({ id: channelIdMap.get(ch.id), position: ch.position })).filter(c => c.id);
   await guild.channels.setPositions(channelPositions);
 
   try {
     if (backupData.meta?.name && guild.name !== backupData.meta.name) await guild.setName(backupData.meta.name, 'Restore: guild name');
     if (backupData.meta?.iconURL) await guild.setIcon(backupData.meta.iconURL, 'Restore: guild icon');
-    // ★ 追記: その他のサーバー設定も復元
     await guild.setVerificationLevel(backupData.meta.verificationLevel, 'Restore: verification level');
     await guild.setExplicitContentFilter(backupData.meta.explicitContentFilter, 'Restore: explicit content filter');
     await guild.setDefaultMessageNotifications(backupData.meta.defaultMessageNotifications, 'Restore: default notifications');
@@ -275,19 +270,22 @@ async function restoreServer(guild, feedbackChannel) {
     console.error('サーバーメタデータの復元に失敗しました:', e);
   }
 
-  // ★ 5. 絵文字とスタンプの復元
-  const emojis = backupData.meta.emojis;
-  for (const emoji of emojis) {
+  const emojiIdMap = new Map();
+  const stickersIdMap = new Map();
+  for (const emoji of backupData.meta.emojis) {
       if (!guild.emojis.cache.has(emoji.id)) {
           try {
               const fetchedEmoji = await guild.emojis.create({
                   attachment: `https://cdn.discordapp.com/emojis/${emoji.id}.png`,
                   name: emoji.name,
               });
+              emojiIdMap.set(emoji.id, fetchedEmoji.id);
               console.log(`✅ 絵文字 ${fetchedEmoji.name} を復元しました。`);
           } catch (e) {
               console.error(`❌ 絵文字 ${emoji.name} の復元に失敗しました:`, e);
           }
+      } else {
+        emojiIdMap.set(emoji.id, emoji.id);
       }
   }
 
@@ -295,8 +293,9 @@ async function restoreServer(guild, feedbackChannel) {
   for (const sticker of stickers) {
       if (!guild.stickers.cache.has(sticker.id)) {
           // スタンプの復元は複雑で、直接URLから作成できない場合があるため、注意が必要です。
-          // ここでは簡略化のため、ログを出力するだけに留めます。
           console.warn(`⚠️ スタンプ ${sticker.name} は自動復元に対応していません。手動で復元してください。`);
+      } else {
+        stickersIdMap.set(sticker.id, sticker.id);
       }
   }
 
