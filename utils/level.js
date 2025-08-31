@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./storage');
+const { ChannelType } = require('discord.js');
 
 const LEVEL_SETTINGS_PATH = path.join(__dirname, '../data/levels.json');
 const DROPBOX_LEVEL_DATA_PATH = '/app-data/userLevels.json';
@@ -10,7 +11,12 @@ const DROPBOX_LEVEL_DATA_PATH = '/app-data/userLevels.json';
 let userLevels = {};
 let levelSettings = {};
 const xpCooldown = new Set();
-const COOLDOWN_TIME = 60 * 1000;
+
+// ★ 修正: クールダウン時間を30秒に設定
+const COOLDOWN_TIME = 30 * 1000;
+
+// ★ 修正: レベルログチャンネルIDを追加
+const LEVEL_LOG_CHANNEL_ID = process.env.LEVEL_LOG_CHANNEL_ID || '1411721928120598739';
 
 async function loadData() {
     try {
@@ -54,7 +60,6 @@ async function addXp(member) {
     const userId = member.id;
     const guildId = member.guild.id;
 
-    // ユーザーとギルドのデータが存在するか確認し、なければ初期化
     if (!userLevels[guildId]) userLevels[guildId] = {};
     if (!userLevels[guildId][userId]) {
         userLevels[guildId][userId] = { level: 0, xp: 0 };
@@ -62,11 +67,12 @@ async function addXp(member) {
 
     const userData = userLevels[guildId][userId];
     const oldLevel = userData.level;
-    const addedXp = Math.floor(Math.random() * 11) + 15;
+
+    // ★ 修正: 付与する経験値の量を少なくする（5〜10の範囲に変更）
+    const addedXp = Math.floor(Math.random() * 6) + 5;
     userData.xp += addedXp;
     let newLevel = oldLevel;
 
-    // レベルアップのチェック
     while (levelSettings[newLevel + 1] && userData.xp >= levelSettings[newLevel + 1].xp) {
         newLevel++;
     }
@@ -90,7 +96,17 @@ async function handleLevelUp(member, newLevel) {
         return;
     }
     const levelUpMessage = levelData.message.replace("{user}", member.user.tag);
-    await member.guild.systemChannel?.send(`🎉 ${member} ${levelUpMessage}`);
+
+    // ★ 修正: レベルログチャンネルにメッセージを送信
+    let logChannel = member.guild.channels.cache.get(LEVEL_LOG_CHANNEL_ID);
+    if (!logChannel) {
+        console.warn('⚠️ レベルログチャンネルが見つかりません。システムチャンネルに送信します。');
+        logChannel = member.guild.systemChannel;
+    }
+    if (logChannel) {
+        await logChannel.send(`🎉 ${member} ${levelUpMessage}`);
+    }
+
     if (levelData.roleId) {
         const role = member.guild.roles.cache.get(levelData.roleId);
         if (role) {

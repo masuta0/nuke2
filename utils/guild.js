@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
 const { LOG_CHANNEL_ID } = require('./anti-raid');
-const { uploadToDropbox, ensureFolder, downloadFromDropbox } = require('./storage'); // storage.jsから必要な関数をインポート
+const { uploadToDropbox, ensureFolder, downloadFromDropbox } = require('./storage');
 
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -20,18 +20,22 @@ const delay = ms => new Promise(r => setTimeout(r, ms));
 async function collectBackup(guild) {
   await guild.roles.fetch();
   await guild.channels.fetch();
+  await guild.members.fetch();
+  await guild.emojis.fetch();
+  await guild.stickers.fetch();
 
   const roles = guild.roles.cache
-    .filter(r => !r.managed)
+    .filter(r => !r.managed && r.id !== guild.id)
     .sort((a, b) => a.position - b.position)
     .map(r => ({
       id: r.id,
       name: r.name,
-      color: r.color,
+      color: r.hexColor,
       hoist: r.hoist,
       position: r.position,
       mentionable: r.mentionable,
-      permissions: r.permissions.bitfield.toString()
+      permissions: r.permissions.bitfield.toString(),
+      members: r.members.map(m => m.id)
     }));
 
   const channels = guild.channels.cache
@@ -65,13 +69,29 @@ async function collectBackup(guild) {
     guildId: guild.id,
     name: guild.name,
     iconURL: guild.iconURL({ size: 512 }) || null,
+    verificationLevel: guild.verificationLevel,
+    explicitContentFilter: guild.explicitContentFilter,
+    defaultMessageNotifications: guild.defaultMessageNotifications,
+    systemChannelId: guild.systemChannelId,
+    afkChannelId: guild.afkChannelId,
+    afkTimeout: guild.afkTimeout,
+    bannerURL: guild.bannerURL({ size: 512 }) || null,
+    splashURL: guild.splashURL({ size: 512 }) || null,
+    emojis: guild.emojis.cache.map(e => ({
+        name: e.name,
+        id: e.id,
+        animated: e.animated,
+    })),
+    stickers: guild.stickers.cache.map(s => ({
+        name: s.name,
+        id: s.id,
+    })),
     savedAt: new Date().toISOString()
   };
 
   return { meta, roles, channels };
 }
 
-// Dropboxにバックアップを保存する関数
 async function backupServer(guild) {
   const data = await collectBackup(guild);
   const BACKUP_DIR_DROPBOX = '/bot_backups';
@@ -90,25 +110,6 @@ async function backupServer(guild) {
   }
 }
 
-async function getOrCreateLogChannel(guild) {
-  let logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
-  if (!logChannel) {
-      try {
-          logChannel = await guild.channels.create({
-              name: 'bot-logs',
-              type: ChannelType.GuildText,
-              reason: '荒らし対策ログチャンネルが削除されたため再作成',
-          });
-          console.log(`✅ ログチャンネルを再作成しました: #${logChannel.name}`);
-      } catch (e) {
-          console.error('❌ ログチャンネルの作成に失敗しました:', e);
-          return null;
-      }
-  }
-  return logChannel;
-}
-
-// 復元機能もDropboxから読み込むように修正
 async function restoreServer(guild, feedbackChannel) {
   const backup = await downloadFromDropbox(`/bot_backups/${guild.id}.json`);
   if (!backup) return false;
@@ -116,11 +117,14 @@ async function restoreServer(guild, feedbackChannel) {
   const backupData = JSON.parse(backup);
   const existingRoles = guild.roles.cache;
   const existingChannels = guild.channels.cache;
+  const existingMembers = await guild.members.fetch();
 
   const roleIdMap = new Map();
   roleIdMap.set(guild.id, guild.id);
 
-  for (const r of backupData.roles) {
+  // ★ 1. ロールの作成と権限設定
+  const backupRolesSorted = backupData.roles.sort((a, b) => a.position - b.position);
+  for (const r of backupRolesSorted) {
     if (r.id === guild.id) continue;
     const existingRole = existingRoles.find(er => er.name === r.name);
     if (!existingRole) {
@@ -140,11 +144,37 @@ async function restoreServer(guild, feedbackChannel) {
       }
     } else {
       roleIdMap.set(r.id, existingRole.id);
+      try {
+        await existingRole.setPermissions(BigInt(r.permissions), 'Restore: update role permissions');
+        await existingRole.edit({ color: r.color, hoist: r.hoist, mentionable: r.mentionable, position: r.position }, 'Restore: update role metadata');
+      } catch (e) {
+        console.error(`ロール ${r.name} の更新に失敗しました:`, e);
+      }
     }
   }
 
+  // ★ 2. メンバーにロールを再付与
+  for (const r of backupData.roles) {
+    const newRoleId = roleIdMap.get(r.id);
+    if (newRoleId && r.members) {
+      for (const memberId of r.members) {
+        const member = existingMembers.get(memberId);
+        if (member) {
+          try {
+            await member.roles.add(newRoleId, 'Restore: add role to member');
+          } catch (e) {
+            console.error(`メンバー ${member.user.tag} にロール ${r.name} を付与失敗:`, e);
+          }
+        }
+      }
+    }
+  }
+
+  // ★ 3. チャンネルの復元
   const channelIdMap = new Map();
   const categories = backupData.channels.filter(c => c.type === ChannelType.GuildCategory);
+  const otherChannels = backupData.channels.filter(c => c.type !== ChannelType.GuildCategory);
+
   for (const cat of categories) {
     const existingCat = existingChannels.find(ec => ec.name === cat.name && ec.type === ChannelType.GuildCategory);
     if (!existingCat) {
@@ -176,8 +206,7 @@ async function restoreServer(guild, feedbackChannel) {
     }
   }
 
-  const others = backupData.channels.filter(c => c.type !== ChannelType.GuildCategory);
-  for (const ch of others) {
+  for (const ch of otherChannels) {
     if (ch.id === LOG_CHANNEL_ID) continue;
     const existingCh = existingChannels.find(ec => ec.name === ch.name && ec.type === ch.type);
     if (!existingCh) {
@@ -218,12 +247,59 @@ async function restoreServer(guild, feedbackChannel) {
     }
   }
 
+  // ★ 4. チャンネルの表示順序を復元
+  const channelPositions = backupData.channels.map(ch => ({ id: channelIdMap.get(ch.id), position: ch.position })).filter(c => c.id);
+  await guild.channels.setPositions(channelPositions);
+
   try {
     if (backupData.meta?.name && guild.name !== backupData.meta.name) await guild.setName(backupData.meta.name, 'Restore: guild name');
     if (backupData.meta?.iconURL) await guild.setIcon(backupData.meta.iconURL, 'Restore: guild icon');
+    // ★ 追記: その他のサーバー設定も復元
+    await guild.setVerificationLevel(backupData.meta.verificationLevel, 'Restore: verification level');
+    await guild.setExplicitContentFilter(backupData.meta.explicitContentFilter, 'Restore: explicit content filter');
+    await guild.setDefaultMessageNotifications(backupData.meta.defaultMessageNotifications, 'Restore: default notifications');
+    if (backupData.meta.systemChannelId) {
+        await guild.setSystemChannel(guild.channels.cache.get(backupData.meta.systemChannelId), 'Restore: system channel');
+    }
+    if (backupData.meta.afkChannelId) {
+        await guild.setAFKChannel(guild.channels.cache.get(backupData.meta.afkChannelId), 'Restore: AFK channel');
+        await guild.setAFKTimeout(backupData.meta.afkTimeout, 'Restore: AFK timeout');
+    }
+    if (backupData.meta.bannerURL) {
+        await guild.setBanner(backupData.meta.bannerURL, 'Restore: banner');
+    }
+    if (backupData.meta.splashURL) {
+        await guild.setSplash(backupData.meta.splashURL, 'Restore: splash');
+    }
   } catch (e) {
     console.error('サーバーメタデータの復元に失敗しました:', e);
   }
+
+  // ★ 5. 絵文字とスタンプの復元
+  const emojis = backupData.meta.emojis;
+  for (const emoji of emojis) {
+      if (!guild.emojis.cache.has(emoji.id)) {
+          try {
+              const fetchedEmoji = await guild.emojis.create({
+                  attachment: `https://cdn.discordapp.com/emojis/${emoji.id}.png`,
+                  name: emoji.name,
+              });
+              console.log(`✅ 絵文字 ${fetchedEmoji.name} を復元しました。`);
+          } catch (e) {
+              console.error(`❌ 絵文字 ${emoji.name} の復元に失敗しました:`, e);
+          }
+      }
+  }
+
+  const stickers = backupData.meta.stickers;
+  for (const sticker of stickers) {
+      if (!guild.stickers.cache.has(sticker.id)) {
+          // スタンプの復元は複雑で、直接URLから作成できない場合があるため、注意が必要です。
+          // ここでは簡略化のため、ログを出力するだけに留めます。
+          console.warn(`⚠️ スタンプ ${sticker.name} は自動復元に対応していません。手動で復元してください。`);
+      }
+  }
+
 
   try {
     const textChannels = guild.channels.cache.filter(c => c.isTextBased());
@@ -335,7 +411,7 @@ async function addRoleToAll(guild, roleName) {
       if (!member.roles.cache.has(role.id)) {
         await member.roles.add(role);
         count++;
-        await delay(500); 
+        await delay(500);
       }
     }
     return { success: true, count: count };
@@ -345,52 +421,6 @@ async function addRoleToAll(guild, roleName) {
   }
 }
 
-async function lockChannels(guild, roleId) {
-    const everyoneRole = guild.roles.everyone;
-    const targetRole = guild.roles.cache.get(roleId);
-
-    if (!targetRole) {
-        console.error('指定されたロールが見つかりません:', roleId);
-        return false;
-    }
-
-    let lockedCount = 0;
-    let unlockedCount = 0;
-
-    for (const [channelId, channel] of guild.channels.cache) {
-        if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildVoice) {
-            continue;
-        }
-
-        if (!channel.name.includes('認証')) {
-            try {
-                await channel.permissionOverwrites.edit(everyoneRole, {
-                    ViewChannel: false,
-                });
-                await channel.permissionOverwrites.edit(targetRole, {
-                    ViewChannel: true,
-                });
-                lockedCount++;
-            } catch (e) {
-                console.error(`チャンネル ${channel.name} のロックに失敗しました:`, e);
-            }
-        } else {
-            try {
-                await channel.permissionOverwrites.edit(everyoneRole, {
-                    ViewChannel: true,
-                });
-                await channel.permissionOverwrites.edit(targetRole, {
-                    ViewChannel: true,
-                });
-                unlockedCount++;
-            } catch (e) {
-                console.error(`チャンネル ${channel.name} のアンロックに失敗しました:`, e);
-            }
-        }
-    }
-    return { locked: lockedCount, unlocked: unlockedCount };
-}
-
 module.exports = {
   hasManageGuildPermission,
   backupServer,
@@ -398,5 +428,4 @@ module.exports = {
   nukeChannel,
   clearMessages,
   addRoleToAll,
-  lockChannels,
 };
