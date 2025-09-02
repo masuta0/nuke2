@@ -50,8 +50,8 @@ const NIGHT_END_HOUR = 7;
 
 const cfg = {
   // ★ 修正: 閾値を緩和
-  day: { THRESHOLD: 30, MASS_JOIN: 10, KEYWORD: 20, SIMILAR: 15, CMD_ABUSE: 20, REACT_SPAM: 15, NEWLINES: 20, ZALGO: 20, MASS_SPAM: 15, WEBHOOK: 25, AUDIT_ABUSE: 30, ACCOUNT_AGE: 15, },
-  night: { THRESHOLD: 25, MASS_JOIN: 15, KEYWORD: 25, SIMILAR: 20, CMD_ABUSE: 20, REACT_SPAM: 15, NEWLINES: 25, ZALGO: 25, MASS_SPAM: 20, WEBHOOK: 30, AUDIT_ABUSE: 35, ACCOUNT_AGE: 20, }
+  day: { THRESHOLD: 30, MASS_JOIN: 10, KEYWORD: 10, SIMILAR: 15, CMD_ABUSE: 20, REACT_SPAM: 15, NEWLINES: 20, ZALGO: 20, MASS_SPAM: 10, WEBHOOK: 25, AUDIT_ABUSE: 30, ACCOUNT_AGE: 15, },
+  night: { THRESHOLD: 30, MASS_JOIN: 15, KEYWORD: 25, SIMILAR: 20, CMD_ABUSE: 20, REACT_SPAM: 10, NEWLINES: 15, ZALGO: 1, MASS_SPAM: 10, WEBHOOK: 30, AUDIT_ABUSE: 35, ACCOUNT_AGE: 20, }
 };
 
 function currentCfg() {
@@ -65,7 +65,7 @@ const RAID_MEMBER_THRESHOLD = 3;
 const RAID_TIME_WINDOW = 60 * 1000;
 // ★ 修正: 連投検知の閾値を緩和
 const MASS_SPAM_THRESHOLD = 3;
-const MASS_SPAM_WINDOW = 3 * 1000;
+const MASS_SPAM_WINDOW = 3 * 60;
 const SIMILAR_MESSAGE_THRESHOLD = 3;
 const SIMILAR_MESSAGE_LENGTH = 5;
 const TIMEOUT_MS = 10 * 60 * 1000; // Timeout時間を10分に延長
@@ -76,8 +76,8 @@ const MASS_ACTION_THRESHOLD = 2;
 const PROBATION_MS = 24 * 60 * 60 * 1000;
 
 const RAID_KEYWORDS = [
-  ' this server is raided', ' this server has been raided', ' reidされました', ' on top', ' discord.gg',
-  ' invite.gg', 'このサーバーをレイドしました', '包囲した',
+  'raid by', 'on top', 'discord.gg',
+  'invite', 'このサーバーをレイドしました', '包囲した',
 ];
 
 const DANGEROUS_PERMISSIONS = [
