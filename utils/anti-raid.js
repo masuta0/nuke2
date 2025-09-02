@@ -76,7 +76,7 @@ const MASS_ACTION_THRESHOLD = 2;
 const PROBATION_MS = 24 * 60 * 60 * 1000;
 
 const RAID_KEYWORDS = [
-  'raid by', 'on top', 'discord.gg',
+  'raid by', 'on top',
   'invite', 'このサーバーをレイドしました', '包囲した',
 ];
 
