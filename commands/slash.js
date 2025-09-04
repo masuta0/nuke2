@@ -123,11 +123,13 @@ async function registerSlashCommands(client) {
         const name = interaction.commandName;
 
         // ★ サーバー専用コマンドのDMでの実行を防止
-        if (!interaction.guild && ['boost', 'level', 'クイズ', 'join', 'play', 'stop', 'leave', 'backup', 'restore', 'addrole', 'nuke', 'clear', 'lock', 'unlock', 'verifysetup'].includes(name)) {
-          return interaction.reply({
-            content: '❌ このコマンドはサーバー内でのみ実行できます。',
-            ephemeral: true
-          });
+        if (!interaction.guild) {
+          if (name !== 'ai' && name !== '天気') {
+            return interaction.reply({
+              content: '❌ このコマンドはサーバー内でのみ実行できます。',
+              ephemeral: true
+            });
+          }
         }
 
         if (name === 'ai') {
