@@ -86,7 +86,7 @@ module.exports = {
         .setColor('Purple')
         .setTitle('ロール選択パネル')
         .setDescription(message)
-        .addFields(roles.map(role => ({ name: role.name, value: '✅ ボタンを押すと付与/解除できます。' })));
+        .addFields(roles.map(role => ({ name: role.name, value: 'ボタンを押すと付与/解除できます。' })));
 
       const row = new ActionRowBuilder().addComponents(
         roles.map(role =>
