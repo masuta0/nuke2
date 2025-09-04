@@ -15,19 +15,17 @@ const { getVoiceConnection } = require('@discordjs/voice');
 const { askQuiz } = require('../utils/quiz');
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level');
 const verifyCommand = require('../utils/verify');
+const panelCommand = require('../utils/panel');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const aiCooldown = new Map();
 
 const aiCooldownExemptIds = [
-    "1401303406596853785",
-    "1366740571707801610",
-    "1409820488301023257"
+  "1401303406596853785",
+  "1366740571707801610",
+  "1409820488301023257"
 ];
-
-const cooldowns = new Map();
-const COOLDOWN_TIME = 10; // 10秒
 
 async function registerSlashCommands(client) {
   const commands = [
@@ -109,6 +107,7 @@ async function registerSlashCommands(client) {
       .setDescription('すべてのチャンネルの表示権限を@everyoneに戻します。')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
     verifyCommand.data,
+    ...panelCommand.data,
   ];
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -122,7 +121,7 @@ async function registerSlashCommands(client) {
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
 
-        // ★ サーバー専用コマンドのDMでの実行を防止
+        // サーバー専用コマンドのDMでの実行を防止
         if (!interaction.guild) {
           if (name !== 'ai' && name !== '天気') {
             return interaction.reply({
@@ -130,6 +129,16 @@ async function registerSlashCommands(client) {
               ephemeral: true
             });
           }
+        }
+
+        // rolepanel 系の処理
+        if (name === 'rolepanel' || name === 'rolepaneladd') {
+          return panelCommand.execute(interaction);
+        }
+
+        // verify 系の処理
+        if (name === 'verifysetup') {
+          return verifyCommand.execute(interaction);
         }
 
         if (name === 'ai') {
@@ -344,15 +353,15 @@ async function registerSlashCommands(client) {
               return interaction.editReply('❌ チャンネルのロック解除中にエラーが発生しました。');
           }
         }
-        if (name === 'verifysetup') {
-          return verifyCommand.execute(interaction);
-        }
       }
 
       if (interaction.isButton()) {
         const [command] = interaction.customId.split('_');
         if (command === 'verify') {
           return verifyCommand.buttonHandler(interaction, client);
+        }
+        if (command === 'role') {
+          return panelCommand.buttonHandler(interaction);
         }
       }
 
@@ -362,7 +371,6 @@ async function registerSlashCommands(client) {
           return verifyCommand.modalHandler(interaction, client);
         }
       }
-
     } catch (e) {
       console.error('Slash handler error:', e);
       if (!interaction.replied) {
