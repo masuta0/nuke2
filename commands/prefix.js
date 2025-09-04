@@ -144,7 +144,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
       }
       case "join": {
         if (!msg.member?.voice?.channel)
-          return msg.reply("⚠️ まずボイスチャンネルに参加してください");
+          return msg.reply("⚠️ ボイスチャンネルに参加してください");
         const ok = await joinVoice(msg.guild, msg.member.voice.channel);
         if (!ok) return msg.reply("⚠️ 接続に失敗しました");
         await msg.reply("🔊 参加しました");
@@ -157,7 +157,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
             "使い方: `!play <YouTube/SpotifyのURLまたは検索ワード>`"
           );
         if (!msg.member?.voice?.channel)
-          return msg.reply("⚠️ まずボイスチャンネルに参加してください");
+          return msg.reply("⚠️ ボイスチャンネルに参加してください");
         const ok = await joinVoice(msg.guild, msg.member.voice.channel);
         if (!ok) return msg.reply("⚠️ 接続に失敗しました");
         const added = await playUrl(msg.guild.id, url, msg.channel);
@@ -191,7 +191,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
         const roleName = args.join(" ");
         if (!roleName)
           return msg.reply("使い方: `!addrole <ロール名>`");
-        await msg.reply(`✅ **${roleName}** を全ユーザーに付与します。完了まで時間がかかることがあります...`);
+        await msg.reply(`✅ **${roleName}** を全ユーザーに付与します。完了までお待ちください...`);
         const result = await addRoleToAll(msg.guild, roleName);
         if (result.success) {
           await msg.channel.send(`🎉 全${result.count}ユーザーにロールを付与しました！`);
@@ -206,17 +206,17 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await nukeChannel(msg.channel);
         break;
       }
-      case "clear": {
-        if (!hasManageGuildPermission(msg.member))
-          return msg.reply("⚠️ 管理者権限が必要です");
-        const amount = parseInt(args[0] || "0", 10);
-        if (!amount || amount < 1 || amount > 1000)
-          return msg.reply("使い方: `!clear 1〜1000`");
-        const waitingMsg = await msg.reply(`🧹 ${amount}件のメッセージ削除を開始します...`);
-        const deletedCount = await clearMessages(msg.channel, amount, waitingMsg);
-        await waitingMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`);
-        break;
-      }
+        Case "clear": {
+          if (!hasManageGuildPermission(msg.member))
+            return msg.reply("⚠️ 管理者権限が必要です");
+          const amount = parseInt(args[0] || "0", 10) + 2;
+          if (!amount || amount < 3 || amount > 1000)
+            return msg.reply("使い方: `!clear 1〜998`");
+          const waitingMsg = await msg.reply(`🧹 ${amount}件のメッセージ削除を開始します...`);
+          const deletedCount = await clearMessages(msg.channel, amount, waitingMsg);
+          await waitingMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`);
+          break;
+        }
       default: {
         const langMap = {
           英語: "en",
