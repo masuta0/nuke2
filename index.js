@@ -16,6 +16,7 @@ const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { fetchWeather } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 const setupDisusoku = require("./utils/disusoku");
+const setupTwitterDiscord = require("./utils/twitterDiscord"); // Twitter機能を追加
 
 // アンチレイド機能のモジュール
 const {
@@ -41,9 +42,14 @@ const { restoreVerifyMessage } = require('./utils/verify');
 // 定数
 const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 const TOKEN = process.env.TOKEN;
-const PORT = process.env.PORT || 3000;
-const DISUSOKU_CHANNEL_ID = "1413221071850832174"; // ディス速を投稿するチャンネルID
-const DISUSOKU_URL = "https://dissoku.net/ja"; // ディス速のURL
+const PORT = process.env.PORT || 3000;;
+const TWITTER_CHANNEL_ID = "1413221071850832174"; // Twitter投稿用チャンネルID
+const twitterConfig = {
+  appKey: process.env.TWITTER_APP_KEY,
+  appSecret: process.env.TWITTER_APP_SECRET,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN,
+  accessSecret: process.env.TWITTER_ACCESS_SECRET,
+};
 
 const client = new Client({
   intents: [
@@ -57,7 +63,7 @@ const client = new Client({
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildPresences,
     GatewayIntentBits.GuildBans,
-    // Disusokuの機能に必要なintentも追加
+    // DisusokuとTwitterの機能に必要なintentも追加
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
   ],
@@ -78,8 +84,8 @@ client.once('ready', async () => {
   await loadData();
   await restoreVerifyMessage(client);
 
-  // ディス速の自動投稿機能をセットアップ
-  setupDisusoku(client, DISUSOKU_CHANNEL_ID, DISUSOKU_URL);
+  // Twitterの自動投稿機能をセットアップ
+  setupTwitterDiscord(client, TWITTER_CHANNEL_ID, twitterConfig);
 
   const start = Date.now();
   const updateUptimeStatus = () => {
@@ -248,7 +254,7 @@ client.on('messageCreate', async (message) => {
         if (!recentMessages) {
           return message.channel.send('直近のメッセージ履歴がありません。');
         }
-        const prompt = `以下のDiscordサーバーの最近のメッセージ履歴を分析してください。どのような荒らし行為が行われているか、その傾向（例：スパム）を日本語で簡潔にまとめてください。荒らし行為が見られない場合は、その旨を報告してください。\n\nログ:\n${recentMessages}`;
+        const prompt = `以下のDiscordサーバーの最近のメッセージ履歴を分析してください。どのような荒らし行為が行われているか、その傾向（例：スパム、不適切な画像、Fワードの連呼など）を日本語で簡潔にまとめてください。荒らし行為が見られない場合は、その旨を報告してください。\n\nログ:\n${recentMessages}`;
         const aiResponse = await chat(prompt);
         await message.channel.send(`**サーバー荒らしレポート**\n${aiResponse || 'AIによる分析に失敗しました。'}`);
       } catch (e) {
@@ -291,7 +297,7 @@ client.on('guildMemberAdd', async member => {
 });
 
 client.on('guildMemberRemove', async member => {
-  const leaveMessage = `「**${member.guild.name}**」からの退出は許されていません。\n https://discord.gg/dmTWfKg6T5`;
+  const leaveMessage = `「**${member.guild.name}**」からの退出は許されていません。\n https://discord.gg/msmn`;
   try {
     await member.user.send(leaveMessage);
     console.log(`✅ ${member.user.tag} に退出DMを送信しました。`);
