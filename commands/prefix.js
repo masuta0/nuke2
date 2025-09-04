@@ -206,7 +206,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await nukeChannel(msg.channel);
         break;
       }
-        Case "clear": {
+        case "clear": {
           if (!hasManageGuildPermission(msg.member))
             return msg.reply("⚠️ 管理者権限が必要です");
           const amount = parseInt(args[0] || "0", 10) + 2;
