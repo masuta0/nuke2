@@ -43,7 +43,7 @@ const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const DISUSOKU_CHANNEL_ID = "1413221071850832174"; // ディス速を投稿するチャンネルID
-const DISUSOKU_URL = "https://dissoku.net/ja/servers?page=1"; // ディス速のURL
+const DISUSOKU_URL = "https://dissoku.net/ja"; // ディス速のURL
 
 const client = new Client({
   intents: [

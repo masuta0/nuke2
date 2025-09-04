@@ -24,6 +24,7 @@
     "node-fetch": "^3.3.2",
     "open": "^10.2.0",
     "play-dl": "^1.9.7",
+    "puppeteer": "^24.19.0",
     "ytdl-core": "^4.11.5"
   },
   "repository": {
