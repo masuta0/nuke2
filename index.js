@@ -75,9 +75,6 @@ client.once('ready', async () => {
   await loadData();
   await restoreVerifyMessage(client);
 
-  // Twitterの自動投稿機能をセットアップ
-  setupTwitterDiscord(client, TWITTER_CHANNEL_ID, twitterConfig);
-
   const start = Date.now();
   const updateUptimeStatus = () => {
     const elapsed = Date.now() - start;
