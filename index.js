@@ -15,7 +15,6 @@ const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./u
 const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { fetchWeather } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-const setupDisusoku = require("./utils/disusoku");
 const setupTwitterDiscord = require("./utils/twitterDiscord"); // Twitter機能を追加
 
 // アンチレイド機能のモジュール
