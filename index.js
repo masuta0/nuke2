@@ -15,7 +15,6 @@ const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./u
 const { preloadQuizzes, askQuiz } = require('./utils/quiz');
 const { fetchWeather } = require('./utils/weather');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-const setupTwitterDiscord = require("./utils/twitterDiscord"); // Twitter機能を追加
 
 // アンチレイド機能のモジュール
 const {
@@ -42,13 +41,6 @@ const { restoreVerifyMessage } = require('./utils/verify');
 const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;;
-const TWITTER_CHANNEL_ID = "1413221071850832174"; // Twitter投稿用チャンネルID
-const twitterConfig = {
-  appKey: process.env.TWITTER_APP_KEY,
-  appSecret: process.env.TWITTER_APP_SECRET,
-  accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.TWITTER_ACCESS_SECRET,
-};
 
 const client = new Client({
   intents: [
