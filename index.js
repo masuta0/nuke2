@@ -18,7 +18,7 @@ const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 // アンチレイド機能のモジュール
 const {
-  handleMemberJoin,をー
+  handleMemberJoin,
   handleMessage,
   handleReactionAdd,
   handleRoleUpdate,
@@ -40,7 +40,7 @@ const { restoreVerifyMessage } = require('./utils/verify');
 // 定数
 const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
 const TOKEN = process.env.TOKEN;
-const PORT = process.env.PORT || 3000;;
+const PORT = process.env.PORT || 3000;
 
 const client = new Client({
   intents: [
