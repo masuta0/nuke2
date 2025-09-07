@@ -18,7 +18,7 @@ const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 // アンチレイド機能のモジュール
 const {
-  handleMemberJoin,
+  handleMemberJoin,をー
   handleMessage,
   handleReactionAdd,
   handleRoleUpdate,
