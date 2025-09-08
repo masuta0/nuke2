@@ -420,7 +420,7 @@ async function handleMessage(message) {
   }
 
   const newlineCount = (content.match(/\n/g) || []).length;
-  if (newlineCount > 10) {
+  if (newlineCount > 20) {
     const s = addScore(uid, c.NEWLINES);
     await safeDelete(message, '過度な改行');
     await sendLogEmbed(message.guild, {
