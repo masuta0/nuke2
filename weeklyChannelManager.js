@@ -1,52 +1,35 @@
-// weeklyChannelManager.js
-
+// utils/weeklyManager.js
 require('dotenv').config();
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
-const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
+const { PermissionsBitField } = require('discord.js');
+const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./storage');
+const path = require('path');
 
-const TOKEN = process.env.TOKEN;
 const REQUIRED_MESSAGES = 500;
 const COOLDOWN_TIME = 10 * 1000; // 10秒クールダウン
-const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID; // 宣伝チャンネルID
 const DROPBOX_WEEKLY_PATH = '/app-data/userWeeklyMessages.json';
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-  partials: [Partials.Channel],
-});
 
 let messageCounts = {}; // { 'guildId_userId': count }
 let cooldowns = new Set();
 
-// ==============================
-// データロード
-// ==============================
-async function loadData() {
+/**
+ * Dropboxからデータロード
+ */
+async function loadWeeklyData() {
   try {
     await ensureDropboxInit();
     const data = await downloadFromDropbox(DROPBOX_WEEKLY_PATH);
-    if (data) {
-      messageCounts = JSON.parse(data);
-      console.log('✅ 週間メッセージデータをDropboxからロードしました');
-    } else {
-      console.log('⚠️ Dropboxに週間メッセージデータが存在しません。新規作成します');
-      messageCounts = {};
-    }
+    messageCounts = data ? JSON.parse(data) : {};
+    console.log('✅ 週間メッセージデータをDropboxからロードしました');
   } catch (err) {
     console.error('❌ 週間メッセージデータのロードに失敗:', err);
     messageCounts = {};
   }
 }
 
-// ==============================
-// データ保存
-// ==============================
-async function saveData() {
+/**
+ * Dropboxへデータ保存
+ */
+async function saveWeeklyData() {
   try {
     await uploadToDropbox(DROPBOX_WEEKLY_PATH, JSON.stringify(messageCounts, null, 2));
     console.log('✅ 週間メッセージデータをDropboxに保存しました');
@@ -55,10 +38,10 @@ async function saveData() {
   }
 }
 
-// ==============================
-// メッセージカウント処理
-// ==============================
-async function countMessage(message) {
+/**
+ * メッセージカウント処理
+ */
+async function handleMessage(message, weeklyChannelId) {
   if (!message.guild || !message.member || message.author.bot) return;
 
   const key = `${message.guild.id}_${message.author.id}`;
@@ -70,59 +53,51 @@ async function countMessage(message) {
   cooldowns.add(key);
   setTimeout(() => cooldowns.delete(key), COOLDOWN_TIME);
 
-  // 500メッセージ達成でチャンネル権限付与
   if (messageCounts[key] === REQUIRED_MESSAGES) {
-    const channel = message.guild.channels.cache.get(WEEKLY_CHANNEL_ID);
-    if (channel && channel.isTextBased()) {
+    const channel = message.guild.channels.cache.get(weeklyChannelId);
+    if (channel?.isTextBased()) {
       await channel.permissionOverwrites.edit(message.member, { SendMessages: true });
-      await channel.send(`🎉 ${message.member} が週間メッセージ500達成！\n宣伝チャンネルが開放されました！`);
+      await channel.send(
+        `🎉 ${message.member} が週間メッセージ500達成！\n宣伝チャンネルが開放されました！`
+      );
     }
   }
 
-  await saveData();
+  await saveWeeklyData();
 }
 
-// ==============================
-// 週初めリセット
-// ==============================
-async function resetWeeklyChannel() {
+/**
+ * 週初めに全員権限リセット
+ */
+async function resetWeeklyChannel(client, weeklyChannelId) {
   const guild = client.guilds.cache.first();
   if (!guild) return;
 
-  const channel = guild.channels.cache.get(WEEKLY_CHANNEL_ID);
-  if (!channel || !channel.isTextBased()) return;
+  const channel = guild.channels.cache.get(weeklyChannelId);
+  if (!channel?.isTextBased()) return;
 
-  // 全員の権限をリセット
   await channel.permissionOverwrites.set([]);
-
-  // メッセージカウントもリセット
   messageCounts = {};
-  await saveData();
+  await saveWeeklyData();
 
   console.log('✅ 週間メッセージカウント＆チャンネル権限をリセットしました');
 }
 
-// ==============================
-// Bot起動
-// ==============================
-client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-  await loadData();
+/**
+ * Botにイベントを登録してweekly監視を開始
+ */
+function setupWeekly(client, weeklyChannelId) {
+  client.on('messageCreate', async (message) => {
+    await handleMessage(message, weeklyChannelId);
+  });
 
   // 毎週月曜日0時に自動リセット
   setInterval(() => {
     const now = new Date();
     if (now.getDay() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
-      resetWeeklyChannel();
+      resetWeeklyChannel(client, weeklyChannelId);
     }
   }, 60 * 1000); // 1分ごとにチェック
-});
+}
 
-// ==============================
-// メッセージイベント
-// ==============================
-client.on('messageCreate', async (message) => {
-  await countMessage(message);
-});
-
-client.login(TOKEN);
+module.exports = { setupWeekly, loadWeeklyData, resetWeeklyChannel };

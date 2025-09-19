@@ -1,10 +1,11 @@
+// index.js
 require('dotenv').config();
 const express = require('express');
-const { Client, GatewayIntentBits, ActivityType, Partials, ChannelType } = require('discord.js');
 const path = require('path');
 const fs = require('fs').promises;
+const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
 
-// モジュール読み込み
+// ユーティリティ・モジュール
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
@@ -12,6 +13,7 @@ const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./u
 const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData } = require('./utils/level');
 const { restoreVerifyMessage } = require('./utils/verify');
+const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
 const {
   handleMemberJoin,
   handleMessage,
@@ -19,24 +21,18 @@ const {
   handleRoleUpdate,
   handleAuditLogEntry,
   handleMessageUpdate,
-  handleBotAdd,
   onGuildMemberUpdate,
   onGuildBanAdd,
   onGuildMemberRemove,
-  hasManageGuildPermission,
-  backupServerState,
-  restoreServerState,
-  pendingModActions,
-  restoreRoles,
 } = require('./utils/anti-raid');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 // 定数
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
-const LOG_PATH = path.join(__dirname, 'logs/anti_raid.log');
+const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
 
-// クライアント作成
+// Discordクライアント作成
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -53,12 +49,12 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
-// Expressサーバー
+// Expressサーバー（監視用）
 const app = express();
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
-// ログイン時処理
+// Bot ready
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
@@ -66,20 +62,8 @@ client.once('ready', async () => {
   preloadQuizzes();
   await loadData();
   await restoreVerifyMessage(client);
-
-  // 稼働時間表示
-  const start = Date.now();
-  const updateUptimeStatus = () => {
-    const elapsed = Date.now() - start;
-    const h = Math.floor(elapsed / 1000 / 60 / 60);
-    const m = Math.floor((elapsed / 1000 / 60) % 60);
-    const s = Math.floor((elapsed / 1000) % 60);
-    try {
-      client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
-    } catch (_) {}
-  };
-  updateUptimeStatus();
-  setInterval(updateUptimeStatus, 2000);
+  await loadWeeklyData();
+  setupWeekly(client, WEEKLY_CHANNEL_ID);
 
   // スラッシュコマンド登録
   try {
@@ -88,6 +72,20 @@ client.once('ready', async () => {
   } catch (e) {
     console.error('❌ スラッシュコマンド登録失敗:', e);
   }
+
+  // 稼働時間ステータス更新
+  const start = Date.now();
+  const updateUptime = () => {
+    const elapsed = Date.now() - start;
+    const h = Math.floor(elapsed / 1000 / 60 / 60);
+    const m = Math.floor((elapsed / 1000 / 60) % 60);
+    const s = Math.floor((elapsed / 1000) % 60);
+    try {
+      client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
+    } catch {}
+  };
+  updateUptime();
+  setInterval(updateUptime, 2000);
 });
 
 // メッセージ作成イベント
@@ -100,34 +98,8 @@ client.on('messageCreate', async (message) => {
   await addXp(message.member);
   await handleMessage(message);
 
-  // === DM処理 ===
-  if (message.channel?.type === ChannelType.DM) {
-    const pendingAction = pendingModActions.get(message.author.id);
-    if (pendingAction) {
-      const prompt = `以下の理由がDiscordサーバーのルール違反に対する妥当な理由か判断してください。「適切」か「不適切」のいずれかで回答してください。\n理由: ${message.content}`;
-      const aiResponse = await chat(prompt, message.author.id);
-      const isAppropriate = aiResponse.includes('適切');
-
-      if (isAppropriate) {
-        await message.reply('✅ 理由が適切と判断されました。ロールを復元します。');
-        await restoreRoles(
-          await message.client.guilds.cache
-            .get(pendingAction.entry.guildId)
-            .members.fetch(message.author.id)
-        );
-        pendingModActions.delete(message.author.id);
-      } else {
-        pendingAction.reasonAttempts++;
-        if (pendingAction.reasonAttempts >= 3) {
-          await message.reply('❌ 理由が不適切と判断されたため、権限剥奪を継続します。');
-          pendingModActions.delete(message.author.id);
-        } else {
-          await message.reply(`⚠️ 理由が不適切です。再提出してください。（残り${3 - pendingAction.reasonAttempts}回）`);
-        }
-      }
-      return;
-    }
-  }
+  // DMでのモデレーション対応
+  if (message.channel?.type === ChannelType.DM) return;
 
   // === プレフィックスコマンド ===
   if (!message.content.startsWith('!')) return;
@@ -135,7 +107,7 @@ client.on('messageCreate', async (message) => {
   const command = args.shift()?.toLowerCase();
 
   switch (command) {
-    // 音楽系
+    // 音楽
     case 'join':
       if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       if (await joinVoice(message.guild, message.member.voice.channel)) {
@@ -177,18 +149,6 @@ client.on('messageCreate', async (message) => {
       }
       break;
 
-    // サーバー管理
-    case 'backup':
-      if (!hasManageGuildPermission(message.member)) return message.reply('⚠️ 管理者権限必要');
-      await backupServerState(message.guild);
-      message.reply('✅ サーバー構成をバックアップしました');
-      break;
-    case 'restore':
-      if (!hasManageGuildPermission(message.member)) return message.reply('⚠️ 管理者権限必要');
-      await restoreServerState(message.guild);
-      message.reply('✅ サーバー構成を復元しました');
-      break;
-
     // AIチャット
     case 'ai':
       const prompt = args.join(' ').trim();
@@ -212,7 +172,7 @@ client.on('messageCreate', async (message) => {
 // メッセージ更新
 client.on('messageUpdate', handleMessageUpdate);
 
-// メンバー入室
+// メンバー入室 / 退室
 client.on('guildMemberAdd', handleMemberJoin);
 client.on('guildMemberRemove', onGuildMemberRemove);
 client.on('guildMemberUpdate', onGuildMemberUpdate);
