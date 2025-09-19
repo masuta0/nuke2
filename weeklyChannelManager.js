@@ -1,17 +1,14 @@
 // weeklyChannelManager.js
 
 require('dotenv').config();
-const fs = require('fs').promises;
-const path = require('path');
-const { Client, GatewayIntentBits, Partials, ChannelType, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
 
 const TOKEN = process.env.TOKEN;
 const REQUIRED_MESSAGES = 500;
 const COOLDOWN_TIME = 10 * 1000; // 10秒クールダウン
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID; // 宣伝チャンネルID
-
-const DATA_PATH = path.join(__dirname, 'app-data/userWeeklyMessages.json');
+const DROPBOX_WEEKLY_PATH = '/app-data/userWeeklyMessages.json';
 
 const client = new Client({
   intents: [
@@ -26,10 +23,13 @@ const client = new Client({
 let messageCounts = {}; // { 'guildId_userId': count }
 let cooldowns = new Set();
 
+// ==============================
+// データロード
+// ==============================
 async function loadData() {
   try {
     await ensureDropboxInit();
-    const data = await downloadFromDropbox('/userWeeklyMessages.json');
+    const data = await downloadFromDropbox(DROPBOX_WEEKLY_PATH);
     if (data) {
       messageCounts = JSON.parse(data);
       console.log('✅ 週間メッセージデータをDropboxからロードしました');
@@ -43,15 +43,21 @@ async function loadData() {
   }
 }
 
+// ==============================
+// データ保存
+// ==============================
 async function saveData() {
   try {
-    const DROPBOX_WEEKLY_PATH = '/app-data/userWeeklyMessages.json';
+    await uploadToDropbox(DROPBOX_WEEKLY_PATH, JSON.stringify(messageCounts, null, 2));
+    console.log('✅ 週間メッセージデータをDropboxに保存しました');
   } catch (err) {
     console.error('❌ 週間メッセージデータの保存に失敗:', err);
   }
 }
 
+// ==============================
 // メッセージカウント処理
+// ==============================
 async function countMessage(message) {
   if (!message.guild || !message.member || message.author.bot) return;
 
@@ -68,7 +74,6 @@ async function countMessage(message) {
   if (messageCounts[key] === REQUIRED_MESSAGES) {
     const channel = message.guild.channels.cache.get(WEEKLY_CHANNEL_ID);
     if (channel && channel.isTextBased()) {
-      // 個別メンバーに sendMessages 権限を付与
       await channel.permissionOverwrites.edit(message.member, { SendMessages: true });
       await channel.send(`🎉 ${message.member} が週間メッセージ500達成！\n宣伝チャンネルが開放されました！`);
     }
@@ -77,7 +82,9 @@ async function countMessage(message) {
   await saveData();
 }
 
-// 週初めに全員の権限をリセット
+// ==============================
+// 週初めリセット
+// ==============================
 async function resetWeeklyChannel() {
   const guild = client.guilds.cache.first();
   if (!guild) return;
@@ -95,7 +102,9 @@ async function resetWeeklyChannel() {
   console.log('✅ 週間メッセージカウント＆チャンネル権限をリセットしました');
 }
 
+// ==============================
 // Bot起動
+// ==============================
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   await loadData();
@@ -109,7 +118,9 @@ client.once('ready', async () => {
   }, 60 * 1000); // 1分ごとにチェック
 });
 
+// ==============================
 // メッセージイベント
+// ==============================
 client.on('messageCreate', async (message) => {
   await countMessage(message);
 });
