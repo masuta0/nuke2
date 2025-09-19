@@ -28,6 +28,15 @@ function parseRole(query, guild) {
   return role;
 }
 
+// ボタンを行ごとに分割する（1行5個まで）
+function chunkButtons(buttons) {
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + 5)));
+  }
+  return rows;
+}
+
 module.exports = {
   data: [
     new SlashCommandBuilder()
@@ -88,16 +97,16 @@ module.exports = {
         .setDescription(message)
         .addFields(roles.map(role => ({ name: role.name, value: 'ボタンを押すと付与/解除できます。' })));
 
-      const row = new ActionRowBuilder().addComponents(
-        roles.map(role =>
-          new ButtonBuilder()
-            .setCustomId(`role_button_${role.id}`)
-            .setLabel(role.name)
-            .setStyle(ButtonStyle.Primary)
-        )
+      const buttons = roles.map(role =>
+        new ButtonBuilder()
+          .setCustomId(`role_button_${role.id}`)
+          .setLabel(role.name)
+          .setStyle(ButtonStyle.Primary)
       );
 
-      const panelMessage = await interaction.channel.send({ embeds: [embed], components: [row] });
+      const rows = chunkButtons(buttons);
+
+      const panelMessage = await interaction.channel.send({ embeds: [embed], components: rows });
 
       return interaction.reply({
         content: `✅ ロールパネルを作成しました！（メッセージID: \`${panelMessage.id}\`）`,
@@ -107,6 +116,8 @@ module.exports = {
 
     // === /rolepaneladd ===
     if (name === 'rolepaneladd') {
+      await interaction.deferReply({ ephemeral: true });
+
       const messageId = interaction.options.getString('message_id');
       const rolesInput = interaction.options.getString('roles');
       const roleQueries = rolesInput.split(',').map(r => r.trim());
@@ -116,27 +127,24 @@ module.exports = {
       try {
         panelMessage = await interaction.channel.messages.fetch(messageId);
       } catch {
-        return interaction.reply({ content: '❌ メッセージが見つかりませんでした。', ephemeral: true });
+        return interaction.editReply({ content: '❌ メッセージが見つかりませんでした。' });
       }
 
       // 既存のEmbedを取得
       const embed = panelMessage.embeds[0];
       if (!embed) {
-          return interaction.reply({ content: '❌ このメッセージにはEmbedがありません。', ephemeral: true });
+        return interaction.editReply({ content: '❌ このメッセージにはEmbedがありません。' });
       }
 
-      const oldRow = panelMessage.components[0];
-      if (!oldRow) {
-        return interaction.reply({ content: '❌ このメッセージにはボタンがありません。', ephemeral: true });
-      }
+      const oldRows = panelMessage.components;
+      const existingButtons = oldRows.flatMap(row => row.components);
 
-      const existingButtons = oldRow.components;
       const newRoles = roleQueries
         .map(query => parseRole(query, interaction.guild))
         .filter(r => r && !existingButtons.some(b => b.customId === `role_button_${r.id}`));
 
       if (!newRoles.length) {
-        return interaction.reply({ content: '⚠️ 新しく追加できるロールが見つかりませんでした。', ephemeral: true });
+        return interaction.editReply({ content: '⚠️ 新しく追加できるロールが見つかりませんでした。' });
       }
 
       // 新しいEmbedフィールドを生成
@@ -152,11 +160,15 @@ module.exports = {
         new ButtonBuilder().setCustomId(`role_button_${role.id}`).setLabel(role.name).setStyle(ButtonStyle.Primary)
       );
 
-      const newRow = new ActionRowBuilder().addComponents([...existingButtons, ...newButtons]);
+      const rows = chunkButtons([...existingButtons, ...newButtons]);
 
-      await panelMessage.edit({ embeds: [updatedEmbed], components: [newRow] });
-
-      return interaction.reply({ content: `✅ ${newRoles.length}個のロールを追加しました！`, ephemeral: true });
+      try {
+        await panelMessage.edit({ embeds: [updatedEmbed], components: rows });
+        await interaction.editReply({ content: `✅ ${newRoles.length}個のロールを追加しました！` });
+      } catch (err) {
+        console.error(err);
+        await interaction.editReply({ content: '❌ メッセージの編集に失敗しました。' });
+      }
     }
   },
 
