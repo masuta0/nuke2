@@ -45,7 +45,7 @@ async function loadData() {
 
 async function saveData() {
   try {
-    await uploadToDropbox('/userWeeklyMessages.json', JSON.stringify(messageCounts, null, 2));
+    const DROPBOX_WEEKLY_PATH = '/app-data/userWeeklyMessages.json';
   } catch (err) {
     console.error('❌ 週間メッセージデータの保存に失敗:', err);
   }
