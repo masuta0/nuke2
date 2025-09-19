@@ -5,7 +5,9 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "weekly": "node weeklyChannelManager.js",
+    "weekly:dev": "node -r dotenv/config weeklyChannelManager.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.16.1",
