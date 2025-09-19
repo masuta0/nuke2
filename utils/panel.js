@@ -119,6 +119,12 @@ module.exports = {
         return interaction.reply({ content: '❌ メッセージが見つかりませんでした。', ephemeral: true });
       }
 
+      // 既存のEmbedを取得
+      const embed = panelMessage.embeds[0];
+      if (!embed) {
+          return interaction.reply({ content: '❌ このメッセージにはEmbedがありません。', ephemeral: true });
+      }
+
       const oldRow = panelMessage.components[0];
       if (!oldRow) {
         return interaction.reply({ content: '❌ このメッセージにはボタンがありません。', ephemeral: true });
@@ -133,13 +139,22 @@ module.exports = {
         return interaction.reply({ content: '⚠️ 新しく追加できるロールが見つかりませんでした。', ephemeral: true });
       }
 
+      // 新しいEmbedフィールドを生成
+      const newFields = newRoles.map(role => ({
+        name: role.name,
+        value: 'ボタンを押すと付与/解除できます。'
+      }));
+
+      // 既存のフィールドと新しいフィールドを結合してEmbedを更新
+      const updatedEmbed = EmbedBuilder.from(embed).addFields(newFields);
+
       const newButtons = newRoles.map(role =>
         new ButtonBuilder().setCustomId(`role_button_${role.id}`).setLabel(role.name).setStyle(ButtonStyle.Primary)
       );
 
       const newRow = new ActionRowBuilder().addComponents([...existingButtons, ...newButtons]);
 
-      await panelMessage.edit({ embeds: panelMessage.embeds, components: [newRow] });
+      await panelMessage.edit({ embeds: [updatedEmbed], components: [newRow] });
 
       return interaction.reply({ content: `✅ ${newRoles.length}個のロールを追加しました！`, ephemeral: true });
     }
