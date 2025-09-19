@@ -6,7 +6,7 @@ const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./s
 const { ChannelType } = require('discord.js');
 
 const LEVEL_SETTINGS_PATH = path.join(__dirname, '../levels.json');
-const DROPBOX_LEVEL_DATA_PATH = '/app-/userLevels.json';
+const DROPBOX_LEVEL_DATA_PATH = '/app-data/userLevels.json';
 
 let userLevels = {};
 let levelSettings = {};
