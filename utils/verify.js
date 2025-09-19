@@ -1,57 +1,59 @@
-// commands/verify.js
-
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, PermissionFlagsBits } = require('discord.js');
-const fs = require('fs').promises; // ローカルファイルは不要だが、一部ロジックのために残す
-const path = require('path');
-const { uploadToDropbox, downloadFromDropbox, ensureFolder } = require('../utils/storage');
+const { 
+  SlashCommandBuilder, 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  ModalBuilder, 
+  TextInputBuilder, 
+  TextInputStyle, 
+  PermissionFlagsBits 
+} = require('discord.js');
+const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('../utils/storage');
 
 const userCodes = new Map();
 const DROPBOX_VERIFY_DATA_PATH = '/bot_data/verifyData.json';
 
+// ===== Dropbox 保存/読み込み =====
 async function saveVerifyData(data) {
   try {
-    // Dropboxに認証データをアップロード
     const success = await uploadToDropbox(DROPBOX_VERIFY_DATA_PATH, JSON.stringify(data, null, 2));
-    if (success) {
-      console.log('✅ 認証データをDropboxに正常に保存しました:', data);
-    } else {
-      console.error('❌ 認証データのDropboxへの保存に失敗しました。');
-    }
+    if (success) console.log('✅ 認証データをDropboxに保存しました');
+    else console.error('❌ 認証データのDropbox保存に失敗');
   } catch (err) {
-    console.error('❌ 認証データの保存中にエラーが発生しました:', err);
+    console.error('❌ 認証データ保存エラー:', err);
   }
 }
 
 async function loadVerifyData() {
   try {
-    // Dropboxから認証データをダウンロード
     const data = await downloadFromDropbox(DROPBOX_VERIFY_DATA_PATH);
     if (data) {
-      const parsedData = JSON.parse(data);
-      console.log('✅ 認証データをDropboxから正常に読み込みました:', parsedData);
-      return parsedData;
+      const parsed = JSON.parse(data);
+      console.log('✅ 認証データをDropboxから読み込みました');
+      return parsed;
     }
-    console.log('⚠️ 認証データがDropboxに見つかりません。');
+    console.warn('⚠️ Dropboxに認証データが存在しません');
     return {};
   } catch (err) {
-    console.error('❌ 認証データの読み込み中にエラーが発生しました:', err);
+    console.error('❌ 認証データ読み込みエラー:', err);
     return {};
   }
 }
 
+// ===== コード生成 =====
 async function generateCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+  return code;
 }
 
+// ===== Embed/ボタン作成 =====
 async function createVerifyMessageEmbedAndComponents(roleName) {
-  const verifyEmbed = new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setTitle('🛡️ サーバー認証')
-    .setDescription(`サーバーに参加するには、「認証する」ボタンを押し、表示されるコードを入力してください。\n認証後は、**${roleName}** ロールが付与されます。`)
+    .setDescription(`サーバーに参加するには「認証する」ボタンを押してコードを入力してください。\n認証後は **${roleName}** ロールが付与されます。`)
     .setColor('Blue');
 
   const row = new ActionRowBuilder().addComponents(
@@ -61,9 +63,10 @@ async function createVerifyMessageEmbedAndComponents(roleName) {
       .setStyle(ButtonStyle.Primary)
   );
 
-  return { embeds: [verifyEmbed], components: [row] };
+  return { embeds: [embed], components: [row] };
 }
 
+// ===== Slash コマンド定義 =====
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('verifysetup')
@@ -81,87 +84,82 @@ module.exports = {
     const channelId = interaction.channel.id;
     const guildId = interaction.guild.id;
 
-    await saveVerifyData({ channelId, roleId, guildId });
-    console.log(`✅ サーバー ${interaction.guild.name} の認証設定を保存しました。`);
+    await saveVerifyData({ guildId, channelId, roleId });
+    console.log(`✅ サーバー ${interaction.guild.name} の認証設定を保存`);
 
     const messagePayload = await createVerifyMessageEmbedAndComponents(role.name);
     await interaction.reply(messagePayload);
   },
 
   async buttonHandler(interaction) {
-    if (interaction.customId === 'verify_button') {
-      const code = await generateCode();
-      userCodes.set(interaction.user.id, code);
+    if (interaction.customId !== 'verify_button') return;
 
-      const modal = new ModalBuilder()
-        .setCustomId('verify_modal')
-        .setTitle('認証コード入力');
+    const code = await generateCode();
+    userCodes.set(interaction.user.id, code);
 
-      const codeInput = new TextInputBuilder()
-        .setCustomId('verify_input')
-        .setLabel('表示されたコード: ' + code)
-        .setPlaceholder('コードを手動で入力してください')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
+    const modal = new ModalBuilder()
+      .setCustomId('verify_modal')
+      .setTitle('認証コード入力');
 
-      const row = new ActionRowBuilder().addComponents(codeInput);
-      modal.addComponents(row);
+    const codeInput = new TextInputBuilder()
+      .setCustomId('verify_input')
+      .setLabel('表示されたコード: ' + code)
+      .setPlaceholder('コードを入力してください')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true);
 
-      await interaction.showModal(modal);
-    }
+    modal.addComponents(new ActionRowBuilder().addComponents(codeInput));
+    await interaction.showModal(modal);
   },
 
   async modalHandler(interaction) {
-    if (interaction.customId === 'verify_modal') {
-      const inputCode = interaction.fields.getTextInputValue('verify_input');
-      const correctCode = userCodes.get(interaction.user.id);
+    if (interaction.customId !== 'verify_modal') return;
 
-      if (inputCode === correctCode) {
-        const verifyData = await loadVerifyData();
-        const roleId = verifyData.roleId;
+    const inputCode = interaction.fields.getTextInputValue('verify_input');
+    const correctCode = userCodes.get(interaction.user.id);
 
-        if (!roleId) {
-          return interaction.reply({ content: '❌ 認証ロールが設定されていません。管理者に連絡してください。', ephemeral: true });
-        }
+    if (inputCode !== correctCode) {
+      return interaction.reply({ content: '❌ 認証コードが間違っています', ephemeral: true });
+    }
 
-        try {
-          const member = await interaction.guild.members.fetch(interaction.user.id);
-          await member.roles.add(roleId);
-          userCodes.delete(interaction.user.id);
+    const verifyData = await loadVerifyData();
+    if (!verifyData.roleId) {
+      return interaction.reply({ content: '❌ 認証ロールが設定されていません', ephemeral: true });
+    }
 
-          await interaction.reply({ content: '✅ 認証に成功しました！ロールを付与しました。', ephemeral: true });
-        } catch (err) {
-          console.error('ロール付与に失敗しました:', err);
-          await interaction.reply({ content: '❌ ロールの付与に失敗しました。ボットの権限を確認してください。', ephemeral: true });
-        }
-      } else {
-        await interaction.reply({ content: '❌ 認証コードが間違っています。', ephemeral: true });
-      }
+    try {
+      const member = await interaction.guild.members.fetch(interaction.user.id);
+      await member.roles.add(verifyData.roleId);
+      userCodes.delete(interaction.user.id);
+      await interaction.reply({ content: '✅ 認証に成功しました！ロールを付与しました', ephemeral: true });
+    } catch (err) {
+      console.error('❌ ロール付与失敗:', err);
+      await interaction.reply({ content: '❌ ロール付与に失敗しました', ephemeral: true });
     }
   },
 
+  // ===== 自動再設置 ready 用 =====
   async restoreVerifyMessage(client) {
     const verifyData = await loadVerifyData();
-    if (verifyData && verifyData.channelId && verifyData.guildId) {
-      try {
-        const guild = await client.guilds.fetch(verifyData.guildId);
-        const channel = await guild.channels.fetch(verifyData.channelId);
-        const role = await guild.roles.fetch(verifyData.roleId);
+    if (!verifyData.guildId || !verifyData.channelId || !verifyData.roleId) return;
 
-        if (channel && channel.isTextBased() && role) {
-          const messages = await channel.messages.fetch({ limit: 100 });
-          const oldBotMessage = messages.find(m => m.author.id === client.user.id && m.embeds[0]?.title === '🛡️ サーバー認証');
-          if (oldBotMessage) {
-            await oldBotMessage.delete().catch(() => {});
-          }
+    try {
+      const guild = await client.guilds.fetch(verifyData.guildId);
+      const channel = await guild.channels.fetch(verifyData.channelId);
+      const role = await guild.roles.fetch(verifyData.roleId);
+      if (!channel || !channel.isTextBased() || !role) return;
 
-          const messagePayload = await createVerifyMessageEmbedAndComponents(role.name);
-          await channel.send(messagePayload);
-          console.log('✅ 認証メッセージを自動再設置しました。');
-        }
-      } catch (err) {
-        console.error('❌ 認証メッセージの自動再設置に失敗しました:', err);
-      }
+      // 過去ボットメッセージ削除
+      const messages = await channel.messages.fetch({ limit: 100 });
+      const oldBotMessage = messages.find(m => m.author.id === client.user.id && m.embeds[0]?.title === '🛡️ サーバー認証');
+      if (oldBotMessage) await oldBotMessage.delete().catch(() => {});
+
+      // 新規メッセージ送信
+      const messagePayload = await createVerifyMessageEmbedAndComponents(role.name);
+      await channel.send(messagePayload);
+      console.log('✅ 認証メッセージを自動再設置しました');
+    } catch (err) {
+      console.error('❌ restoreVerifyMessage エラー:', err);
     }
-  },
+  }
 };
