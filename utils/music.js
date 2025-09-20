@@ -6,9 +6,9 @@ const {
   AudioPlayerStatus,
   getVoiceConnection,
 } = require("@discordjs/voice");
-const ytdl = require("ytdl-core");
+const play = require("play-dl");
 
-const guildPlayers = new Map(); // ギルドごとに音楽プレイヤーを保持
+const guildPlayers = new Map(); // ギルドごとにプレイヤー管理
 
 // === ボイスチャンネルに参加 ===
 async function joinVoice(guild, channel) {
@@ -20,43 +20,51 @@ async function joinVoice(guild, channel) {
     });
     return true;
   } catch (err) {
-    console.error("joinVoice エラー:", err);
+    console.error("❌ joinVoice エラー:", err);
     return false;
   }
 }
 
-// === YouTube URLを再生 ===
+// === URL再生 (YouTube, Spotify, SoundCloud対応) ===
 async function playUrl(guildId, url, textChannel) {
-  if (!ytdl.validateURL(url)) return null;
-
   try {
-    const info = await ytdl.getInfo(url);
-    const title = info.videoDetails.title;
+    // URLの確認
+    if (!await play.validate(url)) {
+      return null;
+    }
 
-    const stream = ytdl(url, { filter: "audioonly", highWaterMark: 1 << 25 });
-    const resource = createAudioResource(stream);
+    // 動画情報
+    const info = await play.video_basic_info(url);
+    const title = info.video_details.title;
 
+    // ストリーム作成
+    const stream = await play.stream(url);
+    const resource = createAudioResource(stream.stream, { inputType: stream.type });
+
+    // プレイヤー取得または新規作成
     let player = guildPlayers.get(guildId);
     if (!player) {
       player = createAudioPlayer();
       guildPlayers.set(guildId, player);
 
       player.on(AudioPlayerStatus.Idle, () => {
-        textChannel.send("再生が終了しました");
+        textChannel.send("⏹️ 再生が終了しました");
       });
 
       player.on("error", (err) => {
-        console.error("AudioPlayer エラー:", err);
+        console.error("❌ AudioPlayer エラー:", err);
         textChannel.send("⚠ 再生中にエラーが発生しました");
       });
     }
 
+    // VC接続チェック
     const connection = getVoiceConnection(guildId);
     if (!connection) {
-      textChannel.send("ボイスチャンネルに接続していません");
+      textChannel.send("❌ ボイスチャンネルに接続していません");
       return null;
     }
 
+    // 再生開始
     player.play(resource);
     connection.subscribe(player);
 
