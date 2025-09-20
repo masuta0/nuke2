@@ -26,13 +26,15 @@
     "express": "^5.1.0",
     "face-api.js": "^0.22.2",
     "googleapis": "^156.0.0",
-    "libsodium-wrappers": "^0.7.15",
+    "libsodium-wrappers": "^0.8.0",
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "open": "^10.2.0",
     "play-dl": "^1.9.7",
     "puppeteer": "^24.19.0",
-    "twitter-api-v2": "^1.26.0"
+    "twitter-api-v2": "^1.26.0",
+    "yt-dlp-exec": "^1.2.1",
+    "ffmpeg-static": "^5.1.0"
   },
   "repository": {
     "type": "git",

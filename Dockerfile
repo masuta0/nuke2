@@ -1,10 +1,15 @@
-# Node 18 イメージを使用
+# Node.js 18 イメージを使用
 FROM node:18-bullseye
 
-# 必要なパッケージをインストール
-RUN apt-get update && \
-    apt-get install -y ffmpeg libsodium-dev git curl && \
-    rm -rf /var/lib/apt/lists/*
+# 必須パッケージをインストール（FFmpeg と libsodium）
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libsodium-dev \
+    python3 \
+    python3-pip \
+    git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # 作業ディレクトリ
 WORKDIR /app
@@ -14,10 +19,9 @@ COPY package*.json ./
 
 # 依存関係をインストール
 RUN npm install --production
-# yt-dlp-exec を追加
-RUN npm install yt-dlp-exec
-# アプリのソースをコピー
+
+# ソースコードをコピー
 COPY . .
 
-# Bot 起動
+# Bot 実行
 CMD ["node", "index.js"]

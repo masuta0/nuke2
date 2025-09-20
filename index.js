@@ -105,83 +105,52 @@
     const command = args.shift()?.toLowerCase();
 
     switch (command) {
+      // ボイスチャンネル参加
       case 'join':
         if (!message.member?.voice.channel) 
           return message.reply('❌ ボイスチャンネルに参加してください');
+
         if (await joinVoice(message.guild, message.member.voice.channel)) {
           message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
         } else message.reply('❌ ボイスチャンネル参加失敗');
         break;
 
-        case 'play':
-        if (!message.member?.voice.channel) 
+      // 再生コマンド（YouTube URL または添付ファイル）
+      case 'play':
+        if (!message.member?.voice.channel)
           return message.reply('❌ ボイスチャンネルに参加してください');
 
-        // VC参加
+        // VC接続
         const ok = await joinVoice(message.guild, message.member.voice.channel);
         if (!ok) return message.reply('⚠️ 接続に失敗しました');
 
-        // YouTube URL 判定
+        // 引数がURLの場合はYouTube再生
         const query = args.join(' ').trim();
         if (query.startsWith('http')) {
           const success = await playYouTube(message.guild.id, query, message.channel);
-          await message.reply(success ? '▶️ YouTube再生中' : '⚠️ 再生失敗');
-        } else {
-          // 添付ファイルを取得
-          const attachment = message.attachments.first();
-          if (!attachment)
-            return message.reply('⚠️ ファイルを添付してください');
-
-          const success = await playAttachment(message.guild.id, attachment.url, message.channel);
-          await message.reply(success ? '▶️ 添付ファイル再生中' : '⚠️ 再生失敗');
+          await message.reply(success ? '▶️ YouTube再生中' : '⚠️ 再生に失敗しました');
+          break;
         }
+
+        // 添付ファイル再生
+        const attachment = message.attachments.first();
+        if (!attachment) return message.reply('⚠️ URLまたはファイルを添付してください');
+
+        const success = await playAttachment(message.guild.id, attachment.url, message.channel);
+        await message.reply(success ? '▶️ 再生中' : '⚠️ 再生に失敗しました');
         break;
+
+      // 停止
       case 'stop':
         message.channel.send(
           stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし'
         );
         break;
 
+      // 退出
       case 'leave':
         await leaveVoice(message.guild.id);
         message.channel.send('👋 ボイスチャンネル退出しました');
-        break;
-
-      case 'uploadquiz':
-        try {
-          const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
-          const result = await uploadToDropbox('/quizzes.json', contents.toString());
-          message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
-        } catch (err) {
-          message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
-        }
-        break;
-
-      case 'downloadquiz':
-        try {
-          const data = await downloadFromDropbox('/quizzes.json');
-          if (data) await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
-          message.reply(data ? '✅ Dropboxからダウンロード' : '❌ ダウンロード失敗');
-        } catch (err) {
-          message.reply(`❌ ダウンロード中エラー: ${err.message}`);
-        }
-        break;
-
-      case 'ai':
-        const prompt = args.join(' ').trim();
-        if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
-        const replyMsg = await message.reply('💬 AIが考え中...');
-        try {
-          const aiResponse = await chat(prompt, message.author.id);
-          await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
-        } catch (err) {
-          console.error('❌ !ai エラー:', err);
-          await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
-        }
-        break;
-
-      default:
-        handlePrefixMessage(client, message);
         break;
     }
   }); // ← messageCreate イベントの閉じカッコ

@@ -1,114 +1,92 @@
-// utils/music.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, NoSubscriberBehavior, entersState, VoiceConnectionStatus } = require('@discordjs/voice');
-const prism = require('prism-media');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection } = require('@discordjs/voice');
+const { execFile } = require('child_process');
+const ffmpeg = require('ffmpeg-static');
+const path = require('path');
+const fs = require('fs');
+const sodium = require('libsodium-wrappers');
 const ytdlp = require('yt-dlp-exec');
 
-const connections = new Map(); // guildId -> VoiceConnection
-const players = new Map();     // guildId -> AudioPlayer
+const connections = new Map(); // guildId -> { connection, player, queue }
 
-// VCに参加
 async function joinVoice(guild, channel) {
-  try {
-    const connection = joinVoiceChannel({
-      guildId: guild.id,
-      channelId: channel.id,
-      adapterCreator: guild.voiceAdapterCreator,
-    });
-    connections.set(guild.id, connection);
+  if (!channel) return false;
+  let connData = connections.get(guild.id);
+  if (connData) return true; // 既に接続済み
 
-    // 接続が準備完了するまで待機
-    await entersState(connection, VoiceConnectionStatus.Ready, 10000);
-    return true;
-  } catch (err) {
-    console.error('❌ joinVoice エラー:', err);
-    return false;
-  }
-}
+  const connection = joinVoiceChannel({
+    channelId: channel.id,
+    guildId: guild.id,
+    adapterCreator: guild.voiceAdapterCreator,
+  });
 
-// VCから退出
-async function leaveVoice(guildId) {
-  const connection = connections.get(guildId);
-  if (connection) {
-    connection.destroy();
-    connections.delete(guildId);
-  }
-  const player = players.get(guildId);
-  if (player) {
-    player.stop();
-    players.delete(guildId);
-  }
-}
+  const player = createAudioPlayer();
 
-// 再生停止
-function stopMusic(guildId) {
-  const player = players.get(guildId);
-  if (!player) return false;
-  player.stop();
+  player.on('error', e => console.error('AudioPlayerError:', e));
+
+  connection.subscribe(player);
+
+  connections.set(guild.id, { connection, player, queue: [] });
   return true;
 }
 
-// 添付ファイル再生
+async function leaveVoice(guildId) {
+  const connData = connections.get(guildId);
+  if (!connData) return false;
+  connData.player.stop();
+  connData.connection.destroy();
+  connections.delete(guildId);
+  return true;
+}
+
+function stopMusic(guildId) {
+  const connData = connections.get(guildId);
+  if (!connData) return false;
+  connData.player.stop();
+  connData.queue = [];
+  return true;
+}
+
 async function playAttachment(guildId, url, textChannel) {
-  const connection = connections.get(guildId);
-  if (!connection) return false;
+  const connData = connections.get(guildId);
+  if (!connData) return false;
 
   try {
-    const ffmpeg = new prism.FFmpeg({ args: ['-i', url, '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'] });
-    const resource = createAudioResource(ffmpeg);
-
-    const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
-    players.set(guildId, player);
-    player.play(resource);
-    connection.subscribe(player);
-
-    player.on(AudioPlayerStatus.Idle, () => {
-      textChannel.send('▶️ 再生終了');
-    });
-
+    const resource = createAudioResource(url, { inputType: 'arbitrary' });
+    connData.player.play(resource);
     return true;
   } catch (err) {
-    console.error('❌ playAttachment エラー:', err);
+    console.error('❌ playAttachment Error:', err);
     return false;
   }
 }
 
-// YouTube再生
 async function playYouTube(guildId, url, textChannel) {
-  const connection = connections.get(guildId);
-  if (!connection) return false;
+  const connData = connections.get(guildId);
+  if (!connData) return false;
 
   try {
-    // yt-dlp で音声を取得して FFmpeg にパイプ
-    const stream = ytdlp(url, {
-      extractAudio: true,
-      audioFormat: 'best',
-      output: '-',
-      quiet: true,
+    // yt-dlp で URL から音声ファイルダウンロード
+    const tempFile = path.join(__dirname, `../temp/${Date.now()}.mp3`);
+    await fs.promises.mkdir(path.dirname(tempFile), { recursive: true });
+
+    await ytdlp(url, {
+      output: tempFile,
+      format: 'bestaudio[ext=m4a]/bestaudio',
+      ffmpegLocation: ffmpeg,
     });
 
-    const ffmpeg = new prism.FFmpeg({ args: ['-i', 'pipe:0', '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'] });
-    const resource = createAudioResource(stream.stdout.pipe(ffmpeg));
+    const resource = createAudioResource(tempFile);
+    connData.player.play(resource);
 
-    const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Play } });
-    players.set(guildId, player);
-    player.play(resource);
-    connection.subscribe(player);
-
-    player.on(AudioPlayerStatus.Idle, () => {
-      textChannel.send('▶️ 再生終了');
+    resource.playStream.on('end', () => {
+      fs.promises.unlink(tempFile).catch(() => {});
     });
 
     return true;
   } catch (err) {
-    console.error('❌ playYouTube エラー:', err);
+    console.error('❌ playYouTube Error:', err);
     return false;
   }
 }
 
-module.exports = {
-  joinVoice,
-  leaveVoice,
-  stopMusic,
-  playAttachment,
-  playYouTube,
-};
+module.exports = { joinVoice, leaveVoice, stopMusic, playAttachment, playYouTube };
