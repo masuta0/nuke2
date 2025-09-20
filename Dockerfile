@@ -4,7 +4,7 @@ FROM node:20
 RUN apt-get update && apt-get install -y python3 python3-pip ffmpeg
 
 # yt-dlp をシステムにインストール
-RUN pip3 install -U yt-dlp
+RUN apt-get update && apt-get install -y yt-dlp
 
 # 作業ディレクトリ作成
 WORKDIR /app
