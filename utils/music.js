@@ -8,15 +8,34 @@ const {
 const play = require("play-dl");
 
 const guildPlayers = new Map();
+let loggedIn = false;
 
 // === YouTube URLを正規化 ===
 function normalizeYouTubeUrl(url) {
-  // youtu.be/xxxx → youtube.com/watch?v=xxxx に変換
   const match = url.match(/youtu\.be\/([^?&]+)/);
   if (match) {
     return `https://www.youtube.com/watch?v=${match[1]}`;
   }
   return url;
+}
+
+// === Googleアカウントでログイン ===
+async function ensureLogin() {
+  if (loggedIn) return;
+  if (!process.env.YT_EMAIL || !process.env.YT_PASSWORD) {
+    console.warn("⚠️ YT_EMAIL / YT_PASSWORD が未設定です。年齢制限動画は再生できません。");
+    return;
+  }
+  try {
+    await play.login({
+      email: process.env.YT_EMAIL,
+      password: process.env.YT_PASSWORD,
+    });
+    console.log("✅ YouTubeにログイン成功");
+    loggedIn = true;
+  } catch (err) {
+    console.error("❌ YouTubeログイン失敗:", err);
+  }
 }
 
 // === ボイスチャンネルに参加 ===
@@ -37,26 +56,23 @@ async function joinVoice(guild, channel) {
 // === URL or キーワードから再生 ===
 async function playUrl(guildId, query, textChannel) {
   try {
+    await ensureLogin();
+
     let video;
-    let url = query;
+    let url = normalizeYouTubeUrl(query);
 
-    // 短縮URLを正規化
-    url = normalizeYouTubeUrl(url);
-
-    // YouTube動画URLか判定
     if (await play.validate(url) === "yt_video") {
       video = await play.video_info(url);
     } else {
-      // 検索して最初の結果
+      // 検索
       const searchResult = await play.search(query, { limit: 1 });
       if (!searchResult.length) return null;
       video = await play.video_info(searchResult[0].url);
     }
 
     const title = video.video_details.title;
-    const videoUrl = video.video_details.url; // ✅ 正規化済みの安全なURL
+    const videoUrl = video.video_details.url;
 
-    // ストリーム作成
     const stream = await play.stream(videoUrl);
     const resource = createAudioResource(stream.stream, { inputType: stream.type });
 
