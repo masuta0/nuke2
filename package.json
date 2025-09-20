@@ -1,7 +1,7 @@
 {
   "name": "discord-all-in-one-bot",
   "version": "1.0.0",
-  "description": "All-in-one Discord bot with AI, music, weather (Dropbox), quizzes, backup/restore, and more.",
+  "description": "All-in-one Discord bot with AI, music, YouTube/attachment playback, quizzes, backup/restore, and more.",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {

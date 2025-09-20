@@ -1,32 +1,25 @@
-# ベースイメージ
-FROM node:20-bullseye
-# 作業ディレクトリ作成
+# ベースイメージを Node 18 に設定
+FROM node:18-bullseye
+
+# 必要な OS パッケージをインストール（FFmpeg, libsodium）
+RUN apt-get update && \
+    apt-get install -y ffmpeg python3 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 作業ディレクトリを作成
 WORKDIR /app
 
-# 必要な OS パッケージをインストール
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    python3 \
-    build-essential \
-    wget \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# ソースコードを先にコピー（依存関係キャッシュ用）
+# package.json と package-lock.json をコピー
 COPY package*.json ./
 
-# 依存関係をインストール（npm 10.x のまま）
+# 依存関係をインストール
 RUN npm install --omit=dev
 
-RUN npm install -g yt-dlp
-# 残りのソースコードをコピー
+# ソースコードをコピー
 COPY . .
 
-# yt-dlp をグローバルにインストール
-RUN npm install -g yt-dlp-exec
-
-# ポート設定（監視用 Express サーバー）
+# ポートを公開
 EXPOSE 3000
 
-# 起動コマンド
+# Bot を起動
 CMD ["node", "index.js"]

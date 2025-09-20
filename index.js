@@ -116,30 +116,28 @@
         break;
 
       // 再生コマンド（YouTube URL または添付ファイル）
-      case 'play':
-        if (!message.member?.voice.channel)
+        case 'play':
+        if (!message.member?.voice.channel) 
           return message.reply('❌ ボイスチャンネルに参加してください');
 
-        // VC接続
+        // VC に接続
         const ok = await joinVoice(message.guild, message.member.voice.channel);
-        if (!ok) return message.reply('⚠️ 接続に失敗しました');
+        if (!ok) return message.reply('⚠️ VC 接続に失敗しました');
 
-        // 引数がURLの場合はYouTube再生
-        const query = args.join(' ').trim();
-        if (query.startsWith('http')) {
-          const success = await playYouTube(message.guild.id, query, message.channel);
-          await message.reply(success ? '▶️ YouTube再生中' : '⚠️ 再生に失敗しました');
-          break;
+        // 添付ファイル優先
+        const attachment = message.attachments.first();
+        if (attachment) {
+          const success = await playAttachment(message.guild.id, attachment.url, message.channel);
+          return message.reply(success ? '▶️ 添付ファイルを再生中' : '⚠️ 再生に失敗しました');
         }
 
-        // 添付ファイル再生
-        const attachment = message.attachments.first();
-        if (!attachment) return message.reply('⚠️ URLまたはファイルを添付してください');
+        // 次に YouTube URL
+        const query = args.join(' ').trim();
+        if (!query) return message.reply('⚠️ 添付ファイルか YouTube URL を指定してください');
 
-        const success = await playAttachment(message.guild.id, attachment.url, message.channel);
-        await message.reply(success ? '▶️ 再生中' : '⚠️ 再生に失敗しました');
+        const ytSuccess = await playYouTube(message.guild.id, query, message.channel);
+        message.reply(ytSuccess ? '▶️ YouTube を再生中' : '⚠️ 再生に失敗しました');
         break;
-
       // 停止
       case 'stop':
         message.channel.send(

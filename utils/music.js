@@ -1,92 +1,90 @@
+// utils/music.js
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection } = require('@discordjs/voice');
-const { execFile } = require('child_process');
-const ffmpeg = require('ffmpeg-static');
-const path = require('path');
-const fs = require('fs');
-const sodium = require('libsodium-wrappers');
-const ytdlp = require('yt-dlp-exec');
+const ytDlp = require('yt-dlp'); // yt-dlp は npm 経由でインストール済み
+const prism = require('prism-media');
 
-const connections = new Map(); // guildId -> { connection, player, queue }
+const players = new Map();
 
+// ボイスチャンネルに接続
 async function joinVoice(guild, channel) {
-  if (!channel) return false;
-  let connData = connections.get(guild.id);
-  if (connData) return true; // 既に接続済み
-
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: guild.id,
     adapterCreator: guild.voiceAdapterCreator,
   });
+  if (!connection) return false;
 
-  const player = createAudioPlayer();
-
-  player.on('error', e => console.error('AudioPlayerError:', e));
-
-  connection.subscribe(player);
-
-  connections.set(guild.id, { connection, player, queue: [] });
+  if (!players.has(guild.id)) {
+    const player = createAudioPlayer();
+    connection.subscribe(player);
+    players.set(guild.id, player);
+  }
   return true;
 }
 
-async function leaveVoice(guildId) {
-  const connData = connections.get(guildId);
-  if (!connData) return false;
-  connData.player.stop();
-  connData.connection.destroy();
-  connections.delete(guildId);
-  return true;
-}
-
-function stopMusic(guildId) {
-  const connData = connections.get(guildId);
-  if (!connData) return false;
-  connData.player.stop();
-  connData.queue = [];
-  return true;
-}
-
+// 添付ファイルを再生
 async function playAttachment(guildId, url, textChannel) {
-  const connData = connections.get(guildId);
-  if (!connData) return false;
-
   try {
-    const resource = createAudioResource(url, { inputType: 'arbitrary' });
-    connData.player.play(resource);
+    const player = players.get(guildId);
+    if (!player) throw new Error('VC に接続されていません');
+
+    const resource = createAudioResource(url); // 直接 URL を渡すと FFmpeg が処理
+    player.play(resource);
+
+    player.once(AudioPlayerStatus.Idle, () => {
+      textChannel.send('▶️ 再生終了');
+    });
+
     return true;
-  } catch (err) {
-    console.error('❌ playAttachment Error:', err);
+  } catch (e) {
+    console.error('❌ playAttachment エラー:', e);
     return false;
   }
 }
 
-async function playYouTube(guildId, url, textChannel) {
-  const connData = connections.get(guildId);
-  if (!connData) return false;
-
+// YouTube を再生
+async function playYouTube(guildId, youtubeUrl, textChannel) {
   try {
-    // yt-dlp で URL から音声ファイルダウンロード
-    const tempFile = path.join(__dirname, `../temp/${Date.now()}.mp3`);
-    await fs.promises.mkdir(path.dirname(tempFile), { recursive: true });
+    const player = players.get(guildId);
+    if (!player) throw new Error('VC に接続されていません');
 
-    await ytdlp(url, {
-      output: tempFile,
-      format: 'bestaudio[ext=m4a]/bestaudio',
-      ffmpegLocation: ffmpeg,
-    });
+    // yt-dlp で音声 URL を取得
+    const info = await ytDlp.exec(youtubeUrl, { dumpSingleJson: true, extractAudio: true, audioFormat: 'mp3' });
+    const audioUrl = info.url;
 
-    const resource = createAudioResource(tempFile);
-    connData.player.play(resource);
+    const resource = createAudioResource(audioUrl);
+    player.play(resource);
 
-    resource.playStream.on('end', () => {
-      fs.promises.unlink(tempFile).catch(() => {});
+    player.once(AudioPlayerStatus.Idle, () => {
+      textChannel.send('▶️ YouTube 再生終了');
     });
 
     return true;
-  } catch (err) {
-    console.error('❌ playYouTube Error:', err);
+  } catch (e) {
+    console.error('❌ playYouTube エラー:', e);
     return false;
   }
 }
 
-module.exports = { joinVoice, leaveVoice, stopMusic, playAttachment, playYouTube };
+// 再生停止
+function stopMusic(guildId) {
+  const player = players.get(guildId);
+  if (!player) return false;
+  player.stop(true);
+  return true;
+}
+
+// VC 退出
+async function leaveVoice(guildId) {
+  const connection = getVoiceConnection(guildId);
+  if (connection) connection.destroy();
+  players.delete(guildId);
+}
+
+module.exports = {
+  joinVoice,
+  playAttachment,
+  playYouTube,
+  stopMusic,
+  leaveVoice,
+};
