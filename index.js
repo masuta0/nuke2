@@ -114,14 +114,20 @@ client.on('messageCreate', async (message) => {
         message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
-    case 'play':
-      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-      const query = args.join(' ');
-      if (!query) return message.reply('❌ 曲名またはURLを入力してください');
-      const musicTitle = await playUrl(message.guild.id, query, message.channel);
-      message.channel.send(musicTitle ? `▶️ 再生キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
+      case 'play':
+      if (!message.member?.voice.channel) 
+        return message.reply('❌ ボイスチャンネルに参加してください');
+
+      const attachment = message.attachments.first();
+      if (!attachment)
+        return message.reply('⚠️ ファイルを添付してください');
+
+      const ok = await joinVoice(message.guild, message.member.voice.channel);
+      if (!ok) return message.reply('⚠️ 接続に失敗しました');
+
+      const success = await playAttachment(message.guild.id, attachment.url, message.channel);
+      await message.reply(success ? '▶ 再生中' : '⚠️ 再生に失敗しました');
       break;
-    case 'stop':
       message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
       break;
     case 'leave':
