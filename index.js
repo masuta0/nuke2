@@ -117,31 +117,22 @@ client.on('messageCreate', async (message) => {
       break;
 
     case 'play':
-      // チャンネル制限
-      if (message.channel.id !== MUSIC_CHANNEL_ID) {
-        await message.delete().catch(() => {});
-        return message.channel.send('⚠️ このチャンネルでは `!play` は使えません').then(msg => {
-          setTimeout(() => msg.delete().catch(() => {}), 5000);
-        });
-      }
+    if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
 
-      if (!message.member?.voice.channel)
-        return message.reply('❌ ボイスチャンネルに参加してください');
+    const allowedChannelId = '1419041571944403046';
+    if (message.channel.id !== allowedChannelId) {
+      await message.delete().catch(() => {});
+      return message.reply(`❌ このチャンネルでは !play を使えません`).then(msg => {
+        setTimeout(() => msg.delete().catch(() => {}), 5000);
+      });
+    }
 
-      const query = args.join(' ');
-      if (!query) return message.reply('❌ 曲名またはURLを入力してください');
+    const query = args.join(' ');
+    if (!query) return message.reply('❌ 曲名またはURLを入力してください');
 
-      // music.js でキュー再生 & 通知
-      try {
-        const musicTitle = await playUrl(message.guild.id, query, message.channel, message.member.voice.channel);
-        message.channel.send(musicTitle ? `▶️ キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
-      } catch (err) {
-        console.error(err);
-        message.reply('❌ 再生中にエラーが発生しました');
-      }
-      break;
-
-    case 'stop':
+    const musicTitle = await playUrl(message.guild.id, query, message.channel);
+    message.channel.send(musicTitle ? `▶️ 再生キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
+    break;    case 'stop':
       message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
       break;
 

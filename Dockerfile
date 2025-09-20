@@ -1,23 +1,21 @@
-# Node 20 ベース
-FROM node:20-slim
+FROM node:20
 
-# 必要パッケージのインストール
-RUN apt-get update && \
-    apt-get install -y python3 ffmpeg curl && \
-    rm -rf /var/lib/apt/lists/*
+# 必要なパッケージをインストール
+RUN apt-get update && apt-get install -y python3 python3-pip ffmpeg
 
-# yt-dlp バイナリを直接ダウンロード
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
-    chmod a+rx /usr/local/bin/yt-dlp
+# yt-dlp をシステムにインストール
+RUN pip3 install -U yt-dlp
 
-# 作業ディレクトリ
+# 作業ディレクトリ作成
 WORKDIR /app
 
-# package.json & package-lock.json をコピーして依存関係インストール
+# package.json をコピー
 COPY package*.json ./
+
+# npm install（yt-dlp-exec を削除している場合）
 RUN npm install --omit=dev --legacy-peer-deps
 
-# アプリケーションのソースコードをコピー
+# ソースコードをコピー
 COPY . .
 
 # Bot 起動
