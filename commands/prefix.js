@@ -150,22 +150,29 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await msg.reply("🔊 参加しました");
         break;
       }
-      case "play": {
-        const url = args[0];
-        if (!url)
-          return msg.reply(
-            "使い方: `!play <YouTube/SpotifyのURLまたは検索ワード>`"
+        case "play": {
+          // 複数単語を結合してURL/検索ワードとして扱う
+          const query = args.join(" ");
+          if (!query)
+            return msg.reply(
+              "使い方: `!play <YouTubeのURLまたは検索ワード>`"
+            );
+
+          // ボイスチャンネル参加チェック
+          if (!msg.member?.voice?.channel)
+            return msg.reply("ボイスチャンネルに参加してください");
+
+          // VCに接続
+          const ok = await joinVoice(msg.guild, msg.member.voice.channel);
+          if (!ok) return msg.reply("接続に失敗しました");
+
+          // 再生
+          const added = await playUrl(msg.guild.id, query, msg.channel);
+          await msg.reply(
+            added ? `再生キューに追加: ${added}` : "取得に失敗しました"
           );
-        if (!msg.member?.voice?.channel)
-          return msg.reply("⚠️ ボイスチャンネルに参加してください");
-        const ok = await joinVoice(msg.guild, msg.member.voice.channel);
-        if (!ok) return msg.reply("⚠️ 接続に失敗しました");
-        const added = await playUrl(msg.guild.id, url, msg.channel);
-        await msg.reply(
-          added ? `▶️ 再生キューに追加: ${added}` : "⚠️ 取得に失敗しました"
-        );
-        break;
-      }
+          break;
+        }
       case "leave": {
         await leaveVoice(msg.guild.id);
         await msg.reply("👋 退出しました");

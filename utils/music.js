@@ -1,4 +1,3 @@
-// utils/music.js
 const {
   joinVoiceChannel,
   createAudioPlayer,
@@ -9,6 +8,16 @@ const {
 const play = require("play-dl");
 
 const guildPlayers = new Map();
+
+// === YouTube URLを正規化 ===
+function normalizeYouTubeUrl(url) {
+  // youtu.be/xxxx → youtube.com/watch?v=xxxx に変換
+  const match = url.match(/youtu\.be\/([^?&]+)/);
+  if (match) {
+    return `https://www.youtube.com/watch?v=${match[1]}`;
+  }
+  return url;
+}
 
 // === ボイスチャンネルに参加 ===
 async function joinVoice(guild, channel) {
@@ -29,21 +38,26 @@ async function joinVoice(guild, channel) {
 async function playUrl(guildId, query, textChannel) {
   try {
     let video;
+    let url = query;
 
-    // URLなら直接取得
-    if (await play.validate(query) === "yt_video") {
-      video = await play.video_info(query);
+    // 短縮URLを正規化
+    url = normalizeYouTubeUrl(url);
+
+    // YouTube動画URLか判定
+    if (await play.validate(url) === "yt_video") {
+      video = await play.video_info(url);
     } else {
-      // 検索して先頭を取得
+      // 検索して最初の結果
       const searchResult = await play.search(query, { limit: 1 });
       if (!searchResult.length) return null;
       video = await play.video_info(searchResult[0].url);
     }
 
     const title = video.video_details.title;
+    const videoUrl = video.video_details.url; // ✅ 正規化済みの安全なURL
 
     // ストリーム作成
-    const stream = await play.stream(video.video_details.url);
+    const stream = await play.stream(videoUrl);
     const resource = createAudioResource(stream.stream, { inputType: stream.type });
 
     let player = guildPlayers.get(guildId);
