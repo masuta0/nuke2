@@ -26,23 +26,22 @@ async function joinVoice(guild, channel) {
   }
 }
 
-// ユーザー添付ファイルを再生
+// 添付ファイル再生
 async function playAttachment(guildId, attachmentUrl, textChannel) {
   try {
-    // 一時ファイルにダウンロード
     const filePath = path.join("/tmp", path.basename(attachmentUrl));
     await downloadFile(attachmentUrl, filePath);
 
     const resource = createAudioResource(filePath);
     let player = guildPlayers.get(guildId);
 
-    if (!play) {
+    if (!player) {
       player = createAudioPlayer();
       guildPlayers.set(guildId, player);
 
       player.on(AudioPlayerStatus.Idle, () => {
         textChannel.send("⏹️ 再生終了");
-        fs.unlink(filePath, () => {}); // 再生後に削除
+        fs.unlink(filePath, () => {});
       });
 
       player.on("error", (err) => {
@@ -61,7 +60,6 @@ async function playAttachment(guildId, attachmentUrl, textChannel) {
 
     player.play(resource);
     connection.subscribe(player);
-
     return true;
   } catch (err) {
     console.error("❌ playAttachment エラー:", err);

@@ -106,74 +106,84 @@ client.on('messageCreate', async (message) => {
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
-  switch (command) {
-    // 音楽
-    case 'join':
-      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-      if (await joinVoice(message.guild, message.member.voice.channel)) {
-        message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
-      } else message.reply('❌ ボイスチャンネル参加失敗');
-      break;
-      case 'play':
-      if (!message.member?.voice.channel) 
-        return message.reply('❌ ボイスチャンネルに参加してください');
+switch (command) {
+  // 音楽
+  case 'join':
+    if (!message.member?.voice.channel) 
+      return message.reply('❌ ボイスチャンネルに参加してください');
+    if (await joinVoice(message.guild, message.member.voice.channel)) {
+      message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
+    } else message.reply('❌ ボイスチャンネル参加失敗');
+    break;
 
-      const attachment = message.attachments.first();
-      if (!attachment)
-        return message.reply('⚠️ ファイルを添付してください');
+  case 'play':
+    if (!message.member?.voice.channel) 
+      return message.reply('❌ ボイスチャンネルに参加してください');
 
-      const ok = await joinVoice(message.guild, message.member.voice.channel);
-      if (!ok) return message.reply('⚠️ 接続に失敗しました');
+    // 添付ファイルを取得
+    const attachment = message.attachments.first();
+    if (!attachment)
+      return message.reply('⚠️ ファイルを添付してください');
 
-      const success = await playAttachment(message.guild.id, attachment.url, message.channel);
-      await message.reply(success ? '▶ 再生中' : '⚠️ 再生に失敗しました');
-      break;
-      message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
-      break;
-    case 'leave':
-      await leaveVoice(message.guild.id);
-      message.channel.send('👋 ボイスチャンネル退出しました');
-      break;
+    // VC参加
+    const ok = await joinVoice(message.guild, message.member.voice.channel);
+    if (!ok) return message.reply('⚠️ 接続に失敗しました');
 
-    // Dropboxクイズ
-    case 'uploadquiz':
-      try {
-        const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
-        const result = await uploadToDropbox('/quizzes.json', contents.toString());
-        message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
-      } catch (err) {
-        message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
-      }
-      break;
-    case 'downloadquiz':
-      try {
-        const data = await downloadFromDropbox('/quizzes.json');
-        if (data) await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
-        message.reply(data ? '✅ Dropboxからダウンロード' : '❌ ダウンロード失敗');
-      } catch (err) {
-        message.reply(`❌ ダウンロード中エラー: ${err.message}`);
-      }
-      break;
+    // ファイル再生
+    const success = await playAttachment(message.guild.id, attachment.url, message.channel);
+    await message.reply(success ? '▶️ 再生中' : '⚠️ 再生に失敗しました');
+    break;
 
-    // AIチャット
-    case 'ai':
-      const prompt = args.join(' ').trim();
-      if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
-      const replyMsg = await message.reply('💬 AIが考え中...');
-      try {
-        const aiResponse = await chat(prompt, message.author.id);
-        await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
-      } catch (err) {
-        console.error('❌ !ai エラー:', err);
-        await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
-      }
-      break;
+  case 'stop':
+    message.channel.send(
+      stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし'
+    );
+    break;
 
-    default:
-      handlePrefixMessage(client, message);
-      break;
-  }
-});
+  case 'leave':
+    await leaveVoice(message.guild.id);
+    message.channel.send('👋 ボイスチャンネル退出しました');
+    break;
+
+  // Dropboxクイズ
+  case 'uploadquiz':
+    try {
+      const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
+      const result = await uploadToDropbox('/quizzes.json', contents.toString());
+      message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
+    } catch (err) {
+      message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
+    }
+    break;
+
+  case 'downloadquiz':
+    try {
+      const data = await downloadFromDropbox('/quizzes.json');
+      if (data) await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
+      message.reply(data ? '✅ Dropboxからダウンロード' : '❌ ダウンロード失敗');
+    } catch (err) {
+      message.reply(`❌ ダウンロード中エラー: ${err.message}`);
+    }
+    break;
+
+  // AIチャット
+  case 'ai':
+    const prompt = args.join(' ').trim();
+    if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
+    const replyMsg = await message.reply('💬 AIが考え中...');
+    try {
+      const aiResponse = await chat(prompt, message.author.id);
+      await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
+    } catch (err) {
+      console.error('❌ !ai エラー:', err);
+      await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
+    }
+    break;
+
+  default:
+    handlePrefixMessage(client, message);
+    break;
+}
 
 // メッセージ更新
 client.on('messageUpdate', handleMessageUpdate);
