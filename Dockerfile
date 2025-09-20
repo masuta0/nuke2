@@ -14,7 +14,8 @@ COPY package*.json ./
 
 # 依存関係をインストール
 RUN npm install --production
-
+# yt-dlp-exec を追加
+RUN npm install yt-dlp-exec
 # アプリのソースをコピー
 COPY . .
 
