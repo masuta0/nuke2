@@ -1,22 +1,23 @@
-# Node 20 をベースにする
+# Node 20 をベース
 FROM node:20-bullseye
 
 # 作業ディレクトリ
 WORKDIR /app
 
-# 必要なパッケージのインストール（FFmpeg も含む）
+# 必要パッケージをインストール（FFmpeg, Python）
 RUN apt-get update && \
     apt-get install -y ffmpeg python3 python3-pip && \
+    ln -s /usr/bin/python3 /usr/bin/python && \
     rm -rf /var/lib/apt/lists/*
 
 # package.json と package-lock.json をコピー
 COPY package*.json ./
 
-# 依存関係インストール（dev は除く、peer 依存警告無視）
+# 依存関係インストール（dev は除く）
 RUN npm install --omit=dev --legacy-peer-deps
 
-# ソースコードをコピー
+# ソースコードコピー
 COPY . .
 
-# 起動コマンド
+# 起動
 CMD ["node", "index.js"]
