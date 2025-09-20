@@ -113,21 +113,29 @@
         } else message.reply('❌ ボイスチャンネル参加失敗');
         break;
 
-      case 'play':
+        case 'play':
         if (!message.member?.voice.channel) 
           return message.reply('❌ ボイスチャンネルに参加してください');
 
-        const attachment = message.attachments.first();
-        if (!attachment)
-          return message.reply('⚠️ ファイルを添付してください');
-
+        // VC参加
         const ok = await joinVoice(message.guild, message.member.voice.channel);
         if (!ok) return message.reply('⚠️ 接続に失敗しました');
 
-        const success = await playAttachment(message.guild.id, attachment.url, message.channel);
-        await message.reply(success ? '▶️ 再生中' : '⚠️ 再生に失敗しました');
-        break;
+        // YouTube URL 判定
+        const query = args.join(' ').trim();
+        if (query.startsWith('http')) {
+          const success = await playYouTube(message.guild.id, query, message.channel);
+          await message.reply(success ? '▶️ YouTube再生中' : '⚠️ 再生失敗');
+        } else {
+          // 添付ファイルを取得
+          const attachment = message.attachments.first();
+          if (!attachment)
+            return message.reply('⚠️ ファイルを添付してください');
 
+          const success = await playAttachment(message.guild.id, attachment.url, message.channel);
+          await message.reply(success ? '▶️ 添付ファイル再生中' : '⚠️ 再生失敗');
+        }
+        break;
       case 'stop':
         message.channel.send(
           stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし'
