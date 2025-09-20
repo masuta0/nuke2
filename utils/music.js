@@ -10,7 +10,12 @@ const fs = require("fs");
 const path = require("path");
 
 const guildPlayers = new Map();
+// Node.jsでSodium読み込み
+const sodium = require('libsodium-wrappers');
 
+(async () => {
+  await sodium.ready;
+})();
 // VCに参加
 async function joinVoice(guild, channel) {
   try {
