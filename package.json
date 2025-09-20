@@ -1,7 +1,7 @@
 {
   "name": "discord-all-in-one-bot",
   "version": "1.0.0",
-  "description": "All-in-one Discord bot with AI, music, YouTube/attachment playback, quizzes, backup/restore, and more.",
+  "description": "All-in-one Discord bot with AI, music (YouTube/attachment), quizzes, backup/restore, and more.",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
@@ -10,7 +10,8 @@
     "weekly:dev": "node -r dotenv/config weeklyChannelManager.js"
   },
   "dependencies": {
-    "@discordjs/voice": "^0.17.0",
+    "@discordjs/voice": "^0.16.1",
+    "@distube/ytdl-core": "^4.16.12",
     "@google-cloud/translate": "^9.2.0",
     "@google/generative-ai": "^0.21.0",
     "@iamtraction/google-translate": "^2.0.1",
@@ -24,15 +25,15 @@
     "dropbox": "^10.34.0",
     "express": "^5.1.0",
     "face-api.js": "^0.22.2",
-    "ffmpeg-static": "^5.2.0",
     "googleapis": "^156.0.0",
     "libsodium-wrappers": "^0.7.15",
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "open": "^10.2.0",
+    "play-dl": "^1.9.7",
     "puppeteer": "^24.19.0",
     "twitter-api-v2": "^1.26.0",
-    "yt-dlp-exec": "1.1.6"
+    "ffmpeg-static": "^5.1.0"
   },
   "repository": {
     "type": "git",
