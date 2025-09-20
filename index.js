@@ -25,13 +25,13 @@ const {
   onGuildBanAdd,
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
-const { joinVoice, playAttachment, stopMusic, leaveVoice, playYouTube } = require('./utils/music');
+const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 // 定数
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
-const MUSIC_CHANNEL_ID = '1419041571944403046'; // !play が使えるチャンネル
+const MUSIC_CHANNEL_ID = '1419041571944403046'; // !playが有効なチャンネル
 
 // Discordクライアント作成
 const client = new Client({
@@ -99,27 +99,28 @@ client.on('messageCreate', async (message) => {
   await addXp(message.member);
   await handleMessage(message);
 
+  // DMでのモデレーション対応
   if (message.channel?.type === ChannelType.DM) return;
 
+  // === プレフィックスコマンド ===
   if (!message.content.startsWith('!')) return;
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
   switch (command) {
-    // ボイスチャンネル参加
+    // 音楽
     case 'join':
-      if (!message.member?.voice.channel)
-        return message.reply('❌ ボイスチャンネルに参加してください');
+      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       if (await joinVoice(message.guild, message.member.voice.channel)) {
         message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
 
-    // 添付ファイル or YouTube 再生
     case 'play':
+      // チャンネル制限
       if (message.channel.id !== MUSIC_CHANNEL_ID) {
         await message.delete().catch(() => {});
-        return message.channel.send(`❌ このチャンネルでは再生できません <#${MUSIC_CHANNEL_ID}>`).then(msg => {
+        return message.channel.send('⚠️ このチャンネルでは `!play` は使えません').then(msg => {
           setTimeout(() => msg.delete().catch(() => {}), 5000);
         });
       }
@@ -127,30 +128,47 @@ client.on('messageCreate', async (message) => {
       if (!message.member?.voice.channel)
         return message.reply('❌ ボイスチャンネルに参加してください');
 
-      const target = message.attachments.first()?.url || args[0];
-      if (!target) return message.reply('⚠️ URL またはファイルを指定してください');
+      const query = args.join(' ');
+      if (!query) return message.reply('❌ 曲名またはURLを入力してください');
 
-      if (target.startsWith('http')) {
-        if (target.includes('youtube.com') || target.includes('youtu.be')) {
-          await playYouTube(message.guild.id, target, message.channel, message.member.voice.channel);
-        } else {
-          await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
-        }
-      } else {
-        await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
+      // music.js でキュー再生 & 通知
+      try {
+        const musicTitle = await playUrl(message.guild.id, query, message.channel, message.member.voice.channel);
+        message.channel.send(musicTitle ? `▶️ キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
+      } catch (err) {
+        console.error(err);
+        message.reply('❌ 再生中にエラーが発生しました');
       }
       break;
 
     case 'stop':
-      message.channel.send(
-        stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし'
-      );
+      message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
       break;
 
-    // VC退出
     case 'leave':
       await leaveVoice(message.guild.id);
       message.channel.send('👋 ボイスチャンネル退出しました');
+      break;
+
+    // Dropboxクイズ
+    case 'uploadquiz':
+      try {
+        const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
+        const result = await uploadToDropbox('/quizzes.json', contents.toString());
+        message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
+      } catch (err) {
+        message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
+      }
+      break;
+
+    case 'downloadquiz':
+      try {
+        const data = await downloadFromDropbox('/quizzes.json');
+        if (data) await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
+        message.reply(data ? '✅ Dropboxからダウンロード' : '❌ ダウンロード失敗');
+      } catch (err) {
+        message.reply(`❌ ダウンロード中エラー: ${err.message}`);
+      }
       break;
 
     // AIチャット
