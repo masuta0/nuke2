@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
 
-// ユーティリティ・モジュール
+// ユーティリティ
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
@@ -29,6 +29,7 @@ const { joinVoice, playAttachment, stopMusic, leaveVoice, playYouTube } = requir
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
+const ALLOWED_PLAY_CHANNEL = '1419041571944403046'; // !playコマンド許可チャンネル
 
 // Discordクライアント作成
 const client = new Client({
@@ -103,6 +104,7 @@ client.on('messageCreate', async (message) => {
   const command = args.shift()?.toLowerCase();
 
   switch (command) {
+    // VC参加
     case 'join':
       if (!message.member?.voice.channel)
         return message.reply('❌ ボイスチャンネルに参加してください');
@@ -111,14 +113,25 @@ client.on('messageCreate', async (message) => {
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
 
+    // 再生
     case 'play':
+      // 許可チャンネル判定
+      if (message.channel.id !== ALLOWED_PLAY_CHANNEL) {
+        await message.delete().catch(() => {});
+        const warnMsg = await message.channel.send(
+          `⚠️ このコマンドは <#${ALLOWED_PLAY_CHANNEL}> でのみ使用可能です`
+        );
+        setTimeout(() => warnMsg.delete().catch(() => {}), 5000);
+        return;
+      }
+
       if (!message.member?.voice.channel)
         return message.reply('❌ ボイスチャンネルに参加してください');
 
       const target = message.attachments.first()?.url || args[0];
       if (!target) return message.reply('⚠️ URL またはファイルを指定してください');
 
-      // URLがYouTubeか判定
+      // YouTubeか判定
       if (/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)/.test(target)) {
         try {
           await playYouTube(message.guild.id, target, message.channel, message.member.voice.channel);
@@ -127,7 +140,6 @@ client.on('messageCreate', async (message) => {
           message.reply('❌ YouTube再生に失敗しました');
         }
       } else {
-        // 添付ファイル再生
         try {
           await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
         } catch (err) {
@@ -137,12 +149,14 @@ client.on('messageCreate', async (message) => {
       }
       break;
 
+    // 再生停止
     case 'stop':
       message.channel.send(
         stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし'
       );
       break;
 
+    // VC退出
     case 'leave':
       await leaveVoice(message.guild.id);
       message.channel.send('👋 ボイスチャンネル退出しました');
