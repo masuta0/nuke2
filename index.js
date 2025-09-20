@@ -103,7 +103,6 @@ client.on('messageCreate', async (message) => {
   const command = args.shift()?.toLowerCase();
 
   switch (command) {
-    // ボイスチャンネル参加
     case 'join':
       if (!message.member?.voice.channel)
         return message.reply('❌ ボイスチャンネルに参加してください');
@@ -112,21 +111,31 @@ client.on('messageCreate', async (message) => {
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
 
-    // 再生コマンド（YouTube or 添付ファイル）
-    case 'play': {
+    case 'play':
       if (!message.member?.voice.channel)
         return message.reply('❌ ボイスチャンネルに参加してください');
 
       const target = message.attachments.first()?.url || args[0];
       if (!target) return message.reply('⚠️ URL またはファイルを指定してください');
 
-      if (target.includes('youtube.com') || target.includes('youtu.be')) {
-        await playYouTube(message.guild.id, target, message.channel, message.member.voice.channel);
+      // URLがYouTubeか判定
+      if (/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)/.test(target)) {
+        try {
+          await playYouTube(message.guild.id, target, message.channel, message.member.voice.channel);
+        } catch (err) {
+          console.error(err);
+          message.reply('❌ YouTube再生に失敗しました');
+        }
       } else {
-        await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
+        // 添付ファイル再生
+        try {
+          await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
+        } catch (err) {
+          console.error(err);
+          message.reply('❌ ファイル再生に失敗しました');
+        }
       }
       break;
-    }
 
     case 'stop':
       message.channel.send(
