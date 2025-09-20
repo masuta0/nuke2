@@ -1,15 +1,23 @@
-# 1. Node.js 18 をベースにする
+# Node.js 18 をベースにする
 FROM node:18
 
-# 2. 作業ディレクトリを作る
+# 必要パッケージインストール
+RUN apt-get update && \
+    apt-get install -y ffmpeg && \
+    apt-get clean
+
+# 作業ディレクトリ
 WORKDIR /app
 
-# 3. package.json と package-lock.json をコピーして依存関係インストール
+# パッケージコピー
 COPY package*.json ./
-RUN npm install --production
+RUN npm install
 
-# 4. アプリのソースコードをコピー
+# アプリケーションコピー
 COPY . .
 
-# 5. Bot を起動
+# ポート指定
+EXPOSE 3000
+
+# 起動
 CMD ["node", "index.js"]
