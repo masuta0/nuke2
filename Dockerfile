@@ -1,22 +1,23 @@
 FROM node:20
 
-# 必要なパッケージをインストール
-RUN apt-get update && apt-get install -y python3 python3-pip ffmpeg
-
-# yt-dlp をシステムにインストール
-RUN apt-get update && apt-get install -y yt-dlp
-RUN npm install ytdl-core
 # 作業ディレクトリ作成
 WORKDIR /app
 
-# package.json をコピー
+# 依存関係のコピー
 COPY package*.json ./
 
-# npm install（yt-dlp-exec を削除している場合）
-RUN npm install --omit=dev --legacy-peer-deps
+# 既存 node_modules と lock ファイルを削除してからインストール
+RUN rm -rf node_modules package-lock.json \
+    && npm install --omit=dev --legacy-peer-deps
 
-# ソースコードをコピー
+# yt-dlp インストール（Python 版をシステムに）
+RUN apt-get update && apt-get install -y yt-dlp
+
+# アプリケーションのソースコードをコピー
 COPY . .
 
-# Bot 起動
+# ポート公開
+EXPOSE 3000
+
+# 起動コマンド
 CMD ["node", "index.js"]
