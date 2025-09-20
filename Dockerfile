@@ -16,10 +16,7 @@ RUN apt-get update && apt-get install -y \
 # ソースコードを先にコピー（依存関係キャッシュ用）
 COPY package*.json ./
 
-# npm を更新
-RUN npm install -g npm@11.6.0
-
-# 依存関係をインストール
+# 依存関係をインストール（npm 10.x のまま）
 RUN npm install --omit=dev
 
 # 残りのソースコードをコピー
