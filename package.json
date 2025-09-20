@@ -27,6 +27,7 @@
     "face-api.js": "^0.22.2",
     "ffmpeg-static": "^5.1.0",
     "googleapis": "^156.0.0",
+      "yt-search": "^2.10.6",
     "libsodium-wrappers": "^0.7.15",
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
