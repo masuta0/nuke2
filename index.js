@@ -107,37 +107,49 @@
     switch (command) {
       // ボイスチャンネル参加
       case 'join':
-        if (!message.member?.voice.channel) 
+        if (!message.member?.voice.channel)
           return message.reply('❌ ボイスチャンネルに参加してください');
-
         if (await joinVoice(message.guild, message.member.voice.channel)) {
           message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
         } else message.reply('❌ ボイスチャンネル参加失敗');
         break;
 
-      // 再生コマンド（YouTube URL または添付ファイル）
-        case 'play':
-        if (!message.member?.voice.channel) 
+      // 添付ファイル再生
+      case 'play':
+        if (!message.member?.voice.channel)
           return message.reply('❌ ボイスチャンネルに参加してください');
 
-        // VC に接続
-        const ok = await joinVoice(message.guild, message.member.voice.channel);
-        if (!ok) return message.reply('⚠️ VC 接続に失敗しました');
-
-        // 添付ファイル優先
+        // 添付ファイル取得
         const attachment = message.attachments.first();
-        if (attachment) {
-          const success = await playAttachment(message.guild.id, attachment.url, message.channel);
-          return message.reply(success ? '▶️ 添付ファイルを再生中' : '⚠️ 再生に失敗しました');
-        }
+        if (!attachment)
+          return message.reply('⚠️ ファイルを添付してください');
 
-        // 次に YouTube URL
-        const query = args.join(' ').trim();
-        if (!query) return message.reply('⚠️ 添付ファイルか YouTube URL を指定してください');
+        if (!(await joinVoice(message.guild, message.member.voice.channel)))
+          return message.reply('⚠️ 接続に失敗しました');
 
-        const ytSuccess = await playYouTube(message.guild.id, query, message.channel);
-        message.reply(ytSuccess ? '▶️ YouTube を再生中' : '⚠️ 再生に失敗しました');
+        const successAttachment = await playAttachment(
+          message.guild.id,
+          attachment.url,
+          message.channel
+        );
+        await message.reply(successAttachment ? '▶️ 再生中' : '⚠️ 再生に失敗しました');
         break;
+
+      // YouTube再生
+      case 'playyt':
+        if (!message.member?.voice.channel)
+          return message.reply('❌ ボイスチャンネルに参加してください');
+
+        const url = args[0];
+        if (!url) return message.reply('❌ URL を入力してください');
+
+        if (!(await joinVoice(message.guild, message.member.voice.channel)))
+          return message.reply('⚠️ 接続に失敗しました');
+
+        const successYT = await playYouTube(message.guild.id, url, message.channel);
+        await message.reply(successYT ? '▶️ YouTube再生中' : '❌ 再生に失敗しました');
+        break;
+
       // 停止
       case 'stop':
         message.channel.send(
@@ -145,7 +157,7 @@
         );
         break;
 
-      // 退出
+      // VC退出
       case 'leave':
         await leaveVoice(message.guild.id);
         message.channel.send('👋 ボイスチャンネル退出しました');
