@@ -1,9 +1,11 @@
 // index.js
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
+const fs = require('fs').promises;
 const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
 
-// ユーティリティ
+// ユーティリティ・モジュール
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
@@ -29,7 +31,7 @@ const { joinVoice, playAttachment, stopMusic, leaveVoice, playYouTube } = requir
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
-const ALLOWED_PLAY_CHANNEL = '1419041571944403046'; // !playコマンド許可チャンネル
+const MUSIC_CHANNEL_ID = '1419041571944403046'; // !play が使えるチャンネル
 
 // Discordクライアント作成
 const client = new Client({
@@ -98,13 +100,13 @@ client.on('messageCreate', async (message) => {
   await handleMessage(message);
 
   if (message.channel?.type === ChannelType.DM) return;
-  if (!message.content.startsWith('!')) return;
 
+  if (!message.content.startsWith('!')) return;
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
   switch (command) {
-    // VC参加
+    // ボイスチャンネル参加
     case 'join':
       if (!message.member?.voice.channel)
         return message.reply('❌ ボイスチャンネルに参加してください');
@@ -113,16 +115,13 @@ client.on('messageCreate', async (message) => {
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
 
-    // 再生
+    // 添付ファイル or YouTube 再生
     case 'play':
-      // 許可チャンネル判定
-      if (message.channel.id !== ALLOWED_PLAY_CHANNEL) {
+      if (message.channel.id !== MUSIC_CHANNEL_ID) {
         await message.delete().catch(() => {});
-        const warnMsg = await message.channel.send(
-          `⚠️ このコマンドは <#${ALLOWED_PLAY_CHANNEL}> でのみ使用可能です`
-        );
-        setTimeout(() => warnMsg.delete().catch(() => {}), 5000);
-        return;
+        return message.channel.send(`❌ このチャンネルでは再生できません <#${MUSIC_CHANNEL_ID}>`).then(msg => {
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+        });
       }
 
       if (!message.member?.voice.channel)
@@ -131,25 +130,17 @@ client.on('messageCreate', async (message) => {
       const target = message.attachments.first()?.url || args[0];
       if (!target) return message.reply('⚠️ URL またはファイルを指定してください');
 
-      // YouTubeか判定
-      if (/^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)/.test(target)) {
-        try {
+      if (target.startsWith('http')) {
+        if (target.includes('youtube.com') || target.includes('youtu.be')) {
           await playYouTube(message.guild.id, target, message.channel, message.member.voice.channel);
-        } catch (err) {
-          console.error(err);
-          message.reply('❌ YouTube再生に失敗しました');
+        } else {
+          await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
         }
       } else {
-        try {
-          await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
-        } catch (err) {
-          console.error(err);
-          message.reply('❌ ファイル再生に失敗しました');
-        }
+        await playAttachment(message.guild.id, target, message.channel, message.member.voice.channel);
       }
       break;
 
-    // 再生停止
     case 'stop':
       message.channel.send(
         stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし'
@@ -160,6 +151,24 @@ client.on('messageCreate', async (message) => {
     case 'leave':
       await leaveVoice(message.guild.id);
       message.channel.send('👋 ボイスチャンネル退出しました');
+      break;
+
+    // AIチャット
+    case 'ai':
+      const prompt = args.join(' ').trim();
+      if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
+      const replyMsg = await message.reply('💬 AIが考え中...');
+      try {
+        const aiResponse = await chat(prompt, message.author.id);
+        await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
+      } catch (err) {
+        console.error('❌ !ai エラー:', err);
+        await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
+      }
+      break;
+
+    default:
+      handlePrefixMessage(client, message);
       break;
   }
 });
