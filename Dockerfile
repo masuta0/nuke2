@@ -1,30 +1,22 @@
-# ベースイメージ（Node 18）
-FROM node:18-bullseye
+# Node 20 をベースにする
+FROM node:20-bullseye
 
 # 作業ディレクトリ
 WORKDIR /app
 
-# 必要パッケージをインストール
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# yt-dlp を直接インストール
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
-    && chmod a+rx /usr/local/bin/yt-dlp
+# 必要なパッケージのインストール（FFmpeg も含む）
+RUN apt-get update && \
+    apt-get install -y ffmpeg python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
 
 # package.json と package-lock.json をコピー
 COPY package*.json ./
 
-# 依存関係インストール（dev は除く）
+# 依存関係インストール（dev は除く、peer 依存警告無視）
 RUN npm install --omit=dev --legacy-peer-deps
 
 # ソースコードをコピー
 COPY . .
-
-# ポート設定
-EXPOSE 3000
 
 # 起動コマンド
 CMD ["node", "index.js"]
