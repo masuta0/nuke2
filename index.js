@@ -122,9 +122,7 @@ const { joinVoice, playAttachment, stopMusic, leaveVoice, playYouTube } = requir
         const target = message.attachments.first()?.url || args[0];
         if (!target) return message.reply('⚠️ URL またはファイルを指定してください');
 
-        const ok = await joinVoice(message.guild, message.member.voice.channel);
-        if (!ok) return message.reply('⚠️ VC に接続できません');
-
+        // YouTube かファイルか判定
         if (target.startsWith('http')) {
             if (playDL.yt_validate(target)) {
                 await playYouTube(message.guild.id, target, message.channel, message.member.voice.channel);
@@ -140,7 +138,6 @@ const { joinVoice, playAttachment, stopMusic, leaveVoice, playYouTube } = requir
           stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし'
         );
         break;
-
       // VC退出
       case 'leave':
         await leaveVoice(message.guild.id);
