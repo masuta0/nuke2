@@ -18,7 +18,7 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o 
 COPY package*.json ./
 
 # 依存関係インストール（dev は除く）
-RUN npm install --omit=dev
+RUN npm install --omit=dev --legacy-peer-deps
 
 # ソースコードをコピー
 COPY . .
