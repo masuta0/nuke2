@@ -1,123 +1,109 @@
 // utils/music.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType } = require('@discordjs/voice');
-const ytdl = require('ytdl-core');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType, getVoiceConnection } = require('@discordjs/voice');
+const ytDlpExec = require('yt-dlp-exec');
+const ffmpeg = require('ffmpeg-static');
+const { exec } = require('child_process');
 
-const ALLOWED_CHANNEL_ID = '1419041571944403046'; // !play コマンドが使えるチャンネルID
-const queues = new Map(); // guildId → { connection, player, songs: [], textChannel }
+const queues = new Map(); // ギルドIDごとのキュー
+
+function getQueue(guildId) {
+    if (!queues.has(guildId)) queues.set(guildId, []);
+    return queues.get(guildId);
+}
 
 async function playYouTube(guildId, url, textChannel, voiceChannel) {
-  if (textChannel.id !== ALLOWED_CHANNEL_ID) {
-    await textChannel.send('❌ このチャンネルでは !play コマンドを使えません');
-    return false;
-  }
+    const queue = getQueue(guildId);
 
-  _ensureQueue(guildId, textChannel, voiceChannel);
-  const queue = queues.get(guildId);
-
-  queue.songs.push({ url, type: 'youtube' });
-
-  if (queue.songs.length > 1) {
-    queue.textChannel.send(`➕ キューに追加: **${await getYouTubeTitle(url)}**`);
-  }
-
-  if (queue.player.state.status !== AudioPlayerStatus.Playing) {
-    _playNext(guildId);
-  }
-
-  return true;
-}
-
-async function playAttachment(guildId, url, textChannel, voiceChannel) {
-  if (textChannel.id !== ALLOWED_CHANNEL_ID) {
-    await textChannel.send('❌ このチャンネルでは !play コマンドを使えません');
-    return false;
-  }
-
-  _ensureQueue(guildId, textChannel, voiceChannel);
-  const queue = queues.get(guildId);
-
-  queue.songs.push({ url, type: 'file' });
-
-  if (queue.songs.length > 1) {
-    queue.textChannel.send(`➕ キューに追加: 添付ファイル / URL`);
-  }
-
-  if (queue.player.state.status !== AudioPlayerStatus.Playing) {
-    _playNext(guildId);
-  }
-
-  return true;
-}
-
-// --- 内部関数 ---
-function _ensureQueue(guildId, textChannel, voiceChannel) {
-  if (!queues.has(guildId)) {
-    const player = createAudioPlayer();
-    const connection = joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId,
-      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+    // yt-dlp で音声URLを取得
+    const info = await ytDlpExec(url, {
+        dumpSingleJson: true,
+        noWarnings: true,
+        format: 'bestaudio',
+        simulate: true
     });
-    connection.subscribe(player);
-    queues.set(guildId, { connection, player, songs: [], textChannel });
-  }
+
+    const title = info.title || 'Unknown';
+    const streamUrl = info.url;
+
+    queue.push({ url: streamUrl, title });
+
+    textChannel.send(`🎵 **${title}** をキューに追加しました (${queue.length}曲目)`);
+
+    if (!voiceChannel.connection) await joinVoice(voiceChannel);
+
+    if (!queue.player) startQueue(guildId, textChannel, voiceChannel);
+
+    return queue;
 }
 
-async function _playNext(guildId) {
-  const queue = queues.get(guildId);
-  if (!queue || queue.songs.length === 0) {
-    stopMusic(guildId);
-    return;
-  }
+async function joinVoice(voiceChannel) {
+    const connection = joinVoiceChannel({
+        channelId: voiceChannel.id,
+        guildId: voiceChannel.guild.id,
+        adapterCreator: voiceChannel.guild.voiceAdapterCreator
+    });
+    return connection;
+}
 
-  const song = queue.songs[0];
-  let resource;
+function startQueue(guildId, textChannel, voiceChannel) {
+    const queue = getQueue(guildId);
+    const player = createAudioPlayer();
+    queue.player = player;
 
-  if (song.type === 'youtube') {
-    const stream = ytdl(song.url, { filter: 'audioonly', highWaterMark: 1 << 25 });
-    resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
-    queue.textChannel.send(`▶️ 再生開始: **${await getYouTubeTitle(song.url)}**`);
-  } else {
-    resource = createAudioResource(song.url);
-    queue.textChannel.send(`▶️ 再生開始: 添付ファイル / URL`);
-  }
+    const connection = getVoiceConnection(voiceChannel.guild.id);
+    if (!connection) joinVoice(voiceChannel);
 
-  queue.player.play(resource);
+    connection.subscribe(player);
 
-  queue.player.once(AudioPlayerStatus.Idle, () => {
-    queue.songs.shift();
-    _playNext(guildId);
-  });
+    const playNext = () => {
+        if (queue.length === 0) {
+            player.stop();
+            textChannel.send('✅ キューが終了しました');
+            queues.delete(guildId);
+            return;
+        }
+
+        const track = queue.shift();
+        const resource = createAudioResource(track.url, { inputType: StreamType.Arbitrary });
+        player.play(resource);
+        textChannel.send(`▶️ **再生中: ${track.title}**`);
+
+        player.once(AudioPlayerStatus.Idle, playNext);
+    };
+
+    playNext();
 }
 
 function stopMusic(guildId) {
-  const queue = queues.get(guildId);
-  if (!queue) return false;
-  queue.songs = [];
-  queue.player.stop(true);
-  return true;
+    const queue = queues.get(guildId);
+    if (!queue || !queue.player) return false;
+
+    queue.player.stop();
+    queue.length = 0; // キュークリア
+    return true;
 }
 
 async function leaveVoice(guildId) {
-  const queue = queues.get(guildId);
-  if (!queue) return;
-  queue.player.stop();
-  queue.connection.destroy();
-  queues.delete(guildId);
+    const connection = getVoiceConnection(guildId);
+    if (connection) {
+        connection.destroy();
+        queues.delete(guildId);
+    }
 }
 
-async function getYouTubeTitle(url) {
-  try {
-    const info = await ytdl.getInfo(url);
-    return info.videoDetails.title;
-  } catch {
-    return '不明な曲';
-  }
+async function playAttachment(guildId, url, textChannel, voiceChannel) {
+    const queue = getQueue(guildId);
+    queue.push({ url, title: '添付ファイル' });
+
+    textChannel.send(`🎵 添付ファイルをキューに追加しました (${queue.length}曲目)`);
+
+    if (!queue.player) startQueue(guildId, textChannel, voiceChannel);
 }
 
 module.exports = {
-  playYouTube,
-  playAttachment,
-  stopMusic,
-  leaveVoice,
+    joinVoice,
+    playYouTube,
+    playAttachment,
+    stopMusic,
+    leaveVoice,
 };
