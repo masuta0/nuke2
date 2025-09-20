@@ -8,7 +8,7 @@ const {
 } = require("@discordjs/voice");
 const play = require("play-dl");
 
-const guildPlayers = new Map(); // ギルドごとにプレイヤー管理
+const guildPlayers = new Map();
 
 // === ボイスチャンネルに参加 ===
 async function joinVoice(guild, channel) {
@@ -25,23 +25,27 @@ async function joinVoice(guild, channel) {
   }
 }
 
-// === URL再生 (YouTube, Spotify, SoundCloud対応) ===
-async function playUrl(guildId, url, textChannel) {
+// === URL or キーワードから再生 ===
+async function playUrl(guildId, query, textChannel) {
   try {
-    // URLの確認
-    if (!await play.validate(url)) {
-      return null;
+    let video;
+
+    // URLなら直接取得
+    if (await play.validate(query) === "yt_video") {
+      video = await play.video_info(query);
+    } else {
+      // 検索して先頭を取得
+      const searchResult = await play.search(query, { limit: 1 });
+      if (!searchResult.length) return null;
+      video = await play.video_info(searchResult[0].url);
     }
 
-    // 動画情報
-    const info = await play.video_basic_info(url);
-    const title = info.video_details.title;
+    const title = video.video_details.title;
 
     // ストリーム作成
-    const stream = await play.stream(url);
+    const stream = await play.stream(video.video_details.url);
     const resource = createAudioResource(stream.stream, { inputType: stream.type });
 
-    // プレイヤー取得または新規作成
     let player = guildPlayers.get(guildId);
     if (!player) {
       player = createAudioPlayer();
@@ -57,14 +61,12 @@ async function playUrl(guildId, url, textChannel) {
       });
     }
 
-    // VC接続チェック
     const connection = getVoiceConnection(guildId);
     if (!connection) {
       textChannel.send("❌ ボイスチャンネルに接続していません");
       return null;
     }
 
-    // 再生開始
     player.play(resource);
     connection.subscribe(player);
 
