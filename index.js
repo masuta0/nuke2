@@ -25,7 +25,7 @@ const {
   onGuildBanAdd,
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
-const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
+const { joinVoice, playAttachment, stopMusic, leaveVoice } = require('./utils/music');
 
 // 定数
 const TOKEN = process.env.TOKEN;
