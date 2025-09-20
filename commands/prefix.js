@@ -150,19 +150,31 @@ module.exports = async function handlePrefixMessage(client, msg) {
         await msg.reply("🔊 参加しました");
         break;
       }
-        case "play": {
-          if (!msg.member?.voice?.channel) return msg.reply("⚠️ ボイスチャンネルに参加してください");
+          // プレフィックスコマンド部分の play 修正
+          case 'play':
+            // 指定チャンネルのみ許可
+            const allowedChannelId = '1419041571944403046';
+            if (message.channel.id !== allowedChannelId) {
+              await message.delete().catch(() => {});
+              return message.channel.send(`❌ このチャンネルでは !play は使用できません`).then(msg => {
+                setTimeout(() => msg.delete().catch(() => {}), 5000);
+              });
+            }
 
-          const attachment = msg.attachments.first();
-          if (!attachment) return msg.reply("⚠️ ファイルを添付してください");
+            if (!message.member?.voice.channel)
+              return message.reply('❌ ボイスチャンネルに参加してください');
 
-          const ok = await joinVoice(msg.guild, msg.member.voice.channel);
-          if (!ok) return msg.reply("⚠️ 接続に失敗しました");
+            const query = args.join(' ');
+            if (!query) return message.reply('❌ 曲名またはURLを入力してください');
 
-          const success = await playAttachment(msg.guild.id, attachment.url, msg.channel);
-          await msg.reply(success ? "▶ 再生中" : "⚠️ 再生に失敗しました");
-          break;
-        }
+            const musicTitle = await playUrl(message.guild.id, query, message.channel);
+            if (musicTitle) {
+              message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
+            } else {
+              message.channel.send('❌ 曲が見つかりません');
+            }
+            break;
+        
       case "leave": {
         await leaveVoice(msg.guild.id);
         await msg.reply("👋 退出しました");

@@ -1,109 +1,107 @@
 // utils/music.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType, getVoiceConnection } = require('@discordjs/voice');
-const ytDlpExec = require('yt-dlp-exec');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, getVoiceConnection, NoSubscriberBehavior } = require('@discordjs/voice');
+const { execFile } = require('child_process');
 const ffmpeg = require('ffmpeg-static');
-const { exec } = require('child_process');
+const path = require('path');
+const fs = require('fs');
 
-const queues = new Map(); // ギルドIDごとのキュー
+const queueMap = new Map(); // guildId -> { queue: [], player, textChannel, voiceChannel }
 
-function getQueue(guildId) {
-    if (!queues.has(guildId)) queues.set(guildId, []);
-    return queues.get(guildId);
-}
-
-async function playYouTube(guildId, url, textChannel, voiceChannel) {
-    const queue = getQueue(guildId);
-
-    // yt-dlp で音声URLを取得
-    const info = await ytDlpExec(url, {
-        dumpSingleJson: true,
-        noWarnings: true,
-        format: 'bestaudio',
-        simulate: true
-    });
-
-    const title = info.title || 'Unknown';
-    const streamUrl = info.url;
-
-    queue.push({ url: streamUrl, title });
-
-    textChannel.send(`🎵 **${title}** をキューに追加しました (${queue.length}曲目)`);
-
-    if (!voiceChannel.connection) await joinVoice(voiceChannel);
-
-    if (!queue.player) startQueue(guildId, textChannel, voiceChannel);
-
-    return queue;
-}
-
-async function joinVoice(voiceChannel) {
+async function joinVoice(guild, voiceChannel, textChannel) {
+  try {
     const connection = joinVoiceChannel({
-        channelId: voiceChannel.id,
-        guildId: voiceChannel.guild.id,
-        adapterCreator: voiceChannel.guild.voiceAdapterCreator
+      channelId: voiceChannel.id,
+      guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator,
     });
-    return connection;
+
+    // 初期化
+    if (!queueMap.has(guild.id)) {
+      const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Stop } });
+      connection.subscribe(player);
+      queueMap.set(guild.id, { queue: [], player, textChannel, voiceChannel });
+      player.on(AudioPlayerStatus.Idle, () => playNext(guild.id));
+    } else {
+      // textChannel 更新
+      queueMap.get(guild.id).textChannel = textChannel;
+    }
+    return true;
+  } catch (err) {
+    console.error('joinVoice error:', err);
+    return false;
+  }
 }
 
-function startQueue(guildId, textChannel, voiceChannel) {
-    const queue = getQueue(guildId);
-    const player = createAudioPlayer();
-    queue.player = player;
+async function playUrl(guildId, urlOrQuery, textChannel) {
+  const guildQueue = queueMap.get(guildId);
+  if (!guildQueue) return null;
 
-    const connection = getVoiceConnection(voiceChannel.guild.id);
-    if (!connection) joinVoice(voiceChannel);
+  const ytFile = path.join(__dirname, `tmp-${Date.now()}.mp3`);
+  let title = '';
 
-    connection.subscribe(player);
+  await new Promise((resolve, reject) => {
+    const ytdlp = execFile('yt-dlp', ['-f', 'bestaudio', '--extract-audio', '--audio-format', 'mp3', '-o', ytFile, urlOrQuery], (err, stdout, stderr) => {
+      if (err) return reject(err);
+      // 曲名取得
+      const lines = stdout.toString().split('\n');
+      const infoLine = lines.find(l => l.includes('[ExtractAudio] Destination:'));
+      if (infoLine) title = path.basename(infoLine.split(':')[1].trim());
+      resolve();
+    });
+  }).catch(err => {
+    console.error('yt-dlp error:', err);
+    textChannel.send('❌ YouTube 取得失敗');
+  });
 
-    const playNext = () => {
-        if (queue.length === 0) {
-            player.stop();
-            textChannel.send('✅ キューが終了しました');
-            queues.delete(guildId);
-            return;
-        }
+  guildQueue.queue.push({ file: ytFile, title });
 
-        const track = queue.shift();
-        const resource = createAudioResource(track.url, { inputType: StreamType.Arbitrary });
-        player.play(resource);
-        textChannel.send(`▶️ **再生中: ${track.title}**`);
+  if (guildQueue.queue.length > 1) {
+    textChannel.send(`➕ キューに追加: **${title}**`);
+  }
 
-        player.once(AudioPlayerStatus.Idle, playNext);
-    };
+  if (guildQueue.player.state.status !== AudioPlayerStatus.Playing) {
+    playNext(guildId);
+  }
 
-    playNext();
+  return title;
+}
+
+function playNext(guildId) {
+  const guildQueue = queueMap.get(guildId);
+  if (!guildQueue) return;
+
+  const nextSong = guildQueue.queue.shift();
+  if (!nextSong) return;
+
+  const resource = createAudioResource(nextSong.file);
+  guildQueue.player.play(resource);
+
+  if (guildQueue.textChannel) {
+    guildQueue.textChannel.send(`▶️ 再生中: **${nextSong.title}**`);
+  }
+
+  guildQueue.player.once(AudioPlayerStatus.Idle, () => {
+    fs.unlink(nextSong.file, () => {});
+    playNext(guildId);
+  });
 }
 
 function stopMusic(guildId) {
-    const queue = queues.get(guildId);
-    if (!queue || !queue.player) return false;
+  const guildQueue = queueMap.get(guildId);
+  if (!guildQueue) return false;
 
-    queue.player.stop();
-    queue.length = 0; // キュークリア
-    return true;
+  guildQueue.queue = [];
+  guildQueue.player.stop(true);
+  return true;
 }
 
 async function leaveVoice(guildId) {
-    const connection = getVoiceConnection(guildId);
-    if (connection) {
-        connection.destroy();
-        queues.delete(guildId);
-    }
+  const guildQueue = queueMap.get(guildId);
+  if (!guildQueue) return;
+
+  const connection = getVoiceConnection(guildId);
+  if (connection) connection.destroy();
+  queueMap.delete(guildId);
 }
 
-async function playAttachment(guildId, url, textChannel, voiceChannel) {
-    const queue = getQueue(guildId);
-    queue.push({ url, title: '添付ファイル' });
-
-    textChannel.send(`🎵 添付ファイルをキューに追加しました (${queue.length}曲目)`);
-
-    if (!queue.player) startQueue(guildId, textChannel, voiceChannel);
-}
-
-module.exports = {
-    joinVoice,
-    playYouTube,
-    playAttachment,
-    stopMusic,
-    leaveVoice,
-};
+module.exports = { joinVoice, playUrl, stopMusic, leaveVoice };
