@@ -151,26 +151,16 @@ module.exports = async function handlePrefixMessage(client, msg) {
         break;
       }
         case "play": {
-          // 複数単語を結合してURL/検索ワードとして扱う
-          const query = args.join(" ");
-          if (!query)
-            return msg.reply(
-              "使い方: `!play <YouTubeのURLまたは検索ワード>`"
-            );
+          if (!msg.member?.voice?.channel) return msg.reply("⚠️ ボイスチャンネルに参加してください");
 
-          // ボイスチャンネル参加チェック
-          if (!msg.member?.voice?.channel)
-            return msg.reply("ボイスチャンネルに参加してください");
+          const attachment = msg.attachments.first();
+          if (!attachment) return msg.reply("⚠️ ファイルを添付してください");
 
-          // VCに接続
           const ok = await joinVoice(msg.guild, msg.member.voice.channel);
-          if (!ok) return msg.reply("接続に失敗しました");
+          if (!ok) return msg.reply("⚠️ 接続に失敗しました");
 
-          // 再生
-          const added = await playUrl(msg.guild.id, query, msg.channel);
-          await msg.reply(
-            added ? `再生キューに追加: ${added}` : "取得に失敗しました"
-          );
+          const success = await playAttachment(msg.guild.id, attachment.url, msg.channel);
+          await msg.reply(success ? "▶ 再生中" : "⚠️ 再生に失敗しました");
           break;
         }
       case "leave": {

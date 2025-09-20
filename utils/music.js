@@ -5,40 +5,13 @@ const {
   AudioPlayerStatus,
   getVoiceConnection,
 } = require("@discordjs/voice");
-const play = require("play-dl");
+const https = require("https");
+const fs = require("fs");
+const path = require("path");
 
 const guildPlayers = new Map();
-let loggedIn = false;
 
-// === YouTube URLを正規化 ===
-function normalizeYouTubeUrl(url) {
-  const match = url.match(/youtu\.be\/([^?&]+)/);
-  if (match) {
-    return `https://www.youtube.com/watch?v=${match[1]}`;
-  }
-  return url;
-}
-
-// === Googleアカウントでログイン ===
-async function ensureLogin() {
-  if (loggedIn) return;
-  if (!process.env.YT_EMAIL || !process.env.YT_PASSWORD) {
-    console.warn("⚠️ YT_EMAIL / YT_PASSWORD が未設定です。年齢制限動画は再生できません。");
-    return;
-  }
-  try {
-    await play.login({
-      email: process.env.YT_EMAIL,
-      password: process.env.YT_PASSWORD,
-    });
-    console.log("✅ YouTubeにログイン成功");
-    loggedIn = true;
-  } catch (err) {
-    console.error("❌ YouTubeログイン失敗:", err);
-  }
-}
-
-// === ボイスチャンネルに参加 ===
+// VCに参加
 async function joinVoice(guild, channel) {
   try {
     joinVoiceChannel({
@@ -53,61 +26,64 @@ async function joinVoice(guild, channel) {
   }
 }
 
-// === URL or キーワードから再生 ===
-async function playUrl(guildId, query, textChannel) {
+// ユーザー添付ファイルを再生
+async function playAttachment(guildId, attachmentUrl, textChannel) {
   try {
-    await ensureLogin();
+    // 一時ファイルにダウンロード
+    const filePath = path.join("/tmp", path.basename(attachmentUrl));
+    await downloadFile(attachmentUrl, filePath);
 
-    let video;
-    let url = normalizeYouTubeUrl(query);
-
-    if (await play.validate(url) === "yt_video") {
-      video = await play.video_info(url);
-    } else {
-      // 検索
-      const searchResult = await play.search(query, { limit: 1 });
-      if (!searchResult.length) return null;
-      video = await play.video_info(searchResult[0].url);
-    }
-
-    const title = video.video_details.title;
-    const videoUrl = video.video_details.url;
-
-    const stream = await play.stream(videoUrl);
-    const resource = createAudioResource(stream.stream, { inputType: stream.type });
-
+    const resource = createAudioResource(filePath);
     let player = guildPlayers.get(guildId);
-    if (!player) {
+
+    if (!play) {
       player = createAudioPlayer();
       guildPlayers.set(guildId, player);
 
       player.on(AudioPlayerStatus.Idle, () => {
-        textChannel.send("⏹️ 再生が終了しました");
+        textChannel.send("⏹️ 再生終了");
+        fs.unlink(filePath, () => {}); // 再生後に削除
       });
 
       player.on("error", (err) => {
         console.error("❌ AudioPlayer エラー:", err);
         textChannel.send("⚠ 再生中にエラーが発生しました");
+        fs.unlink(filePath, () => {});
       });
     }
 
     const connection = getVoiceConnection(guildId);
     if (!connection) {
       textChannel.send("❌ ボイスチャンネルに接続していません");
-      return null;
+      fs.unlink(filePath, () => {});
+      return false;
     }
 
     player.play(resource);
     connection.subscribe(player);
 
-    return title;
+    return true;
   } catch (err) {
-    console.error("❌ playUrl エラー:", err);
-    return null;
+    console.error("❌ playAttachment エラー:", err);
+    return false;
   }
 }
 
-// === 再生停止 ===
+// ファイルをダウンロード
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https.get(url, (res) => {
+      res.pipe(file);
+      file.on("finish", () => file.close(resolve));
+    }).on("error", (err) => {
+      fs.unlink(dest, () => {});
+      reject(err);
+    });
+  });
+}
+
+// 再生停止
 function stopMusic(guildId) {
   const player = guildPlayers.get(guildId);
   if (!player) return false;
@@ -116,7 +92,7 @@ function stopMusic(guildId) {
   return true;
 }
 
-// === ボイスチャンネル退出 ===
+// VC退出
 async function leaveVoice(guildId) {
   const connection = getVoiceConnection(guildId);
   if (connection) connection.destroy();
@@ -125,7 +101,7 @@ async function leaveVoice(guildId) {
 
 module.exports = {
   joinVoice,
-  playUrl,
+  playAttachment,
   stopMusic,
   leaveVoice,
 };
