@@ -32,7 +32,7 @@
     "open": "^10.2.0",
     "puppeteer": "^24.19.0",
     "twitter-api-v2": "^1.26.0",
-    "yt-dlp-exec": "^2.0.4"
+    "yt-dlp-exec": "1.1.6"
   },
   "repository": {
     "type": "git",

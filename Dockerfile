@@ -1,28 +1,20 @@
-# Node.js ベースイメージ
+# Dockerfile例
 FROM node:20-slim
 
-# 作業ディレクトリ作成
+# 必要ツールのインストール
+RUN apt-get update && apt-get install -y python3 ffmpeg && rm -rf /var/lib/apt/lists/*
+
+# 作業ディレクトリ
 WORKDIR /app
 
-# 依存関係インストールのため package.json / package-lock.json をコピー
+# package.json をコピー
 COPY package*.json ./
 
-# ffmpeg と yt-dlp インストール
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    python3 \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && npm install -g npm@latest
-
-# npm install 実行
+# npm install
 RUN npm install --omit=dev
 
-# アプリコードをコピー
+# アプリケーションコピー
 COPY . .
 
-# ポート指定（Express用）
-EXPOSE 3000
-
-# 起動コマンド
-CMD ["npm", "start"]
+# 起動
+CMD ["node", "index.js"]
