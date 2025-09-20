@@ -1,127 +1,120 @@
 // utils/music.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const { exec } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType, getVoiceConnection } = require('@discordjs/voice');
+const ytdl = require('ytdl-core');
+const ytSearch = require('yt-search');
 
-const queueMap = new Map(); // guildId -> { channel, connection, player, queue: [], playing }
+const queueMap = new Map(); // guildId -> [{ title, url, requestedBy }]
+const playerMap = new Map(); // guildId -> AudioPlayer
 
-// 許可チャンネルID
-const ALLOWED_CHANNEL_ID = '1419041571944403046';
+// 再生可能チャンネルID
+const MUSIC_CHANNEL_ID = '1419041571944403046';
 
-async function joinVoice(guild, channel) {
-    if (!guild || !channel) return false;
-
-    const connection = joinVoiceChannel({
-        channelId: channel.id,
-        guildId: guild.id,
-        adapterCreator: guild.voiceAdapterCreator,
+// ボイスチャンネル参加
+async function joinVoice(guild, voiceChannel) {
+  try {
+    joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId: guild.id,
+      adapterCreator: guild.voiceAdapterCreator,
     });
-
-    const player = createAudioPlayer();
-    connection.subscribe(player);
-
-    queueMap.set(guild.id, { channel, connection, player, queue: [], playing: false });
-
     return true;
+  } catch (err) {
+    console.error('joinVoice error:', err);
+    return false;
+  }
 }
 
-function leaveVoice(guildId) {
-    const data = queueMap.get(guildId);
-    if (!data) return false;
-    data.player.stop();
-    data.connection.destroy();
-    queueMap.delete(guildId);
-    return true;
+// 曲情報取得（URLまたは検索）
+async function getTrack(query) {
+  let url, title;
+  if (ytdl.validateURL(query)) {
+    url = query;
+    const info = await ytdl.getInfo(url);
+    title = info.videoDetails.title;
+  } else {
+    const r = await ytSearch(query);
+    const video = r.videos.length > 0 ? r.videos[0] : null;
+    if (!video) return null;
+    url = video.url;
+    title = video.title;
+  }
+  return { url, title };
 }
 
+// 再生開始
+async function startPlaying(guildId, channel) {
+  const queue = queueMap.get(guildId);
+  if (!queue || queue.length === 0) return;
+
+  let player = playerMap.get(guildId);
+  if (!player) {
+    player = createAudioPlayer();
+    playerMap.set(guildId, player);
+    player.on(AudioPlayerStatus.Idle, () => {
+      queue.shift();
+      if (queue.length > 0) startPlaying(guildId, channel);
+    });
+  }
+
+  const connection = getVoiceConnection(channel.guild.id);
+  if (!connection) return;
+
+  const track = queue[0];
+  const stream = ytdl(track.url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1<<25 });
+  const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
+  player.play(resource);
+  connection.subscribe(player);
+
+  channel.send(`▶️ 再生開始: **${track.title}** (リクエスト: ${track.requestedBy})`);
+}
+
+// 曲をキューに追加 / 再生
+async function playUrl(guildId, query, channel, member, msg) {
+  if (channel.id !== MUSIC_CHANNEL_ID) {
+    await msg?.delete().catch(() => {});
+    await member.send('このチャンネルでは !play コマンドを使えません').catch(() => {});
+    return null;
+  }
+
+  const track = await getTrack(query);
+  if (!track) return null;
+
+  if (!queueMap.has(guildId)) queueMap.set(guildId, []);
+  const queue = queueMap.get(guildId);
+
+  queue.push({ ...track, requestedBy: member.user.tag });
+
+  if (queue.length === 1) {
+    await startPlaying(guildId, channel);
+  } else {
+    channel.send(`➕ キューに追加: **${track.title}** (リクエスト: ${member.user.tag})`);
+  }
+
+  return track.title;
+}
+
+// 停止
 function stopMusic(guildId) {
-    const data = queueMap.get(guildId);
-    if (!data) return false;
-    data.queue = [];
-    data.player.stop();
+  const player = playerMap.get(guildId);
+  if (player) {
+    player.stop();
+    queueMap.set(guildId, []);
     return true;
+  }
+  return false;
 }
 
-// yt-dlp で MP3 を取得して再生
-function downloadAndPlay(guildId, url, channel, callback) {
-    const data = queueMap.get(guildId);
-    if (!data) return callback(null);
-
-    const tmpDir = path.join(__dirname, '..', 'tmp');
-    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir);
-
-    const outFile = path.join(tmpDir, `${Date.now()}.mp3`);
-
-    // URL の余計なクエリを削除
-    const safeUrl = url.split('?')[0];
-
-    const cmd = `yt-dlp -x --audio-format mp3 -o "${outFile}" "${safeUrl}"`;
-
-    exec(cmd, (err) => {
-        if (err) return callback(null);
-
-        const resource = createAudioResource(outFile);
-        data.player.play(resource);
-        data.playing = true;
-
-        data.player.once(AudioPlayerStatus.Idle, () => {
-            fs.unlink(outFile, () => {});
-            data.playing = false;
-            if (data.queue.length > 0) {
-                const next = data.queue.shift();
-                downloadAndPlay(guildId, next.url, channel, next.callback);
-                channel.send(`▶️ 次の曲を再生: **${next.title}**`);
-            }
-        });
-
-        callback(outFile);
-    });
-}
-
-// キュー再生＆チャンネル制限
-async function playUrl(guildId, query, channel) {
-    // チャンネル制限
-    if (channel.id !== ALLOWED_CHANNEL_ID) {
-        channel.send(`❌ このチャンネルでは !play は使用できません`).then(msg => {
-            setTimeout(() => msg.delete().catch(() => {}), 5000);
-            channel.messages.fetch({ limit: 1 }).then(msgs => {
-                msgs.forEach(m => {
-                    if (m.author.bot) return;
-                    m.delete().catch(() => {});
-                });
-            });
-        }).catch(() => {});
-        return null;
-    }
-
-    const data = queueMap.get(guildId);
-    if (!data) return null;
-
-    const isUrl = query.startsWith('http');
-    let title = query;
-
-    if (isUrl) {
-        title = query.split('?')[0].split('/').pop();
-    }
-
-    if (data.playing) {
-        data.queue.push({ url: query, title, callback: () => {} });
-        channel.send(`⏱ キューに追加: **${title}**`);
-        return title;
-    }
-
-    return new Promise((resolve) => {
-        downloadAndPlay(guildId, query, channel, () => {
-            channel.send(`▶️ 再生開始: **${title}**`);
-            resolve(title);
-        });
-    });
+// VC退出
+async function leaveVoice(guildId) {
+  const connection = getVoiceConnection(guildId);
+  if (connection) connection.destroy();
+  queueMap.set(guildId, []);
+  playerMap.delete(guildId);
 }
 
 module.exports = {
-    joinVoice,
-    leaveVoice,
-    stopMusic,
-    playUrl,
+  joinVoice,
+  playUrl,
+  stopMusic,
+  leaveVoice,
 };
