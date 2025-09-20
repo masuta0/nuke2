@@ -18,6 +18,7 @@ COPY package*.json ./
 # 依存関係をインストール（npm 10.x のまま）
 RUN npm install --omit=dev
 
+RUN npm install -g yt-dlp
 # 残りのソースコードをコピー
 COPY . .
 
