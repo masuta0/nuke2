@@ -1,6 +1,5 @@
 # ベースイメージ
-FROM node:18-bullseye
-
+FROM node:20-bullseye
 # 作業ディレクトリ作成
 WORKDIR /app
 
