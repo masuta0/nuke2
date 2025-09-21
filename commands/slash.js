@@ -16,6 +16,7 @@ const { askQuiz } = require('../utils/quiz');
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/level');
 const verifyCommand = require('../utils/verify');
 const panelCommand = require('../utils/panel');
+const { createInvite, fetchInviteCount } = require('../utils/inviteManager');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
