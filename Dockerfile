@@ -12,8 +12,7 @@ RUN rm -rf node_modules package-lock.json \
 
 # yt-dlp インストール（Python 版をシステムに）
 RUN apt-get update && apt-get install -y python3 python3-pip
-RUN pip3 install -U yt-dlp
-
+RUN pip3 install -U yt-dlp --break-system-packages
 # アプリケーションのソースコードをコピー
 COPY . .
 
