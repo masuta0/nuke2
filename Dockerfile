@@ -1,20 +1,26 @@
-FROM node:20
+# ベースイメージ
+FROM node:20-bullseye
 
-# 作業ディレクトリ作成
+# 作業ディレクトリ
 WORKDIR /app
 
-# 依存関係のコピー
+# 必要なシステムパッケージ
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip ffmpeg curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# yt-dlp をユーザーレベルでインストール
+RUN pip3 install --user -U yt-dlp
+
+# npm 依存関係をコピーしてインストール
 COPY package*.json ./
+RUN npm ci --omit=dev --legacy-peer-deps
 
-# 既存 node_modules と lock ファイルを削除してからインストール
-RUN rm -rf node_modules package-lock.json \
-    && npm install --omit=dev --legacy-peer-deps
-
-# yt-dlp インストール（Python 版をシステムに）
-RUN apt-get update && apt-get install -y python3 python3-pip
-RUN pip3 install -U yt-dlp --break-system-packages
-# アプリケーションのソースコードをコピー
+# アプリケーションのソースをコピー
 COPY . .
+
+# PATH にユーザローカルのバイナリを追加
+ENV PATH=/root/.local/bin:$PATH
 
 # ポート公開
 EXPOSE 3000
