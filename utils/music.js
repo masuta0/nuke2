@@ -1,120 +1,105 @@
-// utils/music.js
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, StreamType, getVoiceConnection } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const ytdl = require('ytdl-core');
 const ytSearch = require('yt-search');
 
-const queueMap = new Map(); // guildId -> [{ title, url, requestedBy }]
-const playerMap = new Map(); // guildId -> AudioPlayer
+let queue = new Map(); // guildIdごとにキューを保持
 
-// 再生可能チャンネルID
-const MUSIC_CHANNEL_ID = '1419041571944403046';
+async function playSong(guild, song, interaction) {
+    const serverQueue = queue.get(guild.id);
 
-// ボイスチャンネル参加
-async function joinVoice(guild, voiceChannel) {
-  try {
-    joinVoiceChannel({
-      channelId: voiceChannel.id,
-      guildId: guild.id,
-      adapterCreator: guild.voiceAdapterCreator,
+    if (!song) {
+        serverQueue.connection.destroy();
+        queue.delete(guild.id);
+        return;
+    }
+
+    const stream = ytdl(song.url, { filter: 'audioonly', highWaterMark: 1 << 25 });
+    const resource = createAudioResource(stream);
+    serverQueue.player.play(resource);
+
+    serverQueue.player.once(AudioPlayerStatus.Playing, () => {
+        interaction.followUp(`▶️ 再生開始: **${song.title}**\n${song.url}`);
     });
-    return true;
-  } catch (err) {
-    console.error('joinVoice error:', err);
-    return false;
-  }
-}
 
-// 曲情報取得（URLまたは検索）
-async function getTrack(query) {
-  let url, title;
-  if (ytdl.validateURL(query)) {
-    url = query;
-    const info = await ytdl.getInfo(url);
-    title = info.videoDetails.title;
-  } else {
-    const r = await ytSearch(query);
-    const video = r.videos.length > 0 ? r.videos[0] : null;
-    if (!video) return null;
-    url = video.url;
-    title = video.title;
-  }
-  return { url, title };
-}
-
-// 再生開始
-async function startPlaying(guildId, channel) {
-  const queue = queueMap.get(guildId);
-  if (!queue || queue.length === 0) return;
-
-  let player = playerMap.get(guildId);
-  if (!player) {
-    player = createAudioPlayer();
-    playerMap.set(guildId, player);
-    player.on(AudioPlayerStatus.Idle, () => {
-      queue.shift();
-      if (queue.length > 0) startPlaying(guildId, channel);
+    serverQueue.player.on(AudioPlayerStatus.Idle, () => {
+        serverQueue.songs.shift();
+        playSong(guild, serverQueue.songs[0], interaction);
     });
-  }
-
-  const connection = getVoiceConnection(channel.guild.id);
-  if (!connection) return;
-
-  const track = queue[0];
-  const stream = ytdl(track.url, { filter: 'audioonly', quality: 'highestaudio', highWaterMark: 1<<25 });
-  const resource = createAudioResource(stream, { inputType: StreamType.Arbitrary });
-  player.play(resource);
-  connection.subscribe(player);
-
-  channel.send(`▶️ 再生開始: **${track.title}** (リクエスト: ${track.requestedBy})`);
 }
 
-// 曲をキューに追加 / 再生
-async function playUrl(guildId, query, channel, member, msg) {
-  if (channel.id !== MUSIC_CHANNEL_ID) {
-    await msg?.delete().catch(() => {});
-    await member.send('このチャンネルでは !play コマンドを使えません').catch(() => {});
-    return null;
-  }
+async function execute(interaction) {
+    const args = interaction.options.getString('query'); // スラッシュコマンドの入力
+    const voiceChannel = interaction.member.voice.channel;
 
-  const track = await getTrack(query);
-  if (!track) return null;
+    if (!voiceChannel) {
+        return interaction.reply('❌ ボイスチャンネルに参加してから使ってください！');
+    }
 
-  if (!queueMap.has(guildId)) queueMap.set(guildId, []);
-  const queue = queueMap.get(guildId);
+    const permissions = voiceChannel.permissionsFor(interaction.client.user);
+    if (!permissions.has('Connect') || !permissions.has('Speak')) {
+        return interaction.reply('❌ ボイスチャンネルに参加・発言する権限がありません！');
+    }
 
-  queue.push({ ...track, requestedBy: member.user.tag });
+    let songInfo;
+    let song;
 
-  if (queue.length === 1) {
-    await startPlaying(guildId, channel);
-  } else {
-    channel.send(`➕ キューに追加: **${track.title}** (リクエスト: ${member.user.tag})`);
-  }
+    // YouTube URL かどうか判定
+    if (ytdl.validateURL(args)) {
+        songInfo = await ytdl.getInfo(args);
+        song = { title: songInfo.videoDetails.title, url: songInfo.videoDetails.video_url };
+    } else {
+        const { videos } = await ytSearch(args);
+        if (!videos.length) return interaction.reply('❌ 曲が見つかりませんでした！');
+        song = { title: videos[0].title, url: videos[0].url };
+    }
 
-  return track.title;
+    let serverQueue = queue.get(interaction.guild.id);
+
+    if (!serverQueue) {
+        const connection = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: interaction.guild.id,
+            adapterCreator: interaction.guild.voiceAdapterCreator,
+        });
+
+        const player = createAudioPlayer();
+        connection.subscribe(player);
+
+        serverQueue = {
+            voiceChannel,
+            connection,
+            player,
+            songs: [],
+        };
+
+        queue.set(interaction.guild.id, serverQueue);
+        serverQueue.songs.push(song);
+
+        await interaction.reply(`🎶 キューに追加: **${song.title}**`);
+        playSong(interaction.guild, serverQueue.songs[0], interaction);
+    } else {
+        serverQueue.songs.push(song);
+        return interaction.reply(`🎶 キューに追加: **${song.title}**`);
+    }
 }
 
-// 停止
-function stopMusic(guildId) {
-  const player = playerMap.get(guildId);
-  if (player) {
-    player.stop();
-    queueMap.set(guildId, []);
-    return true;
-  }
-  return false;
+function skip(interaction) {
+    const serverQueue = queue.get(interaction.guild.id);
+    if (!serverQueue) return interaction.reply('❌ スキップできる曲がありません！');
+    serverQueue.player.stop();
+    interaction.reply('⏭️ スキップしました！');
 }
 
-// VC退出
-async function leaveVoice(guildId) {
-  const connection = getVoiceConnection(guildId);
-  if (connection) connection.destroy();
-  queueMap.set(guildId, []);
-  playerMap.delete(guildId);
+function stop(interaction) {
+    const serverQueue = queue.get(interaction.guild.id);
+    if (!serverQueue) return interaction.reply('❌ 停止できる曲がありません！');
+    serverQueue.songs = [];
+    serverQueue.player.stop();
+    interaction.reply('🛑 停止しました！');
 }
 
 module.exports = {
-  joinVoice,
-  playUrl,
-  stopMusic,
-  leaveVoice,
+    execute,
+    skip,
+    stop,
 };
