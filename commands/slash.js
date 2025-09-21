@@ -19,6 +19,7 @@ const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/l
 const verifyCommand = require('../utils/verify');
 const panelCommand = require('../utils/panel');
 const { createInvite, fetchInviteCount } = require('../utils/inviteManager');
+const ticketSystem = require('./ticketSystem');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -40,80 +41,6 @@ const STAFF_ROLE_IDS = [
 ];
 const TICKET_LOG_CHANNEL_ID = '1419418871986917446';
 const activeTickets = new Map(); // ユーザーID -> チャンネルID
-
-const ticketCommand = {
-  data: new SlashCommandBuilder()
-    .setName('ticket')
-    .setDescription('チケット作成')
-    .addSubcommand(sub => sub.setName('create').setDescription('新しいチケットを作成します')),
-
-  async execute(interaction) {
-    const sub = interaction.options.getSubcommand();
-    if (sub !== 'create') return;
-
-    if (activeTickets.has(interaction.user.id)) {
-      const channelId = activeTickets.get(interaction.user.id);
-      const channel = interaction.guild.channels.cache.get(channelId);
-      return interaction.reply({ content: `すでにチケットがあります: ${channel}`, ephemeral: true });
-    }
-
-    let category = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'チケット' && c.type === ChannelType.GuildCategory);
-    if (!category) {
-      category = await interaction.guild.channels.create({ name: 'チケット', type: ChannelType.GuildCategory });
-    }
-
-    const ticketChannel = await interaction.guild.channels.create({
-      name: `ticket-${interaction.user.id}`,
-      type: ChannelType.GuildText,
-      parent: category.id,
-      permissionOverwrites: [
-        { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-        { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-        ...STAFF_ROLE_IDS.map(id => ({
-          id,
-          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
-        }))
-      ]
-    });
-
-    const row = new ActionRowBuilder()
-      .addComponents(new ButtonBuilder().setCustomId('ticket_close').setLabel('閉じる').setStyle(ButtonStyle.Danger));
-
-    const initialMsg = `<@${interaction.user.id}> さんのチケットを作成しました。スタッフが対応します。`;
-    await ticketChannel.send({ content: initialMsg, components: [row] });
-
-    if (!fs.existsSync('./tickets')) fs.mkdirSync('./tickets');
-    fs.writeFileSync(`./tickets/ticket-${interaction.user.id}.txt`, initialMsg);
-
-    activeTickets.set(interaction.user.id, ticketChannel.id);
-
-    const logChannel = interaction.guild.channels.cache.get(TICKET_LOG_CHANNEL_ID);
-    if (logChannel) await logChannel.send(`新しいチケット作成: ${ticketChannel} | 作成者: <@${interaction.user.id}>`);
-
-    return interaction.reply({ content: `✅ チケットを作成しました: ${ticketChannel}`, ephemeral: true });
-  },
-
-  async buttonHandler(interaction) {
-    if (interaction.customId !== 'ticket_close') return;
-
-    const creatorId = interaction.channel.name.split('-')[1];
-    if (interaction.user.id !== creatorId && !STAFF_ROLE_IDS.some(rid => interaction.member.roles.cache.has(rid))) {
-      return interaction.reply({ content: '⚠️ あなたはこのチケットを閉じる権限がありません。', ephemeral: true });
-    }
-
-    await interaction.reply({ content: 'チケットを閉じています…', ephemeral: true });
-
-    const logChannel = interaction.guild.channels.cache.get(TICKET_LOG_CHANNEL_ID);
-    if (logChannel) await logChannel.send(`チケット閉鎖: ${interaction.channel.name} | 閉鎖者: <@${interaction.user.id}>`);
-
-    if (activeTickets.has(creatorId)) activeTickets.delete(creatorId);
-
-    setTimeout(async () => {
-      try { await interaction.channel.delete(); } catch (e) { console.error('チケット削除エラー:', e); }
-    }, 2000);
-  }
-};
-
 // ----- スラッシュコマンド登録 -----
 async function registerSlashCommands(client) {
   const commands = [
@@ -262,7 +189,8 @@ async function registerSlashCommands(client) {
         if(cmd==='verify') return verifyCommand.buttonHandler(interaction,client);
         if(cmd==='role') return panelCommand.buttonHandler(interaction);
       }
-
+      if (name === 'ticket') return ticketSystem.execute(interaction);
+      if (interaction.isButton()) return ticketSystem.buttonHandler(interaction);
       if(interaction.type===5){
         const [cmd] = interaction.customId.split('_');
         if(cmd==='verify') return verifyCommand.modalHandler(interaction,client);
