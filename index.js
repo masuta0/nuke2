@@ -1,3 +1,4 @@
+// index.js
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
@@ -24,13 +25,15 @@ const {
   onGuildBanAdd,
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
+
+// 音楽ユーティリティ
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 
 // 定数
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
-const MUSIC_CHANNEL_ID = '1419041571944403046'; // !playが有効なチャンネル
+const MUSIC_CHANNEL_ID = '1419041571944403046'; // !play が有効なチャンネル
 
 // Discordクライアント作成
 const client = new Client({
@@ -99,50 +102,51 @@ client.on('messageCreate', async (message) => {
 
   if (message.channel?.type === ChannelType.DM) return;
 
+  // プレフィックスコマンド
   if (!message.content.startsWith('!')) return;
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
   switch (command) {
-    // ボイスチャンネル参加
-      case 'join':
-        if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-        if (await joinVoice(message.guild, message.member.voice.channel)) {
-          message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
-        } else message.reply('❌ ボイスチャンネル参加失敗');
-        break;
+    case 'join':
+      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
+      if (await joinVoice(message.guild, message.member.voice.channel)) {
+        message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
+      } else message.reply('❌ ボイスチャンネル参加失敗');
+      break;
 
-      case 'play':
-        if (!message.member?.voice.channel)
-          return message.reply('❌ ボイスチャンネルに参加してください');
+    case 'play':
+      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
 
-        if (message.channel.id !== MUSIC_CHANNEL_ID) {
-          await message.delete().catch(() => {});
-          return message.reply(`❌ このチャンネルでは !play を使えません`).then(msg => {
-            setTimeout(() => msg.delete().catch(() => {}), 5000);
-          });
-        }
+      // チャンネル制限
+      if (message.channel.id !== MUSIC_CHANNEL_ID) {
+        await message.delete().catch(() => {});
+        return message.reply(`❌ このチャンネルでは !play を使えません`).then(msg => {
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+        });
+      }
 
-        const query = args.join(' ').trim();
-        if (!query) return message.reply('❌ 曲名またはURLを入力してください');
+      const query = args.join(' ').trim();
+      if (!query) return message.reply('❌ 曲名またはURLを入力してください');
 
-        try {
-          const title = await playUrl(message.guild.id, query, message.channel, message.member.voice.channel);
-          message.channel.send(`▶️ キューに追加: **${title}**`);
-        } catch (err) {
-          console.error('❌ !play エラー:', err);
-          message.channel.send('❌ 曲の再生中にエラーが発生しました');
-        }
-        break;
+      try {
+        const url = await playUrl(message.guild.id, query, message.channel, message.member.voice.channel);
+        if (url) message.channel.send(`▶️ キューに追加: **${url}**`);
+        else message.channel.send('❌ 曲が見つかりません');
+      } catch (err) {
+        console.error('❌ !play エラー:', err);
+        message.channel.send('❌ 曲の再生中にエラーが発生しました');
+      }
+      break;
 
-      case 'stop':
-        message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
-        break;
+    case 'stop':
+      message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
+      break;
 
-      case 'leave':
-        await leaveVoice(message.guild.id);
-        message.channel.send('👋 ボイスチャンネル退出しました');
-        break;
+    case 'leave':
+      await leaveVoice(message.guild.id);
+      message.channel.send('👋 ボイスチャンネル退出しました');
+      break;
 
     // Dropboxクイズ
     case 'uploadquiz':
@@ -169,13 +173,13 @@ client.on('messageCreate', async (message) => {
     case 'ai':
       const prompt = args.join(' ').trim();
       if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
-      const aiReply = await message.reply('💬 AIが考え中...');
+      const replyMsg = await message.reply('💬 AIが考え中...');
       try {
         const aiResponse = await chat(prompt, message.author.id);
-        await aiReply.edit(aiResponse || 'AIからの応答に失敗しました。');
+        await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
       } catch (err) {
         console.error('❌ !ai エラー:', err);
-        await aiReply.edit('❌ AIとの通信中にエラーが発生しました。');
+        await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
       }
       break;
 
@@ -185,10 +189,8 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// メッセージ更新
+// イベント登録
 client.on('messageUpdate', handleMessageUpdate);
-
-// メンバー入室 / 退室
 client.on('guildMemberAdd', handleMemberJoin);
 client.on('guildMemberRemove', onGuildMemberRemove);
 client.on('guildMemberUpdate', onGuildMemberUpdate);
