@@ -1,4 +1,6 @@
-const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+// registerSlashCommands.js
+const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const fs = require('fs');
 const {
   hasManageGuildPermission,
   backupServer,
@@ -28,391 +30,247 @@ const aiCooldownExemptIds = [
   "1409820488301023257"
 ];
 
+// ----- チケット管理 -----
+const STAFF_ROLE_IDS = [
+  '1419417500579528958',
+  '1409196340780466367',
+  '1414515772352495687',
+  '1411968646649217024',
+  '1405192800919883776'
+];
+const TICKET_LOG_CHANNEL_ID = '1419418871986917446';
+const activeTickets = new Map(); // ユーザーID -> チャンネルID
+
+const ticketCommand = {
+  data: new SlashCommandBuilder()
+    .setName('ticket')
+    .setDescription('チケット作成')
+    .addSubcommand(sub => sub.setName('create').setDescription('新しいチケットを作成します')),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+    if (sub !== 'create') return;
+
+    if (activeTickets.has(interaction.user.id)) {
+      const channelId = activeTickets.get(interaction.user.id);
+      const channel = interaction.guild.channels.cache.get(channelId);
+      return interaction.reply({ content: `すでにチケットがあります: ${channel}`, ephemeral: true });
+    }
+
+    let category = interaction.guild.channels.cache.find(c => c.name.toLowerCase() === 'チケット' && c.type === ChannelType.GuildCategory);
+    if (!category) {
+      category = await interaction.guild.channels.create({ name: 'チケット', type: ChannelType.GuildCategory });
+    }
+
+    const ticketChannel = await interaction.guild.channels.create({
+      name: `ticket-${interaction.user.id}`,
+      type: ChannelType.GuildText,
+      parent: category.id,
+      permissionOverwrites: [
+        { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+        { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+        ...STAFF_ROLE_IDS.map(id => ({
+          id,
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory],
+        }))
+      ]
+    });
+
+    const row = new ActionRowBuilder()
+      .addComponents(new ButtonBuilder().setCustomId('ticket_close').setLabel('閉じる').setStyle(ButtonStyle.Danger));
+
+    const initialMsg = `<@${interaction.user.id}> さんのチケットを作成しました。スタッフが対応します。`;
+    await ticketChannel.send({ content: initialMsg, components: [row] });
+
+    if (!fs.existsSync('./tickets')) fs.mkdirSync('./tickets');
+    fs.writeFileSync(`./tickets/ticket-${interaction.user.id}.txt`, initialMsg);
+
+    activeTickets.set(interaction.user.id, ticketChannel.id);
+
+    const logChannel = interaction.guild.channels.cache.get(TICKET_LOG_CHANNEL_ID);
+    if (logChannel) await logChannel.send(`新しいチケット作成: ${ticketChannel} | 作成者: <@${interaction.user.id}>`);
+
+    return interaction.reply({ content: `✅ チケットを作成しました: ${ticketChannel}`, ephemeral: true });
+  },
+
+  async buttonHandler(interaction) {
+    if (interaction.customId !== 'ticket_close') return;
+
+    const creatorId = interaction.channel.name.split('-')[1];
+    if (interaction.user.id !== creatorId && !STAFF_ROLE_IDS.some(rid => interaction.member.roles.cache.has(rid))) {
+      return interaction.reply({ content: '⚠️ あなたはこのチケットを閉じる権限がありません。', ephemeral: true });
+    }
+
+    await interaction.reply({ content: 'チケットを閉じています…', ephemeral: true });
+
+    const logChannel = interaction.guild.channels.cache.get(TICKET_LOG_CHANNEL_ID);
+    if (logChannel) await logChannel.send(`チケット閉鎖: ${interaction.channel.name} | 閉鎖者: <@${interaction.user.id}>`);
+
+    if (activeTickets.has(creatorId)) activeTickets.delete(creatorId);
+
+    setTimeout(async () => {
+      try { await interaction.channel.delete(); } catch (e) { console.error('チケット削除エラー:', e); }
+    }, 2000);
+  }
+};
+
+// ----- スラッシュコマンド登録 -----
 async function registerSlashCommands(client) {
   const commands = [
-    new SlashCommandBuilder().setName('ai')
-      .setDescription('AIに質問')
-      .addStringOption(o => o.setName('prompt').setDescription('質問内容').setRequired(true)),
+    // AI
+    new SlashCommandBuilder().setName('ai').setDescription('AIに質問').addStringOption(o => o.setName('prompt').setDescription('質問内容').setRequired(true)),
+    // レベル
     new SlashCommandBuilder().setName('level')
       .setDescription('ユーザーのレベルと経験値に関するコマンドです。')
       .addSubcommand(subcommand =>
-        subcommand
-          .setName('check')
-          .setDescription('あなたの、または他のユーザーのレベルと経験値を確認します。')
-          .addUserOption(option =>
-            option
-              .setName('target')
-              .setDescription('レベルを確認したいユーザー')
-              .setRequired(false)))
+        subcommand.setName('check').setDescription('レベルを確認').addUserOption(option => option.setName('target').setDescription('ユーザー').setRequired(false)))
       .addSubcommand(subcommand =>
-        subcommand
-          .setName('set')
-          .setDescription('ユーザーのレベルを手動で設定します。')
-          .addUserOption(option =>
-            option
-              .setName('target')
-              .setDescription('レベルを設定するユーザー')
-              .setRequired(true))
-          .addIntegerOption(option =>
-            option
-              .setName('level')
-              .setDescription('設定するレベル')
-              .setRequired(true)))
+        subcommand.setName('set').setDescription('レベルを設定').addUserOption(option => option.setName('target').setDescription('ユーザー').setRequired(true)).addIntegerOption(option => option.setName('level').setDescription('レベル').setRequired(true)))
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-    new SlashCommandBuilder().setName('天気')
-      .setDescription('天気を表示／場所を保存')
-      .addStringOption(o => o.setName('場所').setDescription('例: 東京、大阪、札幌...').setRequired(false)),
-    new SlashCommandBuilder().setName('クイズ')
-      .setDescription('クイズを出題')
-      .addStringOption(o =>
-        o.setName('カテゴリ')
-         .setDescription('general / trivia / railway / mix(既定)')
-         .setRequired(false)
-      ),
-    new SlashCommandBuilder().setName('join').setDescription('ボイスチャンネルに参加'),
-    new SlashCommandBuilder().setName('play')
-      .setDescription('音楽を再生（URLまたは検索語）')
-      .addStringOption(o => o.setName('query').setDescription('YouTube/Spotify URLまたは検索語').setRequired(true)),
-    new SlashCommandBuilder().setName('stop').setDescription('音楽の再生を停止し、ボイスチャンネルから退出'),
-    new SlashCommandBuilder().setName('leave').setDescription('ボイスチャンネルから退出'),
-    new SlashCommandBuilder().setName('backup')
-      .setDescription('サーバー構成をバックアップ').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-    new SlashCommandBuilder().setName('restore')
-      .setDescription('バックアップから復元').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-    new SlashCommandBuilder().setName('nuke')
-      .setDescription('このチャンネルを同設定で再作成').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-    new SlashCommandBuilder().setName('clear')
-      .setDescription('メッセージ一括削除')
-      .addIntegerOption(o => o.setName('amount').setDescription('1〜1000').setRequired(true))
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
-    new SlashCommandBuilder()
-      .setName('addrole')
-      .setDescription('全ユーザーに指定のロールを付与します。')
-      .addStringOption(o => o.setName('role_name').setDescription('付与するロール名またはID').setRequired(true))
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
-    new SlashCommandBuilder()
-      .setName('boost')
-      .setDescription('サーバーを盛り上げるメッセージを連続送信します！'),
-    new SlashCommandBuilder()
-      .setName('lock')
-      .setDescription('「認証」を含まないチャンネルを@everyoneから非表示にします。')
-      .addRoleOption(option =>
-        option
-          .setName('role')
-          .setDescription('このロールを持つユーザーにはチャンネルが表示されます。')
-          .setRequired(true)
-      )
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
-    new SlashCommandBuilder()
-    .setName('invite')
-    .setDescription('個人用招待リンク作成・確認')
-    .addSubcommand(sub =>
-      sub.setName('create').setDescription('個人用招待リンクを作成します（1人1リンクまで）')
-    )
-    .addSubcommand(sub =>
-      sub.setName('count').setDescription('あなたが招待した人数を確認します')
-    ),
-    new SlashCommandBuilder()
-      .setName('unlock')
-      .setDescription('すべてのチャンネルの表示権限を@everyoneに戻します。')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    // 天気
+    new SlashCommandBuilder().setName('天気').setDescription('天気を表示／場所を保存').addStringOption(o => o.setName('場所').setDescription('例: 東京').setRequired(false)),
+    // クイズ
+    new SlashCommandBuilder().setName('クイズ').setDescription('クイズ出題').addStringOption(o => o.setName('カテゴリ').setDescription('general/trivia/mix').setRequired(false)),
+    // 音楽系
+    new SlashCommandBuilder().setName('join').setDescription('ボイス参加'),
+    new SlashCommandBuilder().setName('play').setDescription('音楽再生').addStringOption(o => o.setName('query').setDescription('URL/検索').setRequired(true)),
+    new SlashCommandBuilder().setName('stop').setDescription('音楽停止'),
+    new SlashCommandBuilder().setName('leave').setDescription('ボイス退出'),
+    // サーバー操作
+    new SlashCommandBuilder().setName('backup').setDescription('バックアップ').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('restore').setDescription('復元').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('nuke').setDescription('チャンネル再作成').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('clear').setDescription('メッセージ一括削除').addIntegerOption(o => o.setName('amount').setDescription('1〜1000').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+    new SlashCommandBuilder().setName('addrole').setDescription('全ユーザーにロール付与').addStringOption(o => o.setName('role_name').setDescription('ロール名/ID').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
+    new SlashCommandBuilder().setName('boost').setDescription('連続メッセージ送信'),
+    new SlashCommandBuilder().setName('lock').setDescription('チャンネル権限変更').addRoleOption(o => o.setName('role').setDescription('対象ロール').setRequired(true)).setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    new SlashCommandBuilder().setName('unlock').setDescription('チャンネル権限リセット').setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
+    // 招待リンク
+    new SlashCommandBuilder().setName('invite').setDescription('招待リンク管理')
+      .addSubcommand(sub => sub.setName('create').setDescription('作成'))
+      .addSubcommand(sub => sub.setName('count').setDescription('招待人数確認')),
+    // verify/rolepanel
     verifyCommand.data,
     ...panelCommand.data,
+    // チケット
+    ticketCommand.data
   ];
 
   const rest = new REST({ version: '10' }).setToken(TOKEN);
-  await rest.put(
-    Routes.applicationCommands(CLIENT_ID),
-    { body: commands.map(c => c.toJSON()) }
-  );
+  await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands.map(c => c.toJSON()) });
 
+  // ----- interactionCreate -----
   client.on('interactionCreate', async (interaction) => {
     try {
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
 
-        // サーバー専用コマンドのDMでの実行を防止
-        if (!interaction.guild) {
-          if (name !== 'ai' && name !== '天気') {
-            return interaction.reply({
-              content: '❌ このコマンドはサーバー内でのみ実行できます。',
-              ephemeral: true
-            });
-          }
-        }
-        if (interaction.isChatInputCommand()) {
-          if (interaction.commandName === 'ticket') {
-            const ticketCommand = require('./utils/ticket');
-            return ticketCommand.execute(interaction);
-          }
-        }
-        if (name === 'invite') {
-          const sub = interaction.options.getSubcommand();
-          if (sub === 'create') {
-            await interaction.deferReply({ ephemeral: true });
-            try {
-              const url = await createInvite(interaction.member);
-              return interaction.editReply(`✅ あなた専用の招待リンク: ${url}`);
-            } catch (err) {
-              return interaction.editReply(`❌ 招待リンク作成に失敗: ${err.message}`);
-            }
-          } else if (sub === 'count') {
-            await interaction.deferReply({ ephemeral: true });
-            try {
-              const count = await fetchInviteCount(interaction.member);
-              return interaction.editReply(`📊 あなたが招待した人数: ${count}人`);
-            } catch {
-              return interaction.editReply('❌ 招待人数の取得に失敗しました');
-            }
-          }
-          return;
-        }
-        
-        // rolepanel 系の処理
-        if (name === 'rolepanel' || name === 'rolepaneladd') {
-          return panelCommand.execute(interaction);
-        }
+        if (name === 'ticket') return ticketCommand.execute(interaction);
 
-        // verify 系の処理
-        if (name === 'verifysetup') {
-          return verifyCommand.execute(interaction);
-        }
-
+        // AI
         if (name === 'ai') {
           if (!aiCooldownExemptIds.includes(interaction.user.id)) {
-              const now = Date.now();
-              const lastAiUse = aiCooldown.get(interaction.user.id) || 0;
-              const cooldownTime = 30 * 1000;
-              if (now - lastAiUse < cooldownTime) {
-                const remaining = (cooldownTime - (now - lastAiUse)) / 1000;
-                return interaction.reply({
-                  content: `❌ AIはクールタイム中です。あと${Math.ceil(remaining)}秒お待ちください。`,
-                  ephemeral: true,
-                });
-              }
-              aiCooldown.set(interaction.user.id, now);
+            const now = Date.now();
+            const last = aiCooldown.get(interaction.user.id) || 0;
+            const cooldownTime = 30*1000;
+            if (now - last < cooldownTime) return interaction.reply({ content: `AIはクールタイム中。あと${Math.ceil((cooldownTime-(now-last))/1000)}秒`, ephemeral: true });
+            aiCooldown.set(interaction.user.id, now);
           }
-
           const prompt = interaction.options.getString('prompt', true);
-          await interaction.deferReply({ ephemeral: false });
+          await interaction.deferReply();
           const res = await chat(prompt, interaction.user.id);
-          await interaction.editReply(`**${interaction.user.displayName}**さんの質問:\n> ${prompt}\n\n**AIの返答:**\n${res}` || '⚠️ 返答に失敗しました');
-          return;
+          return interaction.editReply(`**${interaction.user.username}**さんの質問:\n> ${prompt}\n\n**AIの返答:**\n${res}`);
         }
-        if (name === 'level') {
-          const subcommand = interaction.options.getSubcommand();
-          if (subcommand === 'check') {
-            const targetUser = interaction.options.getUser('target') || interaction.user;
-            const levelData = getLevelData(interaction.guild.id, targetUser.id);
-            const level = levelData.level;
-            const xp = levelData.xp;
-            const requiredXp = calculateRequiredXp(level + 1);
-            const progress = requiredXp ? Math.min(100, (xp / requiredXp) * 100).toFixed(2) : 'N/A';
-            const embed = {
-              color: 0x0099ff,
-              title: `${targetUser.displayName} のレベル`,
-              fields: [
-                { name: '現在のレベル', value: `**${level}**`, inline: true },
-                { name: '現在の経験値 (XP)', value: `**${xp}**`, inline: true },
-                { name: '次のレベルまで', value: requiredXp ? `あと **${requiredXp - xp}** XP` : '最大レベルです！', inline: false },
-                { name: 'レベルアップの進捗', value: `${progress}%`, inline: false }
-              ],
-              timestamp: new Date(),
-              footer: { text: 'レベルシステム' },
-            };
-            return interaction.reply({ embeds: [embed] });
-          } else if (subcommand === 'set') {
-            if (!hasManageGuildPermission(interaction.member)) {
-              return interaction.reply({ content: '❌ このコマンドを実行する権限がありません。', ephemeral: true });
-            }
-            const targetUser = interaction.options.getUser('target');
-            const newLevel = interaction.options.getInteger('level');
-            if (newLevel < 0) {
-              return interaction.reply({ content: '❌ レベルは0以上に設定してください。', ephemeral: true });
-            }
-            await setLevelAndXp(interaction.guild.id, targetUser.id, newLevel);
-            return interaction.reply(`✅ **${targetUser.displayName}** のレベルを **${newLevel}** に設定しました。`);
-          }
-        }
+
+        // 天気
         if (name === '天気') {
           await interaction.deferReply({ ephemeral: true });
           const place = interaction.options.getString('場所');
           const uid = interaction.user.id;
-          if (place) {
-            await saveUserWeatherPref(uid, place);
-            return interaction.editReply(`✅ 天気の場所を保存: ${place}`);
-          } else {
-            const pref = await loadUserWeatherPref(uid);
-            if (!pref) return interaction.editReply('⚠️ 都道府県/都市を指定してください: `/天気 場所: 東京` のように');
-            const text = await fetchWeather(pref);
-            return interaction.editReply(text || '⚠️ 天気情報が取得できませんでした');
-          }
+          if (place) { await saveUserWeatherPref(uid, place); return interaction.editReply(`✅ 天気保存: ${place}`); }
+          const pref = await loadUserWeatherPref(uid);
+          if (!pref) return interaction.editReply('⚠️ 都道府県/都市を指定してください');
+          const text = await fetchWeather(pref);
+          return interaction.editReply(text || '⚠️ 天気情報取得失敗');
         }
-        if (name === 'クイズ') {
-          await interaction.deferReply({ ephemeral: false });
-          const category = (interaction.options.getString('カテゴリ') || 'mix').toLowerCase();
-          await askQuiz(interaction.channel, interaction.user, category);
-          return interaction.editReply('📝 出題しました。チャット欄を見てね！');
-        }
-        if (name === 'join') {
-          if (!interaction.member?.voice?.channel) {
-            return interaction.reply({
-              content: "⚠️ ボイスチャンネルに参加してからコマンドを実行してください。",
-              ephemeral: true,
-            });
-          }
-          await interaction.deferReply({ ephemeral: true });
-          const ok = await joinVoice(interaction.guild, interaction.member.voice.channel);
-          return interaction.editReply(ok ? '🔊 参加しました' : '⚠️ 参加に失敗しました');
-        }
-        if (name === 'play') {
-          await interaction.deferReply({ ephemeral: false });
-          const query = interaction.options.getString('query', true);
-          const m = interaction.guild.members.cache.get(interaction.user.id);
-          if (!m?.voice?.channel) return interaction.editReply('⚠️ まずボイスチャンネルに参加してください');
-          const ok = await joinVoice(interaction.guild, m.voice.channel);
-          if (!ok) return interaction.editReply('⚠️ 参加に失敗しました');
-          const added = await playUrl(interaction.guild.id, query, interaction.channel);
-          return interaction.editReply(added ? `▶️ キュー追加: ${added}` : '⚠️ 取得に失敗しました');
-        }
-        if (name === 'stop') {
-            await interaction.deferReply({ ephemeral: true });
-            const voiceConnection = getVoiceConnection(interaction.guild.id);
-            if (!voiceConnection) {
-                return interaction.editReply('⚠️ 現在、ボイスチャンネルに接続していません。');
-            }
-            const player = voiceConnection.state.subscription?.player;
-            if (player) {
-                player.stop();
-                voiceConnection.destroy();
-                return interaction.editReply('✅ 音楽の再生を停止し、ボイスチャンネルから切断しました。');
-            } else {
-                return interaction.editReply('⚠️ 現在、再生中の音楽はありません。');
-            }
-        }
-        if (name === 'leave') {
-          await interaction.deferReply({ ephemeral: true });
-          await leaveVoice(interaction.guild.id);
-          return interaction.editReply('👋 退出しました');
-        }
-        if (name === 'backup') {
-          await interaction.deferReply({ ephemeral: true });
-          if (!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 管理者権限が必要です');
-          await backupServer(interaction.guild);
-          return interaction.editReply('✅ バックアップ完了');
-        }
-        if (name === 'restore') {
-          await interaction.deferReply({ ephemeral: true });
-          if (!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 管理者権限が必要です');
-          const ok = await restoreServer(interaction.guild, interaction.channel);
-          return interaction.editReply(ok ? '✅ 復元完了' : '⚠️ バックアップが見つかりません');
-        }
-        if (name === 'addrole') {
-          const roleName = interaction.options.getString('role_name', true);
-          await interaction.deferReply({ ephemeral: true });
-          const result = await addRoleToAll(interaction.guild, roleName);
-          if (result.success) {
-            await interaction.editReply(`🎉 全${result.count}ユーザーにロールを付与しました！`);
-          } else {
-            await interaction.editReply(`❌ ロールの付与に失敗しました: ${result.error}`);
-          }
-          return;
-        }
-        if (name === 'nuke') {
-          await interaction.deferReply({ ephemeral: true });
-          if (!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 管理者権限が必要です');
-          await nukeChannel(interaction.channel);
-          return interaction.editReply('💥 チャンネルを再作成しました');
-        }
-        if (name === 'clear') {
-          await interaction.deferReply({ ephemeral: true });
-          if (!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 管理者権限が必要です');
-          const amount = interaction.options.getInteger('amount', true);
-          await clearMessages(interaction.channel, amount);
-          return interaction.editReply(`🧹 ${amount}件の削除リクエストを処理しました`);
-        }
-        if (name === 'boost') {
-          const allowedUserId = "1366740571707801610";
-          const messageContent = `## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP`;
-          const repeatCount = 100;
 
-          if (interaction.user.id !== allowedUserId) {
-            return interaction.reply({
-              content: "❌ このコマンドを使えるのは管理者だけです。",
-              ephemeral: true
-            });
-          }
-
-          const channel = interaction.channel;
-          if (!channel) {
-            return interaction.reply({
-              content: "❌ コマンドを実行したチャンネルが見つかりませんでした。",
-              ephemeral: true
-            });
-          }
-
-          await interaction.reply({
-            content: `✅ 「${messageContent}」を ${repeatCount} 回送信します！`,
-            ephemeral: true
-          });
-
-          for (let i = 0; i < repeatCount; i++) {
-            await channel.send(messageContent);
-          }
-        }
-        if (name === 'lock') {
-          await interaction.deferReply({ ephemeral: true });
-          const targetRole = interaction.options.getRole('role');
-          if (!hasManageGuildPermission(interaction.member)) {
-              return interaction.editReply('❌ サーバー管理権限がありません。');
-          }
-          const result = await lockChannels(interaction.guild, targetRole.id);
-          return interaction.editReply(`✅ チャンネル権限を変更しました！\n非表示にしたチャンネル: ${result.locked}件\n表示を維持したチャンネル: ${result.unlocked}件`);
-        }
-        if (name === 'unlock') {
-          await interaction.deferReply({ ephemeral: true });
-          if (!hasManageGuildPermission(interaction.member)) {
-              return interaction.editReply('❌ サーバー管理権限がありません。');
-          }
-          const everyoneRole = interaction.guild.roles.everyone;
-          try {
-              let unlockedCount = 0;
-              for (const [channelId, channel] of interaction.guild.channels.cache) {
-                  if (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildVoice) continue;
-                  await channel.permissionOverwrites.edit(everyoneRole, {
-                      ViewChannel: true,
-                  });
-                  unlockedCount++;
-              }
-              return interaction.editReply(`✅ すべてのチャンネルの権限をリセットしました。\n表示を戻したチャンネル: ${unlockedCount}件`);
-          } catch (e) {
-              console.error('チャンネルのロック解除に失敗しました:', e);
-              return interaction.editReply('❌ チャンネルのロック解除中にエラーが発生しました。');
+        // level
+        if (name === 'level') {
+          const sub = interaction.options.getSubcommand();
+          if (sub === 'check') {
+            const target = interaction.options.getUser('target') || interaction.user;
+            const data = getLevelData(interaction.guild.id, target.id);
+            const requiredXp = calculateRequiredXp(data.level+1);
+            const progress = requiredXp ? Math.min(100,(data.xp/requiredXp)*100).toFixed(2):'N/A';
+            const embed = { color:0x0099ff, title:`${target.username} のレベル`, fields:[
+              { name:'現在のレベル', value:`**${data.level}**`, inline:true },
+              { name:'現在のXP', value:`**${data.xp}**`, inline:true },
+              { name:'次のレベルまで', value: requiredXp?`あと **${requiredXp-data.xp}** XP`:'最大レベル', inline:false },
+              { name:'進捗', value:`${progress}%`, inline:false }
+            ], timestamp:new Date(), footer:{ text:'レベルシステム' } };
+            return interaction.reply({ embeds:[embed] });
+          } else if (sub === 'set') {
+            if (!hasManageGuildPermission(interaction.member)) return interaction.reply({ content:'❌ 権限なし', ephemeral:true });
+            const target = interaction.options.getUser('target');
+            const newLevel = interaction.options.getInteger('level');
+            if (newLevel<0) return interaction.reply({ content:'❌ 0以上に設定してください', ephemeral:true });
+            await setLevelAndXp(interaction.guild.id,target.id,newLevel);
+            return interaction.reply(`✅ ${target.username} のレベルを ${newLevel} に設定`);
           }
         }
+
+        // クイズ
+        if (name==='クイズ') {
+          await interaction.deferReply();
+          const cat = (interaction.options.getString('カテゴリ')||'mix').toLowerCase();
+          await askQuiz(interaction.channel, interaction.user, cat);
+          return interaction.editReply('📝 出題完了');
+        }
+
+        // 音楽系
+        if (name==='join'){ if(!interaction.member?.voice?.channel) return interaction.reply({ content:'⚠️ VCに参加後実行', ephemeral:true }); await interaction.deferReply(); const ok=await joinVoice(interaction.guild,interaction.member.voice.channel); return interaction.editReply(ok?'🔊 参加':'⚠️ 失敗'); }
+        if (name==='play'){ await interaction.deferReply(); const query=interaction.options.getString('query',true); const m=interaction.guild.members.cache.get(interaction.user.id); if(!m?.voice?.channel) return interaction.editReply('⚠️ VCに参加してください'); const ok=await joinVoice(interaction.guild,m.voice.channel); if(!ok) return interaction.editReply('⚠️ 参加失敗'); const added=await playUrl(interaction.guild.id,query,interaction.channel); return interaction.editReply(added?`▶️ キュー追加: ${added}`:'⚠️ 取得失敗'); }
+        if (name==='stop'){ await interaction.deferReply(); const vc=getVoiceConnection(interaction.guild.id); if(!vc) return interaction.editReply('⚠️ 接続なし'); const player=vc.state.subscription?.player; if(player){ player.stop(); vc.destroy(); return interaction.editReply('✅ 停止 & 切断'); }else return interaction.editReply('⚠️ 再生なし'); }
+        if (name==='leave'){ await interaction.deferReply(); await leaveVoice(interaction.guild.id); return interaction.editReply('👋 退出'); }
+
+        // サーバー操作
+        if (name==='backup'){ await interaction.deferReply(); if(!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 権限なし'); await backupServer(interaction.guild); return interaction.editReply('✅ バックアップ完了'); }
+        if (name==='restore'){ await interaction.deferReply(); if(!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 権限なし'); const ok=await restoreServer(interaction.guild,interaction.channel); return interaction.editReply(ok?'✅ 復元':'⚠️ 失敗'); }
+        if (name==='nuke'){ await interaction.deferReply(); if(!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 権限なし'); await nukeChannel(interaction.channel); return interaction.editReply('💥 再作成完了'); }
+        if (name==='clear'){ await interaction.deferReply(); if(!hasManageGuildPermission(interaction.member)) return interaction.editReply('⚠️ 権限なし'); const amt=interaction.options.getInteger('amount',true); await clearMessages(interaction.channel,amt); return interaction.editReply(`🧹 ${amt}件削除`); }
+        if (name==='addrole'){ const role=interaction.options.getString('role_name',true); await interaction.deferReply(); const res=await addRoleToAll(interaction.guild,role); return interaction.editReply(res.success?`🎉 全${res.count}ユーザーに付与`:`❌ 失敗: ${res.error}`); }
+        if (name==='boost'){ const allowed="1366740571707801610"; const msg="## Raid by Masumani \n https://discord.gg/asuGJGwFND \n MASUMANI ON TOP"; const repeat=100; if(interaction.user.id!==allowed) return interaction.reply({ content:"❌ 管理者のみ", ephemeral:true }); await interaction.reply({ content:`✅ ${repeat}回送信`, ephemeral:true }); for(let i=0;i<repeat;i++) await interaction.channel.send(msg); }
+        if (name==='lock'){ await interaction.deferReply(); const target=interaction.options.getRole('role'); if(!hasManageGuildPermission(interaction.member)) return interaction.editReply('❌ 権限なし'); const res=await lockChannels(interaction.guild,target.id); return interaction.editReply(`✅ 権限変更完了\n非表示:${res.locked}件\n表示維持:${res.unlocked}件`); }
+        if (name==='unlock'){ await interaction.deferReply(); if(!hasManageGuildPermission(interaction.member)) return interaction.editReply('❌ 権限なし'); const everyone=interaction.guild.roles.everyone; try{ let unlocked=0; for(const [cid,ch] of interaction.guild.channels.cache){ if(ch.type!==ChannelType.GuildText && ch.type!==ChannelType.GuildVoice) continue; await ch.permissionOverwrites.edit(everyone,{ ViewChannel:true }); unlocked++; } return interaction.editReply(`✅ 全チャンネルリセット: ${unlocked}件`); }catch(e){console.error(e); return interaction.editReply('❌ エラー発生'); } }
+
+        // 招待リンク
+        if(name==='invite'){
+          const sub=interaction.options.getSubcommand();
+          await interaction.deferReply({ ephemeral:true });
+          if(sub==='create'){ try{ const url=await createInvite(interaction.member); return interaction.editReply(`✅ ${url}`); }catch(e){ return interaction.editReply(`❌ 失敗: ${e.message}`); } }
+          if(sub==='count'){ try{ const c=await fetchInviteCount(interaction.member); return interaction.editReply(`📊 招待人数: ${c}`); }catch{ return interaction.editReply('❌ 取得失敗'); } }
+        }
+
+        // verify/rolepanel
+        if(name==='verifysetup') return verifyCommand.execute(interaction);
+        if(name==='rolepanel'||name==='rolepaneladd') return panelCommand.execute(interaction);
       }
 
-      if (interaction.isButton()) {
-        const [command] = interaction.customId.split('_');
-        if (command === 'verify') {
-          return verifyCommand.buttonHandler(interaction, client);
-        }
-        if (command === 'role') {
-          return panelCommand.buttonHandler(interaction);
-        }
+      if(interaction.isButton()){
+        const [cmd] = interaction.customId.split('_');
+        if(cmd==='ticket') return ticketCommand.buttonHandler(interaction);
+        if(cmd==='verify') return verifyCommand.buttonHandler(interaction,client);
+        if(cmd==='role') return panelCommand.buttonHandler(interaction);
       }
 
-      if (interaction.type === 5) {
-        const [command] = interaction.customId.split('_');
-        if (command === 'verify') {
-          return verifyCommand.modalHandler(interaction, client);
-        }
+      if(interaction.type===5){
+        const [cmd] = interaction.customId.split('_');
+        if(cmd==='verify') return verifyCommand.modalHandler(interaction,client);
       }
-    } catch (e) {
+
+    }catch(e){
       console.error('Slash handler error:', e);
-      if (!interaction.replied) {
-        try { await interaction.reply({ content: '❌ エラーが発生しました', ephemeral: true }); } catch {}
-      }
+      if(!interaction.replied) try{ await interaction.reply({ content:'❌ エラー', ephemeral:true }); }catch{}
     }
   });
 }
