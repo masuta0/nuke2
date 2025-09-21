@@ -350,53 +350,69 @@ async function nukeChannel(channel) {
   return newCh;
 }
 
-async function clearMessages(channel, amount, feedbackChannel, targetUser = null) {
+/**
+ * メッセージ削除
+ * @param {TextChannel} channel 
+ * @param {number} amount 削除件数
+ * @param {TextChannel|null} feedbackChannel 
+ * @param {GuildMember|null} targetUser 指定ユーザーのみ削除
+ */
+async function clearMessages(channel, amount, feedbackChannel = null, targetUser = null) {
   let messagesToDelete = amount;
   let lastMessageId = null;
   let deletedCount = 0;
 
-  const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
-
-  const slowDeleteMsg = await feedbackChannel.send(`🧹 メッセージ削除開始...`).catch(()=>{});
+  const now = Date.now();
+  const twoWeeksAgo = now - (14 * 24 * 60 * 60 * 1000);
 
   while (messagesToDelete > 0) {
     const fetchLimit = Math.min(messagesToDelete, 100);
     const fetched = await channel.messages.fetch({ limit: fetchLimit, before: lastMessageId });
     if (fetched.size === 0) break;
 
-    // 14日以内のメッセージを対象
+    // ユーザー指定がある場合はフィルター
     let recentMessages = fetched.filter(msg => msg.createdTimestamp > twoWeeksAgo);
     if (targetUser) recentMessages = recentMessages.filter(msg => msg.author.id === targetUser.id);
 
     if (recentMessages.size > 0) {
-      await channel.bulkDelete(recentMessages, true).catch(e => console.error(e));
+      await channel.bulkDelete(recentMessages, true).catch(e => {
+        console.error(`Bulk delete failed: ${e}`);
+        if(feedbackChannel) feedbackChannel.send(`⚠️ メッセージの一括削除に失敗しました。`).catch(()=>{});
+      });
       deletedCount += recentMessages.size;
     }
 
     messagesToDelete -= fetched.size;
     lastMessageId = fetched.last().id;
 
-    // 14日以上前のメッセージは個別削除
     if (recentMessages.size < fetched.size) {
-      const oldMessages = fetched.filter(msg => msg.createdTimestamp <= twoWeeksAgo);
-      for (const [id, msg] of oldMessages) {
-        if (messagesToDelete <= 0) break;
-        if (targetUser && msg.author.id !== targetUser.id) continue;
-        await msg.delete().catch(e => console.error(e));
-        deletedCount++;
-        messagesToDelete--;
-        await delay(500); // サーバー負荷軽減
-      }
+      break;
     }
-
-    if (slowDeleteMsg) slowDeleteMsg.edit(`🧹 ${deletedCount}件削除中...`).catch(()=>{});
   }
 
-  if (slowDeleteMsg) slowDeleteMsg.edit(`✅ ${deletedCount}件のメッセージを削除しました${targetUser ? `（${targetUser.tag}）` : ""}`).catch(()=>{});
+  // 14日以上前のメッセージは個別削除
+  if (messagesToDelete > 0) {
+    const slowDeleteMsg = await (feedbackChannel?.send('⚠️ 14日以上前のメッセージは個別削除します...') || Promise.resolve(null));
+    while (messagesToDelete > 0) {
+      const fetched = await channel.messages.fetch({ limit: 100, before: lastMessageId });
+      if (fetched.size === 0) break;
+
+      let filtered = targetUser ? fetched.filter(m => m.author.id === targetUser.id) : fetched;
+
+      for (const [id, msg] of filtered) {
+        if (messagesToDelete <= 0) break;
+        await msg.delete().catch(e => console.error(`Failed to delete message: ${e}`));
+        deletedCount++;
+        messagesToDelete--;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      lastMessageId = fetched.last().id;
+      if (slowDeleteMsg) slowDeleteMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`).catch(()=>{});
+    }
+  }
 
   return deletedCount;
 }
-
 async function addRoleToAll(guild, roleName) {
   const role = guild.roles.cache.find(r => r.name === roleName || r.id === roleName);
   if (!role) {

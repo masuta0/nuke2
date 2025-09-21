@@ -219,26 +219,29 @@ module.exports = async function handlePrefixMessage(client, msg) {
           if (!hasManageGuildPermission(msg.member))
             return msg.reply("⚠️ 管理者権限が必要です");
 
-          // コマンドメッセージをまず削除
-          await msg.delete().catch(() => {});
+          // 最初にコマンドメッセージを削除
+          await msg.delete().catch(()=>{});
 
-          const amount = parseInt(args[0] || "0", 10);
+          if (args.length === 0)
+            return msg.channel.send("使い方: `!clear <数> [@ユーザー]`");
+
+          const amount = parseInt(args[0], 10);
           if (!amount || amount < 1 || amount > 1000)
-            return msg.channel.send("使い方: `!clear 1〜1000 [ユーザー]`").then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
+            return msg.channel.send("⚠️ 削除件数は1〜1000の範囲で指定してください");
 
-          // ユーザー指定（メンションまたはID）
+          // ユーザー指定がある場合
           let targetUser = null;
-          if (args[1]) {
-            const id = args[1].replace(/[<@!>]/g, '');
-            targetUser = msg.guild.members.cache.get(id) || null;
-            if (!targetUser)
-              return msg.channel.send("⚠️ 指定されたユーザーが見つかりません").then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
+          if (msg.mentions.members.size > 0) {
+            targetUser = msg.mentions.members.first();
           }
 
-          const deletedCount = await clearMessages(msg.channel, amount, null, targetUser);
+          // メッセージ送信
+          const waitingMsg = await msg.channel.send(`🧹 メッセージ削除中...${targetUser ? ` (対象: ${targetUser.user.tag})` : ''}`);
 
-          const confirmMsg = await msg.channel.send(`🧹 ${deletedCount}件のメッセージを削除しました。`);
-          setTimeout(() => confirmMsg.delete().catch(() => {}), 5000);
+          // guild.js 側で targetUser を渡す
+          const deletedCount = await clearMessages(msg.channel, amount, waitingMsg, targetUser);
+
+          await waitingMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`);
           break;
         }
       default: {
