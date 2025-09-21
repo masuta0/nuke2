@@ -140,6 +140,12 @@ async function registerSlashCommands(client) {
             });
           }
         }
+        if (interaction.isChatInputCommand()) {
+          if (interaction.commandName === 'ticket') {
+            const ticketCommand = require('./utils/ticket');
+            return ticketCommand.execute(interaction);
+          }
+        }
         if (name === 'invite') {
           const sub = interaction.options.getSubcommand();
           if (sub === 'create') {
