@@ -1,25 +1,26 @@
 // utils/music.js
-const {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  AudioPlayerStatus
+const { 
+  joinVoiceChannel, 
+  createAudioPlayer, 
+  createAudioResource, 
+  AudioPlayerStatus 
 } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
+const https = require('https');
 
-// 接続情報
+// 接続情報を保持する Map
 const connections = new Map();
 const players = new Map();
-const queues = new Map(); // ギルドごとの再生キュー
 
-// === VC参加 ===
+// === ボイスチャンネル参加 ===
 async function joinVoice(guild, channel) {
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: guild.id,
-    adapterCreator: guild.voiceAdapterCreator
+    adapterCreator: guild.voiceAdapterCreator,
+    selfDeaf: false
   });
   connections.set(guild.id, connection);
   return true;
@@ -32,70 +33,77 @@ async function leaveVoice(guildId) {
     conn.destroy();
     connections.delete(guildId);
     players.delete(guildId);
-    queues.delete(guildId);
   }
 }
 
-// === YouTube / URL 再生 ===
-async function playUrl(guildId, query, textChannel, voiceChannel) {
+// === 添付ファイルをダウンロードして再生 ===
+async function playAttachment(guildId, url, textChannel, voiceChannel) {
   if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
 
-  // 保存ファイル名
-  const tmpFile = path.join(__dirname, `../tmp_${Date.now()}.mp3`);
+  const tmpFile = path.join(__dirname, `../tmp_attach_${Date.now()}.mp3`);
 
-  // yt-dlp コマンド
-  // cookie.txt を置いたら bot 判定回避できる
-  const cookieOption = fs.existsSync(path.join(__dirname, '../cookie.txt'))
-    ? `--cookies "${path.join(__dirname, '../cookie.txt')}"`
-    : '';
-
-  const cmd = `yt-dlp -x --audio-format mp3 -o "${tmpFile}" ${cookieOption} "${query}" --print "%(title)s"`;
-
-  let title = null;
-  try {
-    title = await new Promise((resolve, reject) => {
-      exec(cmd, (err, stdout, stderr) => {
-        if (err) return reject(err);
-        resolve(stdout.trim().split('\n').pop()); // 最後の行にタイトルが出る
-      });
+  // ダウンロード
+  await new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(tmpFile);
+    https.get(url, response => {
+      response.pipe(file);
+      file.on('finish', () => file.close(resolve));
+    }).on('error', err => {
+      fs.unlink(tmpFile, () => {});
+      reject(err);
     });
-  } catch (err) {
-    console.error('yt-dlp エラー:', err);
-    textChannel.send(`❌ 曲の取得に失敗しました: ${query}`);
-    return null;
-  }
+  });
 
-  // キューに追加
-  if (!queues.has(guildId)) queues.set(guildId, []);
-  queues.get(guildId).push({ file: tmpFile, title, textChannel });
-  if (!players.has(guildId)) startNext(guildId, voiceChannel);
-
-  return title;
-}
-
-// === 次の曲を再生 ===
-function startNext(guildId, voiceChannel) {
-  const queue = queues.get(guildId);
-  if (!queue || queue.length === 0) {
-    players.delete(guildId);
-    return;
-  }
-
-  const { file, title, textChannel } = queue.shift();
   const player = createAudioPlayer();
-  const resource = createAudioResource(file);
+  const resource = createAudioResource(tmpFile, { inlineVolume: true });
+  resource.volume.setVolume(0.8);
 
   player.play(resource);
+
+  player.on(AudioPlayerStatus.Idle, () => {
+    player.stop();
+    fs.unlink(tmpFile, () => {}); // 再生後に削除
+  });
+  player.on('error', err => console.error('❌ Player error (attachment):', err));
+
   const conn = connections.get(guildId);
   conn.subscribe(player);
   players.set(guildId, player);
 
-  textChannel.send(`▶️ 再生中: **${title}**`);
+  textChannel.send(`📎 添付ファイル再生開始: ${url}`);
+}
+
+// === YouTube再生（yt-dlp利用） ===
+async function playYouTube(guildId, url, textChannel, voiceChannel) {
+  if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
+
+  const tmpFile = path.join(__dirname, `../tmp_${Date.now()}.wav`);
+
+  await new Promise((resolve, reject) => {
+    const cmd = `yt-dlp -x --audio-format wav -o "${tmpFile}" "${url}"`;
+    exec(cmd, (err, stdout, stderr) => {
+      if (err) return reject(err);
+      resolve(stdout);
+    });
+  });
+
+  const player = createAudioPlayer();
+  const resource = createAudioResource(tmpFile, { inlineVolume: true });
+  resource.volume.setVolume(0.8);
+
+  player.play(resource);
 
   player.on(AudioPlayerStatus.Idle, () => {
-    fs.unlink(file, () => {}); // 再生後に削除
-    startNext(guildId, voiceChannel); // 次へ
+    player.stop();
+    fs.unlink(tmpFile, () => {});
   });
+  player.on('error', err => console.error('❌ Player error (YouTube):', err));
+
+  const conn = connections.get(guildId);
+  conn.subscribe(player);
+  players.set(guildId, player);
+
+  textChannel.send(`🎵 YouTube再生開始: ${url}`);
 }
 
 // === 再生停止 ===
@@ -103,13 +111,13 @@ function stopMusic(guildId) {
   const player = players.get(guildId);
   if (!player) return false;
   player.stop();
-  queues.set(guildId, []); // キュークリア
   return true;
 }
 
 module.exports = {
   joinVoice,
   leaveVoice,
-  playUrl,
+  playAttachment,
+  playYouTube,
   stopMusic
 };
