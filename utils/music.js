@@ -1,7 +1,8 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { spawn } = require('child_process');
+const stream = require('stream');
 
 const connections = new Map();
 const players = new Map();
@@ -35,24 +36,24 @@ async function playNext(guildId, textChannel, voiceChannel) {
   if (!queue || queue.length === 0) return;
 
   const { url, title, isYouTube } = queue.shift();
-  let resourcePath = url;
 
+  let resource;
   if (isYouTube) {
-    // YouTubeは一時ファイルに保存
-    resourcePath = path.join(__dirname, `../tmp_${Date.now()}.mp3`);
-    await new Promise((resolve, reject) => {
-      const cmd = `yt-dlp -x --audio-format mp3 -o "${resourcePath}" "${url}"`;
-      exec(cmd, (err) => (err ? reject(err) : resolve()));
-    });
+    // yt-dlpで直接ストリーム再生
+    const ytdlp = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', url], { stdio: ['ignore', 'pipe', 'ignore'] });
+    const passThrough = new stream.PassThrough();
+    ytdlp.stdout.pipe(passThrough);
+    resource = createAudioResource(passThrough);
+  } else {
+    // 添付ファイル
+    resource = createAudioResource(url);
   }
 
   const player = createAudioPlayer();
-  const resource = createAudioResource(resourcePath);
   player.play(resource);
 
   player.on(AudioPlayerStatus.Idle, () => {
     player.stop();
-    if (isYouTube) fs.unlink(resourcePath, () => {});
     playNext(guildId, textChannel, voiceChannel);
   });
 
@@ -85,9 +86,10 @@ async function playYouTube(guildId, url, textChannel, voiceChannel) {
 
   // タイトル取得
   const title = await new Promise((resolve) => {
-    exec(`yt-dlp --get-title "${url}"`, (err, stdout) => {
-      resolve(err ? '不明なタイトル' : stdout.trim());
-    });
+    const ytdlp = spawn('yt-dlp', ['--get-title', url]);
+    let data = '';
+    ytdlp.stdout.on('data', chunk => data += chunk.toString());
+    ytdlp.on('close', () => resolve(data.trim() || '不明なタイトル'));
   });
 
   if (!queues.has(guildId)) queues.set(guildId, []);
@@ -114,7 +116,7 @@ async function playUrl(guildId, url, textChannel, voiceChannel) {
 function stopMusic(guildId) {
   const player = players.get(guildId);
   if (!player) return false;
-  queues.set(guildId, []); // キューを空にする
+  queues.set(guildId, []);
   player.stop();
   return true;
 }
