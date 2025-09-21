@@ -103,6 +103,15 @@ async function registerSlashCommands(client) {
       )
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
     new SlashCommandBuilder()
+    .setName('invite')
+    .setDescription('個人用招待リンク作成・確認')
+    .addSubcommand(sub =>
+      sub.setName('create').setDescription('個人用招待リンクを作成します（1人1リンクまで）')
+    )
+    .addSubcommand(sub =>
+      sub.setName('count').setDescription('あなたが招待した人数を確認します')
+    ),
+    new SlashCommandBuilder()
       .setName('unlock')
       .setDescription('すべてのチャンネルの表示権限を@everyoneに戻します。')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
@@ -130,7 +139,28 @@ async function registerSlashCommands(client) {
             });
           }
         }
-
+        if (name === 'invite') {
+          const sub = interaction.options.getSubcommand();
+          if (sub === 'create') {
+            await interaction.deferReply({ ephemeral: true });
+            try {
+              const url = await createInvite(interaction.member);
+              return interaction.editReply(`✅ あなた専用の招待リンク: ${url}`);
+            } catch (err) {
+              return interaction.editReply(`❌ 招待リンク作成に失敗: ${err.message}`);
+            }
+          } else if (sub === 'count') {
+            await interaction.deferReply({ ephemeral: true });
+            try {
+              const count = await fetchInviteCount(interaction.member);
+              return interaction.editReply(`📊 あなたが招待した人数: ${count}人`);
+            } catch {
+              return interaction.editReply('❌ 招待人数の取得に失敗しました');
+            }
+          }
+          return;
+        }
+        
         // rolepanel 系の処理
         if (name === 'rolepanel' || name === 'rolepaneladd') {
           return panelCommand.execute(interaction);
