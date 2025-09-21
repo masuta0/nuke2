@@ -1,19 +1,13 @@
-const {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  AudioPlayerStatus
-} = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
-const ytdl = require('ytdl-core'); // 🔹 ストリーミング用
 
 const connections = new Map();
 const players = new Map();
-const queues = new Map();
+const queues = new Map(); // ギルドごとの再生キュー
 
-// ===== VC参加 =====
+// VC参加
 async function joinVoice(guild, channel) {
   const connection = joinVoiceChannel({
     channelId: channel.id,
@@ -24,7 +18,7 @@ async function joinVoice(guild, channel) {
   return true;
 }
 
-// ===== VC退出 =====
+// VC退出
 async function leaveVoice(guildId) {
   const conn = connections.get(guildId);
   if (conn) {
@@ -35,33 +29,31 @@ async function leaveVoice(guildId) {
   }
 }
 
-// ===== 再生処理 =====
+// 再生処理
 async function playNext(guildId, textChannel, voiceChannel) {
   const queue = queues.get(guildId);
   if (!queue || queue.length === 0) return;
 
   const { url, title, isYouTube } = queue.shift();
-  const player = createAudioPlayer();
-  let resource;
+  let resourcePath = url;
 
   if (isYouTube) {
-    // 🔹 ytdl-core を使ってストリーミング再生
-    const stream = ytdl(url, {
-      filter: 'audioonly',
-      quality: 'highestaudio',
-      highWaterMark: 1 << 25 // バッファ拡大で安定性アップ
+    // YouTubeは一時ファイルに保存
+    resourcePath = path.join(__dirname, `../tmp_${Date.now()}.mp3`);
+    await new Promise((resolve, reject) => {
+      const cmd = `yt-dlp -x --audio-format mp3 -o "${resourcePath}" "${url}"`;
+      exec(cmd, (err) => (err ? reject(err) : resolve()));
     });
-    resource = createAudioResource(stream);
-  } else {
-    // 添付ファイル（URLそのまま再生）
-    resource = createAudioResource(url);
   }
 
+  const player = createAudioPlayer();
+  const resource = createAudioResource(resourcePath);
   player.play(resource);
 
   player.on(AudioPlayerStatus.Idle, () => {
     player.stop();
-    playNext(guildId, textChannel, voiceChannel); // 次の曲へ
+    if (isYouTube) fs.unlink(resourcePath, () => {});
+    playNext(guildId, textChannel, voiceChannel);
   });
 
   const conn = connections.get(guildId);
@@ -71,7 +63,7 @@ async function playNext(guildId, textChannel, voiceChannel) {
   textChannel.send(`🎵 再生開始: **${title}**`);
 }
 
-// ===== 添付ファイルを追加 =====
+// 添付ファイルを追加
 async function playAttachment(guildId, url, textChannel, voiceChannel) {
   if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
 
@@ -87,18 +79,16 @@ async function playAttachment(guildId, url, textChannel, voiceChannel) {
   return title;
 }
 
-// ===== YouTubeを追加（高速化済み） =====
+// YouTubeを追加
 async function playYouTube(guildId, url, textChannel, voiceChannel) {
   if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
 
-  // 🔹 タイトルだけ取得
-  let title = '不明なタイトル';
-  try {
-    const info = await ytdl.getInfo(url);
-    title = info.videoDetails.title;
-  } catch (e) {
-    console.error('タイトル取得失敗:', e);
-  }
+  // タイトル取得
+  const title = await new Promise((resolve) => {
+    exec(`yt-dlp --get-title "${url}"`, (err, stdout) => {
+      resolve(err ? '不明なタイトル' : stdout.trim());
+    });
+  });
 
   if (!queues.has(guildId)) queues.set(guildId, []);
   queues.get(guildId).push({ url, title, isYouTube: true });
@@ -111,7 +101,7 @@ async function playYouTube(guildId, url, textChannel, voiceChannel) {
   return title;
 }
 
-// ===== 共通エントリ =====
+// 共通エントリ
 async function playUrl(guildId, url, textChannel, voiceChannel) {
   if (url.includes('youtube.com') || url.includes('youtu.be')) {
     return playYouTube(guildId, url, textChannel, voiceChannel);
@@ -120,11 +110,11 @@ async function playUrl(guildId, url, textChannel, voiceChannel) {
   }
 }
 
-// ===== 停止 =====
+// 停止
 function stopMusic(guildId) {
   const player = players.get(guildId);
   if (!player) return false;
-  queues.set(guildId, []);
+  queues.set(guildId, []); // キューを空にする
   player.stop();
   return true;
 }
