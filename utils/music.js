@@ -1,8 +1,8 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const ytdl = require('ytdl-core');
+const { spawn } = require('child_process');
 const ytSearch = require('yt-search');
 
-const queues = new Map(); // guildIdごとにキューを保存
+const queues = new Map();
 
 function joinVoice(guild, voiceChannel) {
   try {
@@ -21,10 +21,9 @@ function joinVoice(guild, voiceChannel) {
 async function playUrl(guildId, query, textChannel) {
   let song;
 
-  // URLか検索ワードかを判定
-  if (ytdl.validateURL(query)) {
-    const info = await ytdl.getInfo(query);
-    song = { title: info.videoDetails.title, url: info.videoDetails.video_url };
+  // URLか検索かを判定
+  if (/^https?:\/\//.test(query)) {
+    song = { title: query, url: query };
   } else {
     const { videos } = await ytSearch(query);
     if (!videos.length) return null;
@@ -56,7 +55,7 @@ async function playUrl(guildId, query, textChannel) {
 
   if (!serverQueue.connection) {
     const connection = joinVoiceChannel({
-      channelId: textChannel.guild.members.me.voice.channel?.id || textChannel.guild.members.cache.get(textChannel.client.user.id)?.voice.channel?.id || textChannel.guild.members.me.voice?.channelId,
+      channelId: textChannel.guild.members.me.voice.channel?.id || textChannel.member.voice.channel.id,
       guildId: textChannel.guild.id,
       adapterCreator: textChannel.guild.voiceAdapterCreator,
     });
@@ -74,11 +73,19 @@ function playNext(guildId) {
   if (!serverQueue || !serverQueue.songs.length) return;
 
   const song = serverQueue.songs[0];
-  const stream = ytdl(song.url, { filter: 'audioonly', highWaterMark: 1 << 25 });
-  const resource = createAudioResource(stream);
+  const ytDlp = spawn('yt-dlp', [
+    '-f', 'bestaudio',
+    '-o', '-',
+    song.url
+  ], { shell: false });
 
+  const resource = createAudioResource(ytDlp.stdout);
   serverQueue.player.play(resource);
   serverQueue.textChannel.send(`▶️ 再生開始: **${song.title}**`);
+
+  ytDlp.stderr.on('data', (data) => {
+    console.error(`yt-dlp error: ${data}`);
+  });
 }
 
 function stopMusic(guildId) {
