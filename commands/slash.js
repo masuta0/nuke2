@@ -19,7 +19,7 @@ const { getLevelData, setLevelAndXp, calculateRequiredXp } = require('../utils/l
 const verifyCommand = require('../utils/verify');
 const panelCommand = require('../utils/panel');
 const { createInvite, fetchInviteCount } = require('../utils/inviteManager');
-const ticketSystem = require('./ticketSystem');
+const ticketSystem = require('../utils/ticket');
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
