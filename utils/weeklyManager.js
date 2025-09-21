@@ -2,7 +2,6 @@
 require('dotenv').config();
 const { PermissionsBitField } = require('discord.js');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./storage');
-const path = require('path');
 
 const REQUIRED_MESSAGES = 500;
 const COOLDOWN_TIME = 10 * 1000; // 10秒クールダウン
@@ -67,37 +66,40 @@ async function handleMessage(message, weeklyChannelId) {
 }
 
 /**
- * 週初めに全員権限リセット
+ * 週末リセット（日本時間 日曜23:59）
  */
 async function resetWeeklyChannel(client, weeklyChannelId) {
-  const guild = client.guilds.cache.first();
-  if (!guild) return;
+  for (const guild of client.guilds.cache.values()) {
+    const channel = guild.channels.cache.get(weeklyChannelId);
+    if (!channel?.isTextBased()) continue;
 
-  const channel = guild.channels.cache.get(weeklyChannelId);
-  if (!channel?.isTextBased()) return;
+    // チャンネル権限リセット
+    await channel.permissionOverwrites.set([]);
+  }
 
-  await channel.permissionOverwrites.set([]);
+  // メッセージカウントリセット
   messageCounts = {};
   await saveWeeklyData();
 
-  console.log('✅ 週間メッセージカウント＆チャンネル権限をリセットしました');
+  console.log('✅ 週間メッセージカウント＆チャンネル権限をリセットしました (日本時間 日曜23:59)');
 }
 
 /**
- * Botにイベントを登録してweekly監視を開始
+ * Botにイベント登録 & 自動リセット
  */
 function setupWeekly(client, weeklyChannelId) {
   client.on('messageCreate', async (message) => {
     await handleMessage(message, weeklyChannelId);
   });
 
-  // 毎週月曜日0時に自動リセット
-  setInterval(() => {
+  // 1分ごとに日本時間チェック
+  setInterval(async () => {
     const now = new Date();
-    if (now.getDay() === 1 && now.getHours() === 0 && now.getMinutes() === 0) {
-      resetWeeklyChannel(client, weeklyChannelId);
+    const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000); // 日本時間
+    if (jst.getDay() === 0 && jst.getHours() === 23 && jst.getMinutes() === 59) {
+      await resetWeeklyChannel(client, weeklyChannelId);
     }
-  }, 60 * 1000); // 1分ごとにチェック
+  }, 60 * 1000);
 }
 
 module.exports = { setupWeekly, loadWeeklyData, resetWeeklyChannel };
