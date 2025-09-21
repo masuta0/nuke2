@@ -77,7 +77,7 @@ const PROBATION_MS = 24 * 60 * 60 * 1000;
 
 const RAID_KEYWORDS = [
   'raid by', 'on top',
-  'invite', 'このサーバーをレイドしました', '包囲した',
+　'このサーバーをレイドしました', '包囲した','.ozeu','.dpko','ますまにの顔','ますまに顔'
 ];
 
 const DANGEROUS_PERMISSIONS = [
