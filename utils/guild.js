@@ -350,54 +350,49 @@ async function nukeChannel(channel) {
   return newCh;
 }
 
-async function clearMessages(channel, amount, feedbackChannel) {
+async function clearMessages(channel, amount, feedbackChannel, targetUser = null) {
   let messagesToDelete = amount;
   let lastMessageId = null;
   let deletedCount = 0;
 
-  const now = Date.now();
-  const twoWeeksAgo = now - (14 * 24 * 60 * 60 * 1000);
+  const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+
+  const slowDeleteMsg = await feedbackChannel.send(`🧹 メッセージ削除開始...`).catch(()=>{});
 
   while (messagesToDelete > 0) {
     const fetchLimit = Math.min(messagesToDelete, 100);
     const fetched = await channel.messages.fetch({ limit: fetchLimit, before: lastMessageId });
     if (fetched.size === 0) break;
 
-    const recentMessages = fetched.filter(msg => msg.createdTimestamp > twoWeeksAgo);
+    // 14日以内のメッセージを対象
+    let recentMessages = fetched.filter(msg => msg.createdTimestamp > twoWeeksAgo);
+    if (targetUser) recentMessages = recentMessages.filter(msg => msg.author.id === targetUser.id);
 
     if (recentMessages.size > 0) {
-      await channel.bulkDelete(recentMessages, true).catch(e => {
-        console.error(`Bulk delete failed: ${e}`);
-        if(feedbackChannel) feedbackChannel.send(`⚠️ メッセージの一括削除に失敗しました。`).catch(()=>{});
-      });
+      await channel.bulkDelete(recentMessages, true).catch(e => console.error(e));
       deletedCount += recentMessages.size;
     }
 
     messagesToDelete -= fetched.size;
     lastMessageId = fetched.last().id;
 
+    // 14日以上前のメッセージは個別削除
     if (recentMessages.size < fetched.size) {
-      break;
-    }
-  }
-
-  if (messagesToDelete > 0) {
-    const slowDeleteMsg = await feedbackChannel.send('⚠️ 14日以上前のメッセージは個別削除します。時間がかかります...').catch(()=>{});
-    while (messagesToDelete > 0) {
-      const fetched = await channel.messages.fetch({ limit: 100, before: lastMessageId });
-      if (fetched.size === 0) break;
-
-      for (const [id, msg] of fetched) {
+      const oldMessages = fetched.filter(msg => msg.createdTimestamp <= twoWeeksAgo);
+      for (const [id, msg] of oldMessages) {
         if (messagesToDelete <= 0) break;
-        await msg.delete().catch(e => console.error(`Failed to delete message: ${e}`));
+        if (targetUser && msg.author.id !== targetUser.id) continue;
+        await msg.delete().catch(e => console.error(e));
         deletedCount++;
         messagesToDelete--;
-        await delay(1000);
+        await delay(500); // サーバー負荷軽減
       }
-      lastMessageId = fetched.last().id;
-      if(slowDeleteMsg) slowDeleteMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`).catch(()=>{});
     }
+
+    if (slowDeleteMsg) slowDeleteMsg.edit(`🧹 ${deletedCount}件削除中...`).catch(()=>{});
   }
+
+  if (slowDeleteMsg) slowDeleteMsg.edit(`✅ ${deletedCount}件のメッセージを削除しました${targetUser ? `（${targetUser.tag}）` : ""}`).catch(()=>{});
 
   return deletedCount;
 }
