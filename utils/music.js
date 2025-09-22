@@ -9,11 +9,16 @@ const { spawn } = require("child_process");
 const stream = require("stream");
 const path = require("path");
 
+// yt-dlp と ffmpeg のフルパス
+const YTDLP_PATH = "/usr/local/bin/yt-dlp";
+const FFMPEG_PATH = "/usr/bin/ffmpeg";
+
+// ギルドごとの接続やプレイヤー情報を保存
 const connections = new Map();
 const players = new Map();
 const queues = new Map();
 
-// VC参加
+// VCに参加
 async function joinVoice(guild, channel) {
   const connection = joinVoiceChannel({
     channelId: channel.id,
@@ -44,10 +49,11 @@ async function playNext(guildId, textChannel, voiceChannel) {
   const passThrough = new stream.PassThrough();
 
   // yt-dlp + ffmpeg でストリーム作成
-  const ytdlp = spawn("yt-dlp", ["-f", "bestaudio", "-o", "-", url], {
+  const ytdlp = spawn(YTDLP_PATH, ["-f", "bestaudio", "-o", "-", url], {
     stdio: ["ignore", "pipe", "ignore"],
   });
-  const ffmpeg = spawn("/usr/bin/ffmpeg", [
+
+  const ffmpeg = spawn(FFMPEG_PATH, [
     "-i",
     "pipe:0",
     "-f",
@@ -80,19 +86,25 @@ async function playNext(guildId, textChannel, voiceChannel) {
 
 // URL再生
 async function playUrl(guildId, url, textChannel, voiceChannel) {
-  if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
+  if (!connections.has(guildId)) {
+    await joinVoice(voiceChannel.guild, voiceChannel);
+  }
 
+  // yt-dlpでタイトル取得
   const title = await new Promise((resolve) => {
-    const ytdlp = spawn("yt-dlp", ["--get-title", url]);
+    const ytdlp = spawn(YTDLP_PATH, ["--get-title", url]);
     let data = "";
-    ytdlp.stdout.on("data", (chunk) => (data += chunk.toString()));
+    ytdlp.stdout.on("data", (chunk) => {
+      data += chunk.toString();
+    });
     ytdlp.on("close", () => resolve(data.trim() || "不明なタイトル"));
   });
 
   if (!queues.has(guildId)) queues.set(guildId, []);
   queues.get(guildId).push({ url, title });
 
-  if (players.get(guildId)?.state.status !== AudioPlayerStatus.Playing) {
+  const player = players.get(guildId);
+  if (!player || player.state.status !== AudioPlayerStatus.Playing) {
     playNext(guildId, textChannel, voiceChannel);
   } else {
     textChannel.send(`▶️ キューに追加: **${title}**`);
