@@ -151,30 +151,32 @@ module.exports = async function handlePrefixMessage(client, msg) {
         break;
       }
           // プレフィックスコマンド部分の play 修正
-          case 'play':
-            // 指定チャンネルのみ許可
-            const allowedChannelId = '1419041571944403046';
-            if (message.channel.id !== allowedChannelId) {
-              await message.delete().catch(() => {});
-              return message.channel.send(`❌ このチャンネルでは !play は使用できません`).then(msg => {
-                setTimeout(() => msg.delete().catch(() => {}), 5000);
-              });
-            }
+        case 'play': {
+          const allowedChannelId = '1419041571944403046';
+          if (msg.channel.id !== allowedChannelId) {
+            await msg.delete().catch(() => {});
+            return msg.channel.send(`❌ このチャンネルでは !play は使用できません`)
+              .then(m => setTimeout(() => m.delete().catch(() => {}), 5000));
+          }
 
-            if (!message.member?.voice.channel)
-              return message.reply('❌ ボイスチャンネルに参加してください');
+          const query = args.join(' ');
+          if (!query) return msg.reply('❌ 曲名またはURLを入力してください');
 
-            const query = args.join(' ');
-            if (!query) return message.reply('❌ 曲名またはURLを入力してください');
+          if (!msg.member?.voice?.channel)
+            return msg.reply('❌ ボイスチャンネルに参加してください');
 
-            const musicTitle = await playUrl(message.guild.id, query, message.channel);
-            if (musicTitle) {
-              message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
-            } else {
-              message.channel.send('❌ 曲が見つかりません');
-            }
-            break;
-        
+          // VCに接続
+          await joinVoice(msg.guild, msg.member.voice.channel);
+
+          // 曲再生
+          const musicTitle = await playUrl(msg.guild.id, query, msg.channel, msg.member.voice.channel);
+          if (musicTitle) {
+            await msg.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
+          } else {
+            await msg.channel.send('❌ 曲が見つかりません');
+          }
+          break;
+        }
       case "leave": {
         await leaveVoice(msg.guild.id);
         await msg.reply("👋 退出しました");
