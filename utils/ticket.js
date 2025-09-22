@@ -14,7 +14,7 @@ const path = require("path");
 
 const TICKET_CATEGORY_ID = "1419438659433795673"; // ✅ チケットカテゴリ
 const LOG_CHANNEL_ID = "1419418871986917446";    // ✅ ログチャンネル
-const STAFF_ROLE_ID = "1419417500579528958";      // ✅ チケット見れるスタッフロール
+const STAFF_ROLE_ID = "1419417500579528958";     // ✅ チケット見れるスタッフロール
 
 module.exports = {
   // /ticketコマンドでパネルを送信
@@ -56,7 +56,7 @@ module.exports = {
       const channel = interaction.channel;
       const log = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
 
-      // チャンネル名と最後のメッセージ内容を.txtにしてログ送信
+      // チャンネル名と最後のメッセージ内容を.txtにしてログ送信（閉鎖時）
       if (log) {
         const messages = await channel.messages.fetch({ limit: 100 });
         const content = messages
@@ -132,17 +132,7 @@ module.exports = {
       components: [row],
     });
 
-    // ログに.txt送信
-    const log = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
-    if (log) {
-      const filePath = path.join(__dirname, "ticket_log.txt");
-      await fs.writeFile(filePath, `作成者: ${interaction.user.tag}\n内容: ${reason}`);
-      await log.send({
-        content: `📩 ${interaction.user} がチケットを作成しました`,
-        files: [{ attachment: filePath, name: `${channel.name}.txt` }],
-      });
-      await fs.unlink(filePath).catch(() => {});
-    }
+    // 作成時のログ送信は削除
 
     await interaction.reply({
       content: `✅ チケットを作成しました: ${channel}`,
