@@ -3,10 +3,9 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
-const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
 const { spawn } = require('child_process');
-
-// ユーティリティ・モジュール
+const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
+const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
 const registerSlashCommands = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
@@ -26,8 +25,7 @@ const {
   onGuildBanAdd,
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
-const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
+
 // 定数
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -109,109 +107,50 @@ client.on('messageCreate', async (message) => {
 
   switch (command) {
     // 音楽
-    case 'join':
+    case 'join': {
       if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       if (await joinVoice(message.guild, message.member.voice.channel)) {
         message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
-      } else message.reply('❌ ボイスチャンネル参加失敗');
+      } else {
+        message.reply('❌ ボイスチャンネル参加失敗');
+      }
       break;
-      case 'play':
+    }
+    case 'play': {
       if (!message.member?.voice.channel)
         return message.reply('❌ ボイスチャンネルに参加してください');
 
       const query = args.join(' ');
       if (!query) return message.reply('❌ 曲名またはURLを入力してください');
 
-      const voiceChannel = message.member.voice.channel;
-
-      // ギルドごとの接続・プレイヤー・キュー
-      if (!global.connections) global.connections = new Map();
-      if (!global.players) global.players = new Map();
-      if (!global.queues) global.queues = new Map();
-
-      const connections = global.connections;
-      const players = global.players;
-      const queues = global.queues;
-
-      // VC参加
-      async function joinVoiceIfNeeded() {
-        if (!connections.has(message.guild.id)) {
-          const conn = joinVoiceChannel({
-            channelId: voiceChannel.id,
-            guildId: message.guild.id,
-            adapterCreator: message.guild.voiceAdapterCreator,
-          });
-          connections.set(message.guild.id, conn);
-        }
-      }
-
-      // 次の曲を再生
-      async function playNext() {
-        const queue = queues.get(message.guild.id);
-        if (!queue || queue.length === 0) return;
-
-        const { url, title } = queue.shift();
-        const passThrough = new (require('stream').PassThrough)();
-        const ytdlp = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', url], { stdio: ['ignore', 'pipe', 'ignore'] });
-        const ffmpeg = spawn(require('ffmpeg-static'), [
-          '-i', 'pipe:0',
-          '-f', 'opus',
-          '-ar', '48000',
-          '-ac', '2',
-          'pipe:1'
-        ]);
-
-        ytdlp.stdout.pipe(ffmpeg.stdin);
-        ffmpeg.stdout.pipe(passThrough);
-
-        const resource = createAudioResource(passThrough);
-        const player = createAudioPlayer();
-
-        player.play(resource);
-        player.on('idle', playNext);
-
-        connections.get(message.guild.id).subscribe(player);
-        players.set(message.guild.id, player);
-
-        message.channel.send(`🎵 再生開始: **${title}**`);
-      }
-
       try {
-        await joinVoiceIfNeeded();
-
-        // タイトル取得
-        const title = await new Promise((resolve, reject) => {
-          const ytdlp = spawn('yt-dlp', ['--get-title', query]);
-          let data = '';
-          ytdlp.stdout.on('data', chunk => data += chunk.toString());
-          ytdlp.on('close', () => resolve(data.trim() || '不明なタイトル'));
-          ytdlp.on('error', reject);
-        });
-
-        if (!queues.has(message.guild.id)) queues.set(message.guild.id, []);
-        queues.get(message.guild.id).push({ url: query, title });
-
-        const player = players.get(message.guild.id);
-        if (!player || player.state.status !== AudioPlayerStatus.Playing) {
-          playNext();
+        // VCに接続して再生
+        await joinVoice(message.guild, message.member.voice.channel);
+        const musicTitle = await playUrl(message.guild.id, query, message.channel, message.member.voice.channel);
+        if (musicTitle) {
+          message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
         } else {
-          message.channel.send(`▶️ キューに追加: **${title}**`);
+          message.channel.send('❌ 曲が見つかりません');
         }
       } catch (err) {
         console.error('!play error:', err);
         message.reply('❌ 再生中にエラーが発生しました');
       }
       break;
-    case 'stop':
-      message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
+    }
+    case 'stop': {
+      const result = stopMusic(message.guild.id);
+      message.channel.send(result ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
       break;
-    case 'leave':
+    }
+    case 'leave': {
       await leaveVoice(message.guild.id);
       message.channel.send('👋 ボイスチャンネル退出しました');
       break;
+    }
 
     // Dropboxクイズ
-    case 'uploadquiz':
+    case 'uploadquiz': {
       try {
         const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
         const result = await uploadToDropbox('/quizzes.json', contents.toString());
@@ -220,7 +159,8 @@ client.on('messageCreate', async (message) => {
         message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
       }
       break;
-    case 'downloadquiz':
+    }
+    case 'downloadquiz': {
       try {
         const data = await downloadFromDropbox('/quizzes.json');
         if (data) await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
@@ -229,9 +169,10 @@ client.on('messageCreate', async (message) => {
         message.reply(`❌ ダウンロード中エラー: ${err.message}`);
       }
       break;
+    }
 
     // AIチャット
-    case 'ai':
+    case 'ai': {
       const prompt = args.join(' ').trim();
       if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
       const replyMsg = await message.reply('💬 AIが考え中...');
@@ -243,6 +184,7 @@ client.on('messageCreate', async (message) => {
         await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
       }
       break;
+    }
 
     default:
       handlePrefixMessage(client, message);
