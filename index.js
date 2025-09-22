@@ -4,6 +4,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
 const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
+const { spawn } = require('child_process');
 
 // ユーティリティ・モジュール
 const registerSlashCommands = require('./commands/slash');
