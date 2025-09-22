@@ -6,8 +6,8 @@ WORKDIR /app
 # yt-dlp と ffmpeg をインストール
 RUN apt-get update && apt-get install -y \
     ffmpeg python3-pip \
- && pip3 install -U yt-dlp \
- && rm -rf /var/lib/apt/lists/*
+RUN python3 -m pip install --user -U yt-dlp
+ENV PATH=/root/.local/bin:$PATH
 
 # 依存関係
 COPY package*.json ./
