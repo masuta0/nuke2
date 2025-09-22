@@ -3,7 +3,17 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
-const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { 
+  Client, 
+  GatewayIntentBits, 
+  Partials, 
+  ActivityType, 
+  ChannelType, 
+  PermissionFlagsBits, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle 
+} = require('discord.js');
 
 // ユーティリティ・モジュール
 const registerSlashCommands = require('./commands/slash');
