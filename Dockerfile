@@ -1,25 +1,24 @@
 # ベースイメージ
 FROM node:20-bullseye
 
-# 作業ディレクトリ
 WORKDIR /app
 
-# システムパッケージと yt-dlp をインストール
-RUN apt-get update && apt-get install -y \
-    python3 python3-pip ffmpeg curl \
-    && pip3 install -U yt-dlp \
-    && rm -rf /var/lib/apt/lists/*
 # yt-dlp と ffmpeg をインストール
-RUN apt-get update && apt-get install -y ffmpeg python3-pip \
-# npm 依存関係をコピーしてインストール
+RUN apt-get update && apt-get install -y \
+    ffmpeg python3-pip \
+ && pip3 install -U yt-dlp \
+ && rm -rf /var/lib/apt/lists/*
+
+# 依存関係
 COPY package*.json ./
 RUN npm install --omit=dev --legacy-peer-deps
 
-# アプリケーションのソースをコピー
+# ソースコピー
 COPY . .
 
-# ポート公開
+# パスに追加（pip3 install の場所）
+ENV PATH="/usr/local/bin:$PATH"
+
 EXPOSE 3000
 
-# 起動コマンド
 CMD ["node", "index.js"]
