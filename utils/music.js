@@ -10,7 +10,7 @@ const stream = require("stream");
 const path = require("path");
 
 // yt-dlp と ffmpeg のフルパス
-const YTDLP_PATH = "/usr/local/bin/yt-dlp";
+const ytdlp = spawn("yt-dlp", ["--get-title", url]);
 const FFMPEG_PATH = "/usr/bin/ffmpeg";
 
 // ギルドごとの接続やプレイヤー情報を保存
