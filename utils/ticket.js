@@ -74,6 +74,14 @@ async function modalHandler(interaction) {
         id: interaction.user.id,
         allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
       },
+      {
+        id: "1419417500579528958", // ここにサポートチームのロールIDを入れる
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
+      },
+      {
+        id: interaction.guild.roles.cache.find(r => r.permissions.has(PermissionsBitField.Flags.Administrator))?.id,
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages],
+      }
     ],
   });
 
