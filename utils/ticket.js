@@ -7,11 +7,12 @@ const {
   ModalBuilder, 
   TextInputBuilder, 
   TextInputStyle, 
-  PermissionFlagsBits 
+  PermissionFlagsBits, 
+  AttachmentBuilder 
 } = require("discord.js");
 
-const TICKET_CATEGORY_ID = "1419438659433795673"; // ✅ チケットカテゴリのID
-const LOG_CHANNEL_ID = "1419418871986917446";    // ✅ ログチャンネルのID
+const TICKET_CATEGORY_ID = "1419438659433795673"; // ✅ チケットカテゴリID
+const LOG_CHANNEL_ID = "1419418871986917446";    // ✅ ログチャンネルID
 
 module.exports = {
   // /ticket コマンドでパネルを送信
@@ -50,12 +51,25 @@ module.exports = {
     }
 
     if (interaction.customId === "ticket_close") {
-      // ✅ チケットを閉じる
       const channel = interaction.channel;
       const log = channel.guild.channels.cache.get(LOG_CHANNEL_ID);
 
+      // ✅ メッセージ履歴を.txt化
+      let messages = await channel.messages.fetch({ limit: 100 });
+      messages = [...messages.values()].reverse();
+
+      let logText = `チケットログ: ${channel.name}\n作成者: <@${channel.topic || "不明"}>\n\n`;
+      for (const msg of messages) {
+        logText += `[${msg.createdAt.toISOString()}] ${msg.author.tag}: ${msg.content}\n`;
+      }
+
+      const file = new AttachmentBuilder(Buffer.from(logText, "utf-8"), { name: `${channel.name}.txt` });
+
       if (log) {
-        await log.send(`🗑️ チケット **${channel.name}** を ${interaction.user} が閉じました。`);
+        await log.send({ 
+          content: `🗑️ チケット **${channel.name}** を ${interaction.user} が閉じました。`, 
+          files: [file] 
+        });
       }
 
       return channel.delete("Ticket closed");
@@ -79,6 +93,7 @@ module.exports = {
       name: `ticket-${interaction.user.username}`,
       type: ChannelType.GuildText,
       parent: category.id,
+      topic: interaction.user.id, // 作成者を記録
       permissionOverwrites: [
         {
           id: interaction.guild.roles.everyone.id,
@@ -89,7 +104,7 @@ module.exports = {
           allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
         },
         {
-          id: interaction.guild.roles.highest.id, // 管理者ロールをここに指定するなら変更
+          id: interaction.guild.roles.highest.id, // 管理者ロールを指定する場合は変更
           allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
         },
       ],
@@ -108,7 +123,7 @@ module.exports = {
       components: [row],
     });
 
-    // ✅ ログに送信
+    // ✅ ログに作成通知
     const log = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
     if (log) {
       await log.send(`📩 ${interaction.user} がチケットを作成しました。\n内容: ${reason}`);

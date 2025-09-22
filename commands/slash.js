@@ -151,7 +151,6 @@ async function registerSlashCommands(client) {
       // ========= SlashCommand =========
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
-
         // サーバー内のみ有効なコマンド
         if (!interaction.guild && !["ai", "天気"].includes(name))
           return interaction.reply({
@@ -222,7 +221,7 @@ async function registerSlashCommands(client) {
             );
           }
         }
-
+        if (command === "ticket") return ticketCommand.modalHandler(interaction); // ✅ 追加
         if (name === "天気") {
           await interaction.deferReply({ ephemeral: true });
           const place = interaction.options.getString("場所");
