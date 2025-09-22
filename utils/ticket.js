@@ -20,7 +20,7 @@ async function sendTicketPanel(interaction) {
     .setDescription("以下のボタンを押すと、査定チケットが作成されます。")
     .setColor(0x00aaff);
 
-  await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+  await interaction.reply({ embeds: [embed], components: [row], ephemeral: false });
 }
 
 // ボタン押下時の処理
