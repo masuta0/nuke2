@@ -25,7 +25,7 @@ module.exports = {
     await interaction.reply({
       content: "査定したい場合は下のボタンからチケットを作成してください。",
       components: [row],
-      ephemeral: true, // ユーザーだけに表示
+      ephemeral: false, // ユーザーだけに表示
     });
   },
 
