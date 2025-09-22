@@ -8,17 +8,16 @@ const {
   TextInputBuilder,
   TextInputStyle,
   PermissionFlagsBits,
-  RoleSelectMenuBuilder,
-  StringSelectMenuBuilder,
-  AttachmentBuilder,
 } = require("discord.js");
 const fs = require("fs").promises;
+const path = require("path");
 
-const TICKET_CATEGORY_ID = "1419438659433795673"; // チケットカテゴリID
-const LOG_CHANNEL_ID = "1419418871986917446";    // ログチャンネルID
+const TICKET_CATEGORY_ID = "1419438659433795673"; // ✅ チケットカテゴリ
+const LOG_CHANNEL_ID = "1419418871986917446";    // ✅ ログチャンネル
+const STAFF_ROLE_ID = "1419417500579528958";      // ✅ チケット見れるスタッフロール
 
 module.exports = {
-  // /ticket コマンドでパネル送信
+  // /ticketコマンドでパネルを送信
   async sendTicketPanel(interaction) {
     const button = new ButtonBuilder()
       .setCustomId("ticket_create")
@@ -36,6 +35,7 @@ module.exports = {
   // ボタン処理
   async buttonHandler(interaction) {
     if (interaction.customId === "ticket_create") {
+      // モーダル表示
       const modal = new ModalBuilder()
         .setCustomId("ticket_modal")
         .setTitle("査定チケット");
@@ -46,15 +46,8 @@ module.exports = {
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true);
 
-      // スタッフロール選択用メニュー
-      const staffSelect = new RoleSelectMenuBuilder()
-        .setCustomId("ticket_staff")
-        .setPlaceholder("チケットを管理するスタッフロールを選択")
-        .setRequired(true);
-
-      const row1 = new ActionRowBuilder().addComponents(reasonInput);
-      const row2 = new ActionRowBuilder().addComponents(staffSelect);
-      modal.addComponents(row1, row2);
+      const row = new ActionRowBuilder().addComponents(reasonInput);
+      modal.addComponents(row);
 
       return interaction.showModal(modal);
     }
@@ -63,8 +56,26 @@ module.exports = {
       const channel = interaction.channel;
       const log = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
 
+      // チャンネル名と最後のメッセージ内容を.txtにしてログ送信
       if (log) {
-        await log.send(`🗑️ チケット **${channel.name}** を ${interaction.user} が閉じました。`);
+        const messages = await channel.messages.fetch({ limit: 100 });
+        const content = messages
+          .map(
+            (m) =>
+              `[${m.createdAt.toISOString()}] ${m.author.tag}: ${m.content}`
+          )
+          .reverse()
+          .join("\n");
+
+        const filePath = path.join(__dirname, "ticket_log.txt");
+        await fs.writeFile(filePath, content);
+
+        await log.send({
+          content: `🗑️ チケット **${channel.name}** を ${interaction.user} が閉じました。`,
+          files: [{ attachment: filePath, name: `${channel.name}.txt` }],
+        });
+
+        await fs.unlink(filePath).catch(() => {}); // 一時ファイル削除
       }
 
       return channel.delete("Ticket closed");
@@ -76,12 +87,14 @@ module.exports = {
     if (interaction.customId !== "ticket_modal") return;
 
     const reason = interaction.fields.getTextInputValue("ticket_reason");
-    const staffRole = interaction.fields.getRole("ticket_staff"); // 選択されたスタッフロール
 
     // カテゴリ取得
     const category = interaction.guild.channels.cache.get(TICKET_CATEGORY_ID);
     if (!category || category.type !== ChannelType.GuildCategory) {
-      return interaction.reply({ content: "❌ チケットカテゴリが見つかりません。", ephemeral: true });
+      return interaction.reply({
+        content: "❌ チケットカテゴリが見つかりません。",
+        ephemeral: true,
+      });
     }
 
     // チャンネル作成
@@ -99,7 +112,7 @@ module.exports = {
           allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
         },
         {
-          id: staffRole.id,
+          id: STAFF_ROLE_ID,
           allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages],
         },
       ],
@@ -113,20 +126,27 @@ module.exports = {
 
     const row = new ActionRowBuilder().addComponents(closeButton);
 
-    // チャンネル内に送信
+    // 作成者 + スタッフロールが見れるチャンネルにモーダル内容送信
     await channel.send({
       content: `🎫 ${interaction.user} がチケットを作成しました。\n**内容:** ${reason}`,
       components: [row],
     });
 
-    // ログ.txt作成
-    const logText = `チケット作成者: ${interaction.user.tag}\n内容:\n${reason}\nスタッフロール: ${staffRole.name}`;
-    const buffer = Buffer.from(logText, "utf-8");
-    const attachment = new AttachmentBuilder(buffer, { name: `ticket-${interaction.user.username}.txt` });
-
+    // ログに.txt送信
     const log = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
-    if (log) await log.send({ content: `📩 新しいチケット作成`, files: [attachment] });
+    if (log) {
+      const filePath = path.join(__dirname, "ticket_log.txt");
+      await fs.writeFile(filePath, `作成者: ${interaction.user.tag}\n内容: ${reason}`);
+      await log.send({
+        content: `📩 ${interaction.user} がチケットを作成しました`,
+        files: [{ attachment: filePath, name: `${channel.name}.txt` }],
+      });
+      await fs.unlink(filePath).catch(() => {});
+    }
 
-    await interaction.reply({ content: `✅ チケットを作成しました: ${channel}`, ephemeral: true });
+    await interaction.reply({
+      content: `✅ チケットを作成しました: ${channel}`,
+      ephemeral: true,
+    });
   },
 };
