@@ -14,7 +14,8 @@ RUN pip3 install --user -U yt-dlp
 
 # npm 依存関係をコピーしてインストール
 COPY package*.json ./
-RUN npm ci --omit=dev --legacy-peer-deps
+# npm install を使う
+RUN npm install --omit=dev --legacy-peer-deps
 
 # アプリケーションのソースをコピー
 COPY . .
