@@ -1,14 +1,9 @@
+// index.js
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
-const { 
-  Client, 
-  GatewayIntentBits, 
-  Partials, 
-  ActivityType, 
-  ChannelType 
-} = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
 
 // ユーティリティ・モジュール
 const registerSlashCommands = require('./commands/slash');
@@ -30,19 +25,12 @@ const {
   onGuildBanAdd,
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
-
-// 音楽ユーティリティ
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-
-// チケットユーティリティ
-const { sendTicketPanel, handleButton } = require('./utils/ticket');
 
 // 定数
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
-const MUSIC_CHANNEL_ID = '1419041571944403046'; // !play が有効なチャンネル
-const TICKET_PANEL_CHANNEL_ID = 'ここにパネルを出したいチャンネルID'; // ←指定してね
 
 // Discordクライアント作成
 const client = new Client({
@@ -77,6 +65,7 @@ client.once('ready', async () => {
   await loadWeeklyData();
   setupWeekly(client, WEEKLY_CHANNEL_ID);
 
+  // スラッシュコマンド登録
   try {
     await registerSlashCommands(client);
     console.log('✅ スラッシュコマンド登録完了');
@@ -97,13 +86,6 @@ client.once('ready', async () => {
   };
   updateUptime();
   setInterval(updateUptime, 2000);
-
-  // 🔹 チケットパネルを送信（起動時に一度だけ）
-  const panelChannel = client.channels.cache.get(TICKET_PANEL_CHANNEL_ID);
-  if (panelChannel) {
-    await sendTicketPanel(panelChannel);
-    console.log('✅ チケットパネル送信完了');
-  }
 });
 
 // メッセージ作成イベント
@@ -116,49 +98,32 @@ client.on('messageCreate', async (message) => {
   await addXp(message.member);
   await handleMessage(message);
 
+  // DMでのモデレーション対応
   if (message.channel?.type === ChannelType.DM) return;
 
-  // プレフィックスコマンド
+  // === プレフィックスコマンド ===
   if (!message.content.startsWith('!')) return;
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
 
   switch (command) {
+    // 音楽
     case 'join':
       if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       if (await joinVoice(message.guild, message.member.voice.channel)) {
         message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
-
     case 'play':
       if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-
-      // チャンネル制限
-      if (message.channel.id !== MUSIC_CHANNEL_ID) {
-        await message.delete().catch(() => {});
-        return message.reply(`❌ このチャンネルでは !play を使えません`).then(msg => {
-          setTimeout(() => msg.delete().catch(() => {}), 5000);
-        });
-      }
-
-      const query = args.join(' ').trim();
+      const query = args.join(' ');
       if (!query) return message.reply('❌ 曲名またはURLを入力してください');
-
-      try {
-        const url = await playUrl(message.guild.id, query, message.channel, message.member.voice.channel);
-        if (url) message.channel.send(`▶️ キューに追加: **${url}**`);
-        else message.channel.send('❌ 曲が見つかりません');
-      } catch (err) {
-        console.error('❌ !play エラー:', err);
-        message.channel.send('❌ 曲の再生中にエラーが発生しました');
-      }
+      const musicTitle = await playUrl(message.guild.id, query, message.channel);
+      message.channel.send(musicTitle ? `▶️ 再生キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
       break;
-
     case 'stop':
       message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
       break;
-
     case 'leave':
       await leaveVoice(message.guild.id);
       message.channel.send('👋 ボイスチャンネル退出しました');
@@ -174,7 +139,6 @@ client.on('messageCreate', async (message) => {
         message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
       }
       break;
-
     case 'downloadquiz':
       try {
         const data = await downloadFromDropbox('/quizzes.json');
@@ -205,14 +169,10 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// 🔹 ボタン処理（チケット関連）
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
-  await handleButton(interaction);
-});
-
-// イベント登録
+// メッセージ更新
 client.on('messageUpdate', handleMessageUpdate);
+
+// メンバー入室 / 退室
 client.on('guildMemberAdd', handleMemberJoin);
 client.on('guildMemberRemove', onGuildMemberRemove);
 client.on('guildMemberUpdate', onGuildMemberUpdate);
