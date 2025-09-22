@@ -1,11 +1,4 @@
 // index.js
-// エラーが出てもRenderで落ちないようにする
-process.on("uncaughtException", (err) => {
-  console.error("❌ uncaughtException:", err);
-});
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("❌ unhandledRejection:", reason);
-});
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
@@ -122,15 +115,87 @@ client.on('messageCreate', async (message) => {
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
       case 'play':
-      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
+      if (!message.member?.voice.channel)
+        return message.reply('❌ ボイスチャンネルに参加してください');
+
       const query = args.join(' ');
       if (!query) return message.reply('❌ 曲名またはURLを入力してください');
 
-      // VC情報を渡す
       const voiceChannel = message.member.voice.channel;
+
+      // ギルドごとの接続・プレイヤー・キュー
+      if (!global.connections) global.connections = new Map();
+      if (!global.players) global.players = new Map();
+      if (!global.queues) global.queues = new Map();
+
+      const connections = global.connections;
+      const players = global.players;
+      const queues = global.queues;
+
+      // VC参加
+      async function joinVoiceIfNeeded() {
+        if (!connections.has(message.guild.id)) {
+          const conn = joinVoiceChannel({
+            channelId: voiceChannel.id,
+            guildId: message.guild.id,
+            adapterCreator: message.guild.voiceAdapterCreator,
+          });
+          connections.set(message.guild.id, conn);
+        }
+      }
+
+      // 次の曲を再生
+      async function playNext() {
+        const queue = queues.get(message.guild.id);
+        if (!queue || queue.length === 0) return;
+
+        const { url, title } = queue.shift();
+        const passThrough = new (require('stream').PassThrough)();
+        const ytdlp = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', url], { stdio: ['ignore', 'pipe', 'ignore'] });
+        const ffmpeg = spawn(require('ffmpeg-static'), [
+          '-i', 'pipe:0',
+          '-f', 'opus',
+          '-ar', '48000',
+          '-ac', '2',
+          'pipe:1'
+        ]);
+
+        ytdlp.stdout.pipe(ffmpeg.stdin);
+        ffmpeg.stdout.pipe(passThrough);
+
+        const resource = createAudioResource(passThrough);
+        const player = createAudioPlayer();
+
+        player.play(resource);
+        player.on('idle', playNext);
+
+        connections.get(message.guild.id).subscribe(player);
+        players.set(message.guild.id, player);
+
+        message.channel.send(`🎵 再生開始: **${title}**`);
+      }
+
       try {
-        const musicTitle = await playUrl(message.guild.id, query, message.channel, voiceChannel);
-        message.channel.send(musicTitle ? `▶️ 再生キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
+        await joinVoiceIfNeeded();
+
+        // タイトル取得
+        const title = await new Promise((resolve, reject) => {
+          const ytdlp = spawn('yt-dlp', ['--get-title', query]);
+          let data = '';
+          ytdlp.stdout.on('data', chunk => data += chunk.toString());
+          ytdlp.on('close', () => resolve(data.trim() || '不明なタイトル'));
+          ytdlp.on('error', reject);
+        });
+
+        if (!queues.has(message.guild.id)) queues.set(message.guild.id, []);
+        queues.get(message.guild.id).push({ url: query, title });
+
+        const player = players.get(message.guild.id);
+        if (!player || player.state.status !== AudioPlayerStatus.Playing) {
+          playNext();
+        } else {
+          message.channel.send(`▶️ キューに追加: **${title}**`);
+        }
       } catch (err) {
         console.error('!play error:', err);
         message.reply('❌ 再生中にエラーが発生しました');
