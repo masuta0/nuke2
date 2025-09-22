@@ -121,12 +121,20 @@ client.on('messageCreate', async (message) => {
         message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
       } else message.reply('❌ ボイスチャンネル参加失敗');
       break;
-    case 'play':
+      case 'play':
       if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       const query = args.join(' ');
       if (!query) return message.reply('❌ 曲名またはURLを入力してください');
-      const musicTitle = await playUrl(message.guild.id, query, message.channel);
-      message.channel.send(musicTitle ? `▶️ 再生キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
+
+      // VC情報を渡す
+      const voiceChannel = message.member.voice.channel;
+      try {
+        const musicTitle = await playUrl(message.guild.id, query, message.channel, voiceChannel);
+        message.channel.send(musicTitle ? `▶️ 再生キューに追加: **${musicTitle}**` : '❌ 曲が見つかりません');
+      } catch (err) {
+        console.error('!play error:', err);
+        message.reply('❌ 再生中にエラーが発生しました');
+      }
       break;
     case 'stop':
       message.channel.send(stopMusic(message.guild.id) ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
