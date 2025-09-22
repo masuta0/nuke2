@@ -1,4 +1,11 @@
 // index.js
+// エラーが出てもRenderで落ちないようにする
+process.on("uncaughtException", (err) => {
+  console.error("❌ uncaughtException:", err);
+});
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ unhandledRejection:", reason);
+});
 require('dotenv').config();
 const express = require('express');
 const path = require('path');

@@ -1,4 +1,3 @@
-// commands/slash.js
 const { REST, Routes, SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require("discord.js");
 const { chat } = require("../utils/ai");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
@@ -151,7 +150,7 @@ async function registerSlashCommands(client) {
       // ========= SlashCommand =========
       if (interaction.isChatInputCommand()) {
         const name = interaction.commandName;
-        // サーバー内のみ有効なコマンド
+
         if (!interaction.guild && !["ai", "天気"].includes(name))
           return interaction.reply({
             content: "❌ このコマンドはサーバー内でのみ実行できます。",
@@ -221,7 +220,7 @@ async function registerSlashCommands(client) {
             );
           }
         }
-        if (command === "ticket") return ticketCommand.modalHandler(interaction); // ✅ 追加
+
         if (name === "天気") {
           await interaction.deferReply({ ephemeral: true });
           const place = interaction.options.getString("場所");
@@ -361,6 +360,7 @@ async function registerSlashCommands(client) {
       if (interaction.isModalSubmit()) {
         const [command] = interaction.customId.split("_");
         if (command === "verify") return verifyCommand.modalHandler(interaction, client);
+        if (command === "ticket") return ticketCommand.modalHandler(interaction); // ✅ 追加
       }
     } catch (e) {
       console.error("Slash handler error:", e);
