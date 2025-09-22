@@ -4,8 +4,7 @@ FROM node:20-bullseye
 WORKDIR /app
 
 # yt-dlp と ffmpeg をインストール
-RUN apt-get update && apt-get install -y \
-    ffmpeg python3-pip \
+RUN apt-get update && apt-get install -y ffmpeg
 RUN python3 -m pip install --user -U yt-dlp
 ENV PATH=/root/.local/bin:$PATH
 
