@@ -32,6 +32,8 @@
     "node-cron": "^4.2.1",
     "node-fetch": "^3.3.2",
     "open": "^10.2.0",
+      "@discordjs/opus": "^1.4.0",
+      "opusscript": "^0.0.8",
     "play-dl": "^1.9.7",
     "puppeteer": "^24.19.0",
     "twitter-api-v2": "^1.26.0",

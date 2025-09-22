@@ -217,10 +217,31 @@ async function registerSlashCommands(client) {
           if (!memberVC && ["join","play"].includes(name)) return interaction.reply({ content: "⚠️ VCに入ってください", ephemeral: true });
           await interaction.deferReply();
           if (name === "join") return interaction.editReply(await joinVoice(interaction.guild, memberVC) ? "🔊 参加しました" : "⚠️ 失敗");
+          // commands/slash.js の該当部分
           if (name === "play") {
-            await joinVoice(interaction.guild, memberVC);
-            const added = await playUrl(interaction.guild.id, interaction.options.getString("query", true), interaction.channel);
-            return interaction.editReply(added ? `▶️ ${added}` : "⚠️ 失敗");
+            await interaction.deferReply();
+            const query = interaction.options.getString("query", true);
+            const member = interaction.guild.members.cache.get(interaction.user.id);
+
+            if (!member?.voice?.channel) {
+              return interaction.editReply("⚠️ まずボイスチャンネルに入ってください");
+            }
+
+            const voiceChannel = member.voice.channel;
+
+            try {
+              // utils/music.js の playUrl を呼び出し
+              const title = await playUrl(
+                interaction.guild.id,
+                query,
+                interaction.channel,
+                voiceChannel
+              );
+              return interaction.editReply(`▶️ 再生開始: **${title}**`);
+            } catch (e) {
+              console.error("再生エラー:", e);
+              return interaction.editReply("⚠️ 再生中にエラーが発生しました");
+            }
           }
           if (name === "stop") {
             const conn = getVoiceConnection(interaction.guild.id);
