@@ -1,4 +1,3 @@
-// index.js
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
@@ -8,11 +7,7 @@ const {
   GatewayIntentBits, 
   Partials, 
   ActivityType, 
-  ChannelType, 
-  PermissionFlagsBits, 
-  ActionRowBuilder, 
-  ButtonBuilder, 
-  ButtonStyle 
+  ChannelType 
 } = require('discord.js');
 
 // ユーティリティ・モジュール
@@ -122,67 +117,7 @@ client.on('messageCreate', async (message) => {
   await handleMessage(message);
 
   if (message.channel?.type === ChannelType.DM) return;
-  const { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
 
-  // スラッシュコマンド登録
-  client.on('ready', async () => {
-    await client.application.commands.set([
-      {
-        name: 'ticket-setup',
-        description: 'チケットボタンを設置します'
-      }
-    ]);
-  });
-
-  // スラッシュコマンド実行
-  client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-
-    if (interaction.commandName === 'ticket-setup') {
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('ticket_create')
-          .setLabel('🎫 チケットを作成')
-          .setStyle(ButtonStyle.Primary)
-      );
-      await interaction.reply({ content: 'サポートが必要な方は下のボタンを押してください。', components: [row] });
-    }
-  });
-
-  // ボタン押下処理
-  client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isButton()) return;
-
-    // チケット作成
-    if (interaction.customId === 'ticket_create') {
-      const guild = interaction.guild;
-      const member = interaction.member;
-
-      const channel = await guild.channels.create({
-        name: `ticket-${member.user.username}`,
-        type: ChannelType.GuildText,
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-          { id: member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
-        ]
-      });
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId('ticket_close')
-          .setLabel('🔒 閉じる')
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await channel.send({ content: `${member} さんのチケットです。`, components: [row] });
-      await interaction.reply({ content: `✅ チケットを作成しました: ${channel}`, ephemeral: true });
-    }
-
-    // チケット削除
-    if (interaction.customId === 'ticket_close') {
-      await interaction.channel.delete().catch(() => {});
-    }
-  });
   // プレフィックスコマンド
   if (!message.content.startsWith('!')) return;
   const args = message.content.slice(1).trim().split(/ +/);
