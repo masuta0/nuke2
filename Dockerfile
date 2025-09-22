@@ -12,18 +12,17 @@ RUN apt-get update && apt-get install -y \
 # yt-dlp をユーザーレベルでインストール
 RUN pip3 install --user -U yt-dlp
 
+# PATH にユーザローカルのバイナリを追加
+ENV PATH=/root/.local/bin:$PATH
+
 # npm 依存関係をコピーしてインストール
 COPY package*.json ./
-# npm install を使う
 RUN npm install --omit=dev --legacy-peer-deps
 
 # アプリケーションのソースをコピー
 COPY . .
 
-# PATH にユーザローカルのバイナリを追加
-ENV PATH=/root/.local/bin:$PATH
-
-# ポート公開
+# ポート公開（必要なら）
 EXPOSE 3000
 
 # 起動コマンド
