@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # yt-dlp をユーザーレベルでインストール
-RUN pip3 install --user -U yt-dlp
+RUN pip3 install -U yt-dlp
 
 # PATH にユーザローカルのバイナリを追加
 ENV PATH=/root/.local/bin:$PATH
