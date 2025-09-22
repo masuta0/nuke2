@@ -4,7 +4,7 @@ FROM node:20-bullseye
 # 作業ディレクトリ
 WORKDIR /app
 
-# 必要なシステムパッケージ
+# システムパッケージをインストール
 RUN apt-get update && apt-get install -y \
     python3 python3-pip ffmpeg curl \
     && rm -rf /var/lib/apt/lists/*
