@@ -93,9 +93,21 @@ async function playYouTube(guildId, url, textChannel, voiceChannel) {
 
   const title = await new Promise((resolve, reject) => {
     const ytdlp = spawn('yt-dlp', ['--get-title', url]);
+
     let data = '';
+    let errData = '';
+
     ytdlp.stdout.on('data', chunk => data += chunk.toString());
-    ytdlp.on('close', () => resolve(data.trim() || '不明なタイトル'));
+    ytdlp.stderr.on('data', chunk => errData += chunk.toString());
+
+    ytdlp.on('close', (code) => {
+      if (code !== 0 || !data) {
+        console.error('yt-dlp error:', errData);
+        return reject(new Error('タイトル取得に失敗しました'));
+      }
+      resolve(data.trim());
+    });
+
     ytdlp.on('error', reject);
   });
 
