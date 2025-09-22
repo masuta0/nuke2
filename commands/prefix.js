@@ -165,16 +165,17 @@ module.exports = async function handlePrefixMessage(client, msg) {
           if (!msg.member?.voice?.channel)
             return msg.reply('❌ ボイスチャンネルに参加してください');
 
-          // VCに接続
           await joinVoice(msg.guild, msg.member.voice.channel);
 
           // 曲再生
           const musicTitle = await playUrl(msg.guild.id, query, msg.channel, msg.member.voice.channel);
-          if (musicTitle) {
-            await msg.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
-          } else {
-            await msg.channel.send('❌ 曲が見つかりません');
+
+          // 再生中の場合のみ「キューに追加」を送信
+          const player = require('../utils/music').players.get(msg.guild.id);
+          if (player?.state.status === AudioPlayerStatus.Playing) {
+            await msg.channel.send(`▶️ キューに追加: **${musicTitle}**`);
           }
+
           break;
         }
       case "leave": {

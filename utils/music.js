@@ -1,21 +1,24 @@
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
-const fs = require('fs');
-const path = require('path');
 const { spawn } = require('child_process');
 const stream = require('stream');
 const ffmpeg = require('ffmpeg-static');
+const path = require('path');
 
+// ギルドごとの状態管理
 const connections = new Map();
 const players = new Map();
-const queues = new Map(); // ギルドごとの再生キュー
+const queues = new Map();
 
 // VC参加
 async function joinVoice(guild, channel) {
+  if (connections.has(guild.id)) return true;
+
   const connection = joinVoiceChannel({
     channelId: channel.id,
     guildId: guild.id,
-    adapterCreator: guild.voiceAdapterCreator
+    adapterCreator: guild.voiceAdapterCreator,
   });
+
   connections.set(guild.id, connection);
   return true;
 }
@@ -23,15 +26,13 @@ async function joinVoice(guild, channel) {
 // VC退出
 async function leaveVoice(guildId) {
   const conn = connections.get(guildId);
-  if (conn) {
-    conn.destroy();
-    connections.delete(guildId);
-    players.delete(guildId);
-    queues.delete(guildId);
-  }
+  if (conn) conn.destroy();
+  connections.delete(guildId);
+  players.delete(guildId);
+  queues.delete(guildId);
 }
 
-// 再生処理
+// 次の曲を再生
 async function playNext(guildId, textChannel, voiceChannel) {
   const queue = queues.get(guildId);
   if (!queue || queue.length === 0) return;
@@ -45,15 +46,8 @@ async function playNext(guildId, textChannel, voiceChannel) {
     ytdlp.stdout.pipe(passThrough);
     resource = createAudioResource(passThrough);
   } else if (isAttachment) {
-    // 添付ファイルを ffmpeg で変換して再生
     const passThrough = new stream.PassThrough();
-    const ffmpegProcess = spawn(ffmpeg, [
-      '-i', url,
-      '-f', 'mp3',
-      '-ar', '48000',
-      '-ac', '2',
-      'pipe:1'
-    ]);
+    const ffmpegProcess = spawn(ffmpeg, ['-i', url, '-f', 'mp3', '-ar', '48000', '-ac', '2', 'pipe:1']);
     ffmpegProcess.stdout.pipe(passThrough);
     resource = createAudioResource(passThrough);
   } else {
@@ -63,65 +57,63 @@ async function playNext(guildId, textChannel, voiceChannel) {
   const player = createAudioPlayer();
   player.play(resource);
 
-  player.on(AudioPlayerStatus.Idle, () => {
-    player.stop();
-    playNext(guildId, textChannel, voiceChannel);
-  });
-
+  players.set(guildId, player);
   const conn = connections.get(guildId);
   conn.subscribe(player);
-  players.set(guildId, player);
 
-  textChannel.send(`🎵 再生開始: **${title}**`);
+  // 再生開始メッセージはここだけ
+  await textChannel.send(`🎵 再生開始: **${title}**`);
+
+  player.on(AudioPlayerStatus.Idle, () => {
+    if (queues.get(guildId)?.length > 0) {
+      playNext(guildId, textChannel, voiceChannel);
+    } else {
+      players.delete(guildId);
+    }
+  });
 }
 
-// 添付ファイルを追加
+// 添付ファイル再生
 async function playAttachment(guildId, attachmentUrl, filename, textChannel, voiceChannel) {
   if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
 
-  const title = filename;
   if (!queues.has(guildId)) queues.set(guildId, []);
-  queues.get(guildId).push({ url: attachmentUrl, title, isYouTube: false, isAttachment: true });
+  queues.get(guildId).push({ url: attachmentUrl, title: filename, isYouTube: false, isAttachment: true });
 
-  if (players.get(guildId)?.state.status !== AudioPlayerStatus.Playing) {
+  if (!players.get(guildId)) {
     playNext(guildId, textChannel, voiceChannel);
-  } else {
-    textChannel.send(`▶️ キューに追加: **${title}**`);
   }
-  return title;
+
+  return filename;
 }
 
-// YouTubeを追加
+// YouTube再生
 async function playYouTube(guildId, url, textChannel, voiceChannel) {
   if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
 
-  const title = await new Promise((resolve) => {
+  const title = await new Promise((resolve, reject) => {
     const ytdlp = spawn('yt-dlp', ['--get-title', url]);
     let data = '';
     ytdlp.stdout.on('data', chunk => data += chunk.toString());
     ytdlp.on('close', () => resolve(data.trim() || '不明なタイトル'));
+    ytdlp.on('error', reject);
   });
 
   if (!queues.has(guildId)) queues.set(guildId, []);
   queues.get(guildId).push({ url, title, isYouTube: true, isAttachment: false });
 
-  if (players.get(guildId)?.state.status !== AudioPlayerStatus.Playing) {
+  if (!players.get(guildId)) {
     playNext(guildId, textChannel, voiceChannel);
-  } else {
-    textChannel.send(`▶️ キューに追加: **${title}**`);
   }
+
   return title;
 }
 
 // 共通エントリ
 async function playUrl(guildId, url, textChannel, voiceChannel, attachmentFilename = null) {
-  if (attachmentFilename) {
-    return playAttachment(guildId, url, attachmentFilename, textChannel, voiceChannel);
-  } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
-    return playYouTube(guildId, url, textChannel, voiceChannel);
-  } else {
-    return playAttachment(guildId, url, path.basename(url), textChannel, voiceChannel);
-  }
+  if (attachmentFilename) return playAttachment(guildId, url, attachmentFilename, textChannel, voiceChannel);
+  else if (url.includes('youtube.com') || url.includes('youtu.be')) return playYouTube(guildId, url, textChannel, voiceChannel);
+  else return playAttachment(guildId, url, path.basename(url), textChannel, voiceChannel);
 }
 
 // 停止
