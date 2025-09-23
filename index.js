@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
 const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-const slash = require("./commands/slash");
+const { registerSlashCommands, handleSlashCommand } = require("./commands/slash");
 console.log("slash export:", slash); 
 const { registerSlashCommands, handleSlashCommand } = slash;
 const handlePrefixMessage = require('./commands/prefix');
