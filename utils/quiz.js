@@ -130,10 +130,4 @@ async function quizManager(interaction) {
   });
 }
 
-module.exports = {
-  preloadQuizzes,
-  getRandomQuiz,
-  quizManager,
-  blockedChannelIds,
-  askQuiz, // <- ここを忘れずに
-};
+module.exports = { preloadQuizzes, getRandomQuiz, quizManager, blockedChannelIds };

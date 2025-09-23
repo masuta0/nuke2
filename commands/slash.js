@@ -12,7 +12,7 @@ const {
   setLevelAndXp,
   calculateRequiredXp,
 } = require("../utils/level");
-const { quizManager, askQuiz } = require("../utils/quiz");
+const { quizManager } = require("../utils/quiz");
 const {
   playMusic,
   skipMusic,
