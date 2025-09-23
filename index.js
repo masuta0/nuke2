@@ -24,7 +24,7 @@
     onGuildBanAdd,
     onGuildMemberRemove,
   } = require('./utils/anti-raid');
-  const { loadActivity, initActivity } = require("./utils/activity");
+  const { loadActivity } = require("./utils/activity");
 
   // 定数
   const TOKEN = process.env.TOKEN;
@@ -60,7 +60,6 @@
     // 初期化処理はすべてここにまとめる
     await ensureDropboxInit();
     await loadActivity();
-    await initActivity();
     preloadQuizzes();
     await loadData();
     await restoreVerifyMessage(client);
