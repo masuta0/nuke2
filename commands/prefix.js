@@ -21,7 +21,9 @@ const {
 const { askQuiz } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
-
+// commands/prefix.js
+const { joinVoiceChannel } = require('@discordjs/voice');
+const { addXp } = require('../utils/level');
 const CMD_PREFIX = "!";
 const cooldowns = new Map();
 const COOLDOWN_TIME = 10; // 10秒
@@ -130,13 +132,23 @@ module.exports = async function handlePrefixMessage(client, msg) {
         else await thinkingMsg.edit("⚠️ 返答に失敗しました");
         break;
       }
-
-      case "join":
-        if (!msg.member?.voice?.channel) return msg.reply("⚠️ VCに参加してください");
-        await joinVoice(msg.guild, msg.member.voice.channel);
-        await msg.reply("🔊 参加しました");
-        break;
-
+            case 'join': {
+              if (!msg.member?.voice?.channel) return msg.reply('❌ ボイスチャンネルに参加してください');
+              try {
+                joinVoiceChannel({
+                  channelId: msg.member.voice.channel.id,
+                  guildId: msg.guild.id,
+                  adapterCreator: msg.guild.voiceAdapterCreator,
+                });
+                await msg.reply('🔊 VCに参加しました');
+              } catch (err) {
+                console.error('VC接続失敗:', err);
+                await msg.reply('❌ VC接続に失敗しました');
+              }
+              break;
+            }
+          }
+        };
       case "play": {
         const allowedChannelId = '1419041571944403046';
         if (msg.channel.id !== allowedChannelId) {
