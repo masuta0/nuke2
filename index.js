@@ -1,5 +1,6 @@
 // index.js
   require('dotenv').config();
+const cron = require('node-cron');
   const express = require('express');
   const path = require('path');
   const fs = require('fs').promises;
@@ -113,7 +114,13 @@ const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyAct
   if (!message.content.startsWith('!')) return;
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
-
+    
+    if (command === 'ranking' && message.channel.name.includes('雑談')) {
+      const warn = await message.reply('❌ このチャンネルでは !ranking は使えません');
+      setTimeout(() => warn.delete().catch(() => {}), 5000);
+      message.delete().catch(() => {});
+      return;
+    }
   switch (command) {
     case 'join': {
       if (!message.member?.voice?.channel) return message.reply('❌ ボイスチャンネルに参加してください');
