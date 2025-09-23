@@ -24,7 +24,7 @@
     onGuildBanAdd,
     onGuildMemberRemove,
   } = require('./utils/anti-raid');
-  const { loadActivity } = require("./utils/activity");
+const { loadActivity, addMessage } = require("./utils/activity");
 
   // 定数
   const TOKEN = process.env.TOKEN;
