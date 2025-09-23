@@ -2,16 +2,26 @@ const fs = require('fs');
 const path = require('path');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./storage');
 
-const LOCAL_MONTHLY_PATH = path.join(__dirname, '../app-data/userMonthlyActivity.json');
-const LOCAL_WEEKLY_PATH  = path.join(__dirname, '../app-data/userWeeklyMessages.json');
+const APP_DATA_DIR = path.join(__dirname, '../app-data');
+const LOCAL_MONTHLY_PATH = path.join(APP_DATA_DIR, 'userMonthlyActivity.json');
+const LOCAL_WEEKLY_PATH  = path.join(APP_DATA_DIR, 'userWeeklyMessages.json');
 const DROPBOX_MONTHLY_PATH = '/app-data/userMonthlyActivity.json';
 const DROPBOX_WEEKLY_PATH  = '/app-data/userWeeklyMessages.json';
 
 let monthlyActivity = {};
 let weeklyActivity = {};
 
+// -------------------- ディレクトリ確認・作成 --------------------
+function ensureAppDataDir() {
+  if (!fs.existsSync(APP_DATA_DIR)) {
+    fs.mkdirSync(APP_DATA_DIR, { recursive: true });
+  }
+}
+
 // -------------------- データロード --------------------
 async function loadActivity() {
+  ensureAppDataDir(); // フォルダ確認
+
   try {
     await ensureDropboxInit();
 
@@ -47,7 +57,8 @@ async function loadActivity() {
 
 // -------------------- 保存 --------------------
 async function saveActivity() {
-  // 月間保存
+  ensureAppDataDir(); // フォルダ確認
+
   try {
     fs.writeFileSync(LOCAL_MONTHLY_PATH, JSON.stringify(monthlyActivity, null, 2));
     await uploadToDropbox(DROPBOX_MONTHLY_PATH, JSON.stringify(monthlyActivity, null, 2));
@@ -55,7 +66,6 @@ async function saveActivity() {
     console.error('❌ 月間アクティビティ保存失敗:', err);
   }
 
-  // 週間保存
   try {
     fs.writeFileSync(LOCAL_WEEKLY_PATH, JSON.stringify(weeklyActivity, null, 2));
     await uploadToDropbox(DROPBOX_WEEKLY_PATH, JSON.stringify(weeklyActivity, null, 2));
@@ -66,12 +76,10 @@ async function saveActivity() {
 
 // -------------------- メッセージ追加 --------------------
 async function addMessage(guildId, userId, content) {
-  // 月間
   if (!monthlyActivity[guildId]) monthlyActivity[guildId] = {};
   if (!monthlyActivity[guildId][userId]) monthlyActivity[guildId][userId] = 0;
   monthlyActivity[guildId][userId]++;
 
-  // 週間
   if (!weeklyActivity[guildId]) weeklyActivity[guildId] = {};
   if (!weeklyActivity[guildId][userId]) weeklyActivity[guildId][userId] = 0;
   weeklyActivity[guildId][userId]++;
@@ -83,8 +91,6 @@ async function addMessage(guildId, userId, content) {
 async function resetMonthlyActivity(client) {
   monthlyActivity = {};
   await saveActivity();
-
-  // 月間ロール更新など必要ならここで処理
   console.log('✅ 月間アクティビティリセット完了');
 }
 
