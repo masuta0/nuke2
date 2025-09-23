@@ -24,12 +24,7 @@ const {
   onGuildBanAdd,
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
-
-// 追加: activity.js
-// 変更前
 const { loadActivity, initActivity } = require("./utils/activity");
-  await loadActivity(); // ← これだけでOK
-});
 
 // 定数
 const TOKEN = process.env.TOKEN;
@@ -61,7 +56,8 @@ app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 // Bot ready
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-
+    await loadActivity(); // ← これだけでOK
+  });
   await ensureDropboxInit();
   await initActivity();
   preloadQuizzes();
