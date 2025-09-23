@@ -135,4 +135,5 @@ module.exports = {
   getRandomQuiz,
   quizManager,
   blockedChannelIds,
+  askQuiz, // <- ここを忘れずに
 };
