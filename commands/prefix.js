@@ -71,14 +71,22 @@ module.exports = async function handlePrefixMessage(client, msg) {
   const args = content.slice(CMD_PREFIX.length).split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
 
-  // クールダウンチェック
-  if (cooldowns.has(msg.author.id)) {
-    const lastUsed = cooldowns.get(msg.author.id);
-    const now = Date.now();
-    const remaining = (lastUsed + COOLDOWN_TIME * 1000) - now;
-    if (remaining > 0) {
-      const seconds = Math.ceil(remaining / 1000);
-      return msg.reply(`⚠️ コマンドはクールダウン中です。あと${seconds}秒お待ちください。`);
+      // クールダウンチェック
+      if (cooldowns.has(msg.author.id)) {
+        const lastUsed = cooldowns.get(msg.author.id);
+        const now = Date.now();
+        const remaining = (lastUsed + COOLDOWN_TIME * 1000) - now;
+        if (remaining > 0) {
+          const seconds = Math.ceil(remaining / 1000);
+          const warnMsg = await msg.reply(`⚠️ コマンドはクールダウン中です。あと${seconds}秒お待ちください。`);
+          // 5秒後に削除
+          setTimeout(() => {
+            warnMsg.delete().catch(() => {});
+          }, 5000);
+          return;
+        }
+      }
+      cooldowns.set(msg.author.id, Date.now());
     }
   }
   cooldowns.set(msg.author.id, Date.now());
@@ -237,9 +245,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
           if (msg.mentions.members.size > 0) {
             targetUser = msg.mentions.members.first();
           }
-
-          // メッセージ送信
-          const waitingMsg = await msg.channel.send(`🧹 メッセージ削除中...${targetUser ? ` (対象: ${targetUser.user.tag})` : ''}`);
 
           // guild.js 側で targetUser を渡す
           const deletedCount = await clearMessages(msg.channel, amount, waitingMsg, targetUser);
