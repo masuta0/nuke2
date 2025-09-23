@@ -81,15 +81,15 @@ const commands = [
 
   // 音楽
   new SlashCommandBuilder()
-    .setName("play")
+    .setName("mplay")
     .setDescription("音楽を再生します")
     .addStringOption((opt) =>
       opt.setName("url").setDescription("YouTube URL").setRequired(true)
     ),
-  new SlashCommandBuilder().setName("skip").setDescription("曲をスキップします"),
-  new SlashCommandBuilder().setName("stop").setDescription("音楽を停止します"),
-  new SlashCommandBuilder().setName("pause").setDescription("音楽を一時停止します"),
-  new SlashCommandBuilder().setName("resume").setDescription("音楽を再開します"),
+  new SlashCommandBuilder().setName("mskip").setDescription("曲をスキップします"),
+  new SlashCommandBuilder().setName("mstop").setDescription("音楽を停止します"),
+  new SlashCommandBuilder().setName("mpause").setDescription("音楽を一時停止します"),
+  new SlashCommandBuilder().setName("mresume").setDescription("音楽を再開します"),
 
   // サーバー管理
   new SlashCommandBuilder()
