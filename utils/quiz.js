@@ -3,16 +3,15 @@ const fs = require("fs");
 const path = require("path");
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
-// --- クイズデータ ---
 let quizzes = {};
 const blockedChannelIds = [
   "1415189080861315112",
   "1416773830537642115",
   "1409520151749070880",
-  "1410891781846994956",
+  "1410891781846994956"
 ];
 
-// --- クイズデータロード ---
+// ---------------- クイズデータロード ----------------
 function preloadQuizzes() {
   try {
     const data = fs.readFileSync(path.join(__dirname, "../quizzes.json"), "utf-8");
@@ -23,7 +22,7 @@ function preloadQuizzes() {
   }
 }
 
-// --- ランダム問題取得 ---
+// ---------------- ランダムに問題取得 ----------------
 function getRandomQuiz(category = null) {
   const categories = Object.keys(quizzes);
   if (categories.length === 0) return null;
@@ -35,7 +34,7 @@ function getRandomQuiz(category = null) {
     return { category, ...q };
   }
 
-  // ランダム
+  // ランダムカテゴリ
   const randomCategory = categories[Math.floor(Math.random() * categories.length)];
   const questions = quizzes[randomCategory];
   if (!questions || questions.length === 0) return null;
@@ -43,36 +42,33 @@ function getRandomQuiz(category = null) {
   return { category: randomCategory, ...q };
 }
 
-// --- クイズ本体 ---
+// ---------------- クイズマネージャ ----------------
 async function quizManager({ interaction = null, message = null }) {
   const channel = interaction?.channel || message?.channel;
   const user = interaction?.user || message?.author;
 
   if (!channel || !user) return;
 
-  // 使用禁止チャンネルチェック
+  // 禁止チャンネル・雑談チャンネル
   if (blockedChannelIds.includes(channel.id) || channel.name.includes("雑談")) {
-    const replyTarget = interaction || message;
-    const sent = await (interaction
-      ? replyTarget.reply({ content: "❌ このチャンネルではクイズは使えません", ephemeral: true })
-      : replyTarget.channel.send("❌ このチャンネルではクイズは使えません"));
+    const reply = interaction
+      ? await interaction.reply({ content: "❌ このチャンネルではクイズは使えません", ephemeral: true })
+      : await channel.send("❌ このチャンネルではクイズは使えません");
 
-    if (!interaction && message) {
+    if (message) {
       setTimeout(() => {
-        sent.delete().catch(() => {});
+        reply.delete().catch(() => {});
         message.delete().catch(() => {});
       }, 5000);
     }
     return;
   }
 
-  // クイズ取得
   const quiz = getRandomQuiz();
   if (!quiz || !quiz.choices || quiz.choices.length === 0) {
-    const replyTarget = interaction || message;
-    await (interaction
-      ? replyTarget.reply({ content: "⚠️ クイズデータが不十分です。", ephemeral: true })
-      : replyTarget.channel.send("⚠️ クイズデータが不十分です。"));
+    const msg = interaction
+      ? await interaction.reply({ content: "⚠️ クイズデータが不十分です。", ephemeral: true })
+      : await channel.send("⚠️ クイズデータが不十分です。");
     return;
   }
 
@@ -87,18 +83,15 @@ async function quizManager({ interaction = null, message = null }) {
     );
   });
 
-  // メッセージ送信
-  const sentMessage = await (interaction
-    ? interaction.reply({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons], fetchReply: true })
-    : channel.send({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] }));
+  if (interaction) await interaction.reply({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] });
+  else await channel.send({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] });
 
-  // 回答ボタンの収集
+  // Collector
   const filter = (i) => i.user.id === user.id;
-  const collector = sentMessage.createMessageComponentCollector({ filter, time: 30000 });
+  const collector = channel.createMessageComponentCollector({ filter, time: 30000 });
 
   collector.on("collect", async (i) => {
     if (!i.isButton()) return;
-
     const selectedIndex = parseInt(i.customId.split("_")[1], 10);
     const isCorrect = quiz.choices[selectedIndex] === quiz.answer;
 
@@ -117,14 +110,14 @@ async function quizManager({ interaction = null, message = null }) {
     });
   });
 
-  collector.on("end", (collected, reason) => {
+  collector.on("end", (_, reason) => {
     if (reason === "time") {
       channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
     }
   });
 
   // 次の問題ボタン
-  const nextCollector = sentMessage.createMessageComponentCollector({ filter, time: 60000 });
+  const nextCollector = channel.createMessageComponentCollector({ filter, time: 60000 });
   nextCollector.on("collect", async (i) => {
     if (i.customId === "quiz_next") {
       await i.deferUpdate();
@@ -137,5 +130,5 @@ module.exports = {
   preloadQuizzes,
   getRandomQuiz,
   quizManager,
-  blockedChannelIds,
+  blockedChannelIds
 };
