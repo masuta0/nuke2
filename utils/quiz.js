@@ -5,7 +5,12 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 
 // --- クイズデータ ---
 let quizzes = {};
-const blockedChannelIds = ["1415189080861315112", "1416773830537642115","1409520151749070880","1410891781846994956"]; // クイズ禁止チャンネル
+const blockedChannelIds = [
+  "1415189080861315112",
+  "1416773830537642115",
+  "1409520151749070880",
+  "1410891781846994956",
+];
 
 // --- クイズデータロード ---
 function preloadQuizzes() {
@@ -18,7 +23,7 @@ function preloadQuizzes() {
   }
 }
 
-// --- ランダムにクイズ取得 ---
+// --- ランダム問題取得 ---
 function getRandomQuiz(category = null) {
   const categories = Object.keys(quizzes);
   if (categories.length === 0) return null;
@@ -30,7 +35,7 @@ function getRandomQuiz(category = null) {
     return { category, ...q };
   }
 
-  // ランダムカテゴリ
+  // ランダム
   const randomCategory = categories[Math.floor(Math.random() * categories.length)];
   const questions = quizzes[randomCategory];
   if (!questions || questions.length === 0) return null;
@@ -38,44 +43,40 @@ function getRandomQuiz(category = null) {
   return { category: randomCategory, ...q };
 }
 
-// --- 注意メッセージ削除用ヘルパー ---
-async function warnAndDelete(interaction, content, deleteAfter = 5000) {
-  try {
-    // 注意メッセージ送信
-    const warnMsg = await interaction.reply({ content, ephemeral: false });
-    // 5秒後に削除
-    setTimeout(() => {
-      warnMsg.delete().catch(() => {});
-    }, deleteAfter);
+// --- クイズ本体 ---
+async function quizManager({ interaction = null, message = null }) {
+  const channel = interaction?.channel || message?.channel;
+  const user = interaction?.user || message?.author;
 
-    // コマンドメッセージ自体を削除
-    try {
-      if (interaction.deferred || interaction.replied) {
-        interaction.deleteReply().catch(() => {});
-      }
-    } catch {}
-  } catch (err) {
-    console.error("❌ warnAndDelete error:", err);
-  }
-}
+  if (!channel || !user) return;
 
-// --- クイズマネージャ ---
-async function quizManager(interaction) {
-  const { channel, user } = interaction;
-
-  // 禁止チャンネル判定
+  // 使用禁止チャンネルチェック
   if (blockedChannelIds.includes(channel.id) || channel.name.includes("雑談")) {
-    await warnAndDelete(interaction, "❌ このチャンネルではクイズは使えません");
+    const replyTarget = interaction || message;
+    const sent = await (interaction
+      ? replyTarget.reply({ content: "❌ このチャンネルではクイズは使えません", ephemeral: true })
+      : replyTarget.channel.send("❌ このチャンネルではクイズは使えません"));
+
+    if (!interaction && message) {
+      setTimeout(() => {
+        sent.delete().catch(() => {});
+        message.delete().catch(() => {});
+      }, 5000);
+    }
     return;
   }
 
+  // クイズ取得
   const quiz = getRandomQuiz();
   if (!quiz || !quiz.choices || quiz.choices.length === 0) {
-    await interaction.reply({ content: "⚠️ クイズデータが不十分です。", ephemeral: true });
+    const replyTarget = interaction || message;
+    await (interaction
+      ? replyTarget.reply({ content: "⚠️ クイズデータが不十分です。", ephemeral: true })
+      : replyTarget.channel.send("⚠️ クイズデータが不十分です。"));
     return;
   }
 
-  // --- 選択肢ボタン作成 ---
+  // ボタン作成
   const buttons = new ActionRowBuilder();
   quiz.choices.forEach((choice, idx) => {
     buttons.addComponents(
@@ -86,19 +87,21 @@ async function quizManager(interaction) {
     );
   });
 
-  // クイズ問題を送信
-  await interaction.reply({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] });
+  // メッセージ送信
+  const sentMessage = await (interaction
+    ? interaction.reply({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons], fetchReply: true })
+    : channel.send({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] }));
 
-  // --- 回答ボタンのコレクター ---
+  // 回答ボタンの収集
   const filter = (i) => i.user.id === user.id;
-  const collector = interaction.channel.createMessageComponentCollector({ filter, time: 30000 });
+  const collector = sentMessage.createMessageComponentCollector({ filter, time: 30000 });
 
   collector.on("collect", async (i) => {
     if (!i.isButton()) return;
+
     const selectedIndex = parseInt(i.customId.split("_")[1], 10);
     const isCorrect = quiz.choices[selectedIndex] === quiz.answer;
 
-    // 回答結果メッセージと次の問題ボタン
     await i.update({
       content: isCorrect
         ? `✅ 正解！ (${quiz.answer})`
@@ -120,14 +123,19 @@ async function quizManager(interaction) {
     }
   });
 
-  // --- 次の問題ボタンのコレクター ---
-  const nextCollector = interaction.channel.createMessageComponentCollector({ filter, time: 60000 });
+  // 次の問題ボタン
+  const nextCollector = sentMessage.createMessageComponentCollector({ filter, time: 60000 });
   nextCollector.on("collect", async (i) => {
     if (i.customId === "quiz_next") {
       await i.deferUpdate();
-      await quizManager(interaction); // 再帰的に次の問題
+      await quizManager({ interaction, message }); // 再帰的に次の問題
     }
   });
 }
 
-module.exports = { preloadQuizzes, getRandomQuiz, quizManager, blockedChannelIds };
+module.exports = {
+  preloadQuizzes,
+  getRandomQuiz,
+  quizManager,
+  blockedChannelIds,
+};
