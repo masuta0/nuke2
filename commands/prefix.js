@@ -4,30 +4,30 @@ const {
   backupServer,
   restoreServer,
   nukeChannel,
-  clearMessages,
   addRoleToAll,
 } = require("../utils/guild");
+
 const {
   addMessage,
   getRanking,
   updateActiveRoles,
 } = require("../utils/activity");
+
 const { chat, checkAiCooldown, setAiCooldown } = require("../utils/ai");
 const {
   saveUserWeatherPref,
   loadUserWeatherPref,
   fetchWeather,
 } = require("../utils/weather");
+
 const { askQuiz } = require("../utils/quiz");
-const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
+const { joinVoice, playUrl, leaveVoice, stopMusic, AudioPlayerStatus, players } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
-// commands/prefix.js
 const { joinVoiceChannel } = require('@discordjs/voice');
-const { addXp } = require('../utils/level');
+
 const CMD_PREFIX = "!";
+const COOLDOWN_TIME = 10; // 秒
 const cooldowns = new Map();
-const COOLDOWN_TIME = 10; // 10秒
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const helpMessage = `
 **このボットについて**
@@ -63,13 +63,12 @@ const helpMessage = `
 
 module.exports = async function handlePrefixMessage(client, msg) {
   if (msg.author.bot) return;
-  const content = (msg.content || "").trim();
-  if (!content.startsWith(CMD_PREFIX)) return;
+  if (!msg.content.startsWith(CMD_PREFIX)) return;
 
-  const args = content.slice(CMD_PREFIX.length).split(/\s+/);
+  const args = msg.content.slice(CMD_PREFIX.length).trim().split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
 
-  // クールダウンチェック
+  // クールダウン
   if (cooldowns.has(msg.author.id)) {
     const lastUsed = cooldowns.get(msg.author.id);
     const remaining = (lastUsed + COOLDOWN_TIME * 1000) - Date.now();
@@ -81,8 +80,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
   }
   cooldowns.set(msg.author.id, Date.now());
 
-  // メッセージを月間アクティブデータに追加
-  addMessage(msg.author.id, msg.guild.id);
+  // 月間アクティブに追加
+  if (msg.guild) await addMessage(client, msg.guild.id, msg.author.id);
 
   try {
     switch (cmd) {
@@ -132,35 +131,36 @@ module.exports = async function handlePrefixMessage(client, msg) {
         else await thinkingMsg.edit("⚠️ 返答に失敗しました");
         break;
       }
-            case 'join': {
-              if (!msg.member?.voice?.channel) return msg.reply('❌ ボイスチャンネルに参加してください');
-              try {
-                joinVoiceChannel({
-                  channelId: msg.member.voice.channel.id,
-                  guildId: msg.guild.id,
-                  adapterCreator: msg.guild.voiceAdapterCreator,
-                });
-                await msg.reply('🔊 VCに参加しました');
-              } catch (err) {
-                console.error('VC接続失敗:', err);
-                await msg.reply('❌ VC接続に失敗しました');
-              }
-              break;
-            }
-          }
-        };
+
+      case "join": {
+        if (!msg.member?.voice?.channel) return msg.reply("❌ VCに参加してください");
+        try {
+          joinVoiceChannel({
+            channelId: msg.member.voice.channel.id,
+            guildId: msg.guild.id,
+            adapterCreator: msg.guild.voiceAdapterCreator,
+          });
+          await msg.reply("🔊 VCに参加しました");
+        } catch (err) {
+          console.error("VC接続失敗:", err);
+          await msg.reply("❌ VC接続に失敗しました");
+        }
+        break;
+      }
+
       case "play": {
-        const allowedChannelId = '1419041571944403046';
+        const allowedChannelId = "1419041571944403046";
         if (msg.channel.id !== allowedChannelId) {
-          await msg.delete().catch(() => {});
-          return msg.channel.send("❌ このチャンネルでは !play は使用不可").then(m => setTimeout(() => m.delete().catch(()=>{}),5000));
+          await msg.delete().catch(()=>{});
+          return msg.channel.send("❌ このチャンネルでは !play 使用不可")
+            .then(m => setTimeout(()=>m.delete().catch(()=>{}),5000));
         }
         const query = args.join(" ");
         if (!query) return msg.reply("❌ 曲名またはURLを入力してください");
         if (!msg.member?.voice?.channel) return msg.reply("❌ VCに参加してください");
+
         await joinVoice(msg.guild, msg.member.voice.channel);
         const musicTitle = await playUrl(msg.guild.id, query, msg.channel, msg.member.voice.channel);
-        const { AudioPlayerStatus, players } = require('../utils/music');
         const player = players.get(msg.guild.id);
         if (player?.state.status === AudioPlayerStatus.Playing) {
           await msg.channel.send(`▶️ キューに追加: **${musicTitle}**`);
@@ -169,7 +169,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
       }
 
       case "stop":
-        const { stopMusic } = require("../utils/music");
         msg.channel.send(stopMusic(msg.guild.id) ? "⏹️ 再生停止・キュークリア" : "❌ 再生中の曲なし");
         break;
 
@@ -208,51 +207,23 @@ module.exports = async function handlePrefixMessage(client, msg) {
       case "clear": {
         if (!hasManageGuildPermission(msg.member)) return msg.reply("⚠️ 管理者権限が必要です");
         if (!args[0]) return msg.channel.send("使い方: `!clear <数> [@ユーザー]`");
-        let amount = parseInt(args[0],10);
-        if (!amount || amount<1 || amount>1000) return msg.channel.send("⚠️ 1〜1000の範囲で指定してください");
+
+        let amount = parseInt(args[0], 10);
+        if (!amount || amount < 1 || amount > 1000) return msg.channel.send("⚠️ 1〜1000の範囲で指定してください");
+
         let targetUser = msg.mentions.members.first() || null;
         await msg.delete().catch(()=>{});
         let totalDeleted = 0;
-        while(amount>0){
-          const fetchAmount = Math.min(amount,100);
-          const fetched = await msg.channel.messages.fetch({limit:fetchAmount});
-          let toDelete = targetUser ? fetched.filter(m=>m.author.id===targetUser.id) : fetched;
-          if(toDelete.size===0) break;
+
+        while(amount > 0){
+          const fetchAmount = Math.min(amount, 100);
+          const fetched = await msg.channel.messages.fetch({limit: fetchAmount});
+          const toDelete = targetUser ? fetched.filter(m=>m.author.id===targetUser.id) : fetched;
+          if (toDelete.size === 0) break;
           const deleted = await msg.channel.bulkDelete(toDelete,true);
           totalDeleted += deleted.size;
           amount -= deleted.size;
-          if(deleted.size<fetchAmount) break;
+          if(deleted.size < fetchAmount) break;
         }
-        const notice = await msg.channel.send(`🧹 ${totalDeleted}件のメッセージを削除しました。`);
-        setTimeout(()=>notice.delete().catch(()=>{}),5000);
-        break;
-      }
 
-      case "ranking": {
-        const ranking = getRanking(msg.guild.id).slice(0,10);
-        if(!ranking.length) return msg.reply("📊 今月のランキングデータはありません");
-        let text = "🏆 **月間アクティブユーザーランキング** 🏆\n\n";
-        for(let i=0;i<ranking.length;i++){
-          const [userId,count] = ranking[i];
-          const user = await msg.guild.members.fetch(userId).catch(()=>null);
-          text += `${i+1}位: **${user?user.user.username:"不明ユーザー"}** (${count} メッセージ)\n`;
-        }
-        await msg.channel.send(text);
-        await updateActiveRoles(msg.guild);
-        break;
-      }
-
-      default: {
-        const langMap = { 英語:"en",えいご:"en",日本語:"ja",にほんご:"ja",中国語:"zh-CN",ちゅうごくご:"zh-CN",韓国語:"ko",かんこくご:"ko",フランス語:"fr",スペイン語:"es",ドイツ語:"de" };
-        const to = langMap[cmd];
-        if(!to) return;
-        const text = args.join(" ").trim();
-        if(!text) return;
-        const res = await translate(text,{to});
-        await msg.reply(res.text||"翻訳できませんでした");
-      }
-    }
-  } catch(e){
-    console.error("Prefix command error:",e);
-  }
-};
+        const
