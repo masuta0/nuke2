@@ -7,6 +7,11 @@ const {
   clearMessages,
   addRoleToAll,
 } = require("../utils/guild");
+const {
+  addMessage,
+  getRanking,
+  updateActiveRoles,
+} = require("../utils/activity");
 // ★ 修正: chat, checkAiCooldown, setAiCooldownをインポート
 const { chat, checkAiCooldown, setAiCooldown } = require("../utils/ai"); 
 const {
@@ -91,6 +96,26 @@ module.exports = async function handlePrefixMessage(client, msg) {
 
   try {
     switch (cmd) {
+        case "ranking": {
+          const ranking = getRanking(msg.guild.id).slice(0, 10); // 上位10人まで表示
+          if (ranking.length === 0) {
+            return msg.reply("📊 今月のランキングデータはまだありません。");
+          }
+
+          let text = "🏆 **月間アクティブユーザーランキング** 🏆\n\n";
+          for (let i = 0; i < ranking.length; i++) {
+            const [userId, count] = ranking[i];
+            const user = await msg.guild.members.fetch(userId).catch(() => null);
+            const name = user ? user.user.username : "不明ユーザー";
+            text += `${i + 1}位: **${name}** (${count} メッセージ)\n`;
+          }
+
+          await msg.channel.send(text);
+
+          // ランキング表示のついでにロール更新
+          await updateActiveRoles(msg.guild);
+          break;
+        }
       case "help": {
         await msg.author.send(helpMessage)
           .then(() => msg.reply("✅ DMでヘルプを送信しました。"))

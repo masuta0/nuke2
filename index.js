@@ -26,6 +26,9 @@ const {
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
 
+// 追加: activity.js の読み込み
+const { addMessage } = require('./utils/activity');
+
 // 定数
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
@@ -94,7 +97,16 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  await addXp(message.member);
+  // メッセージ数カウント (月間アクティブ用)
+  if (message.guild) {
+    addMessage(message.guild.id, message.author.id);
+  }
+
+  // レベルシステム
+  if (message.member) {
+    await addXp(message.member);
+  }
+
   await handleMessage(message);
 
   // DMでのモデレーション対応
@@ -116,28 +128,28 @@ client.on('messageCreate', async (message) => {
       }
       break;
     }
-      case 'play': {
-        const query = args.join(' ');
-        if (!query) return message.reply('❌ 曲名またはURLを入力してください');
-        const voiceChannel = message.member?.voice.channel;
-        if (!voiceChannel) return message.reply('❌ ボイスチャンネルに参加してください');
+    case 'play': {
+      const query = args.join(' ');
+      if (!query) return message.reply('❌ 曲名またはURLを入力してください');
+      const voiceChannel = message.member?.voice.channel;
+      if (!voiceChannel) return message.reply('❌ ボイスチャンネルに参加してください');
 
-        try {
-          // VC接続して再生
-          await joinVoice(message.guild, voiceChannel);
-          const musicTitle = await playUrl(message.guild.id, query, message.channel, voiceChannel);
+      try {
+        // VC接続して再生
+        await joinVoice(message.guild, voiceChannel);
+        const musicTitle = await playUrl(message.guild.id, query, message.channel, voiceChannel);
 
-          if (musicTitle) {
-            await message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
-          } else {
-            await message.channel.send('❌ 曲が見つかりません');
-          }
-        } catch (err) {
-          console.error('!play error:', err);
-          await message.reply('❌ 再生中にエラーが発生しました');
+        if (musicTitle) {
+          await message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
+        } else {
+          await message.channel.send('❌ 曲が見つかりません');
         }
-        break;
+      } catch (err) {
+        console.error('!play error:', err);
+        await message.reply('❌ 再生中にエラーが発生しました');
       }
+      break;
+    }
     case 'stop': {
       const result = stopMusic(message.guild.id);
       message.channel.send(result ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
