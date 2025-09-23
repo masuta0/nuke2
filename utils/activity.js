@@ -8,54 +8,34 @@ const LOCAL_WEEKLY_PATH  = path.join(APP_DATA_DIR, 'userWeeklyMessages.json');
 const DROPBOX_MONTHLY_PATH = '/app-data/userMonthlyActivity.json';
 const DROPBOX_WEEKLY_PATH  = '/app-data/userWeeklyMessages.json';
 
+// 除外ユーザー（IDをここに追加）
+const EXCLUDED_USERS = [
+  '1366740571707801610',
+  '1399725671357354014',
+];
+
 let monthlyActivity = {};
 let weeklyActivity = {};
 
 // -------------------- ディレクトリ確認・作成 --------------------
 function ensureAppDataDir() {
-  if (!fs.existsSync(APP_DATA_DIR)) {
-    fs.mkdirSync(APP_DATA_DIR, { recursive: true });
-  }
-}
-
-// -------------------- 初期ファイル作成 --------------------
-function ensureInitialFiles() {
-  ensureAppDataDir();
-
-  if (!fs.existsSync(LOCAL_MONTHLY_PATH)) fs.writeFileSync(LOCAL_MONTHLY_PATH, JSON.stringify({}, null, 2));
-  if (!fs.existsSync(LOCAL_WEEKLY_PATH)) fs.writeFileSync(LOCAL_WEEKLY_PATH, JSON.stringify({}, null, 2));
+  if (!fs.existsSync(APP_DATA_DIR)) fs.mkdirSync(APP_DATA_DIR, { recursive: true });
 }
 
 // -------------------- データロード --------------------
 async function loadActivity() {
-  ensureInitialFiles();
-
+  ensureAppDataDir();
   try {
     await ensureDropboxInit();
 
     // Dropbox 月間
-    try {
-      const data = await downloadFromDropbox(DROPBOX_MONTHLY_PATH);
-      if (data) monthlyActivity = { ...monthlyActivity, ...JSON.parse(data) };
-    } catch {}
-
+    try { const data = await downloadFromDropbox(DROPBOX_MONTHLY_PATH); if (data) monthlyActivity = { ...monthlyActivity, ...JSON.parse(data) }; } catch {}
     // Dropbox 週間
-    try {
-      const data = await downloadFromDropbox(DROPBOX_WEEKLY_PATH);
-      if (data) weeklyActivity = { ...weeklyActivity, ...JSON.parse(data) };
-    } catch {}
-
+    try { const data = await downloadFromDropbox(DROPBOX_WEEKLY_PATH); if (data) weeklyActivity = { ...weeklyActivity, ...JSON.parse(data) }; } catch {}
     // ローカル月間
-    if (fs.existsSync(LOCAL_MONTHLY_PATH)) {
-      const data = JSON.parse(fs.readFileSync(LOCAL_MONTHLY_PATH, 'utf-8'));
-      monthlyActivity = { ...monthlyActivity, ...data };
-    }
-
+    if (fs.existsSync(LOCAL_MONTHLY_PATH)) monthlyActivity = { ...monthlyActivity, ...JSON.parse(fs.readFileSync(LOCAL_MONTHLY_PATH, 'utf-8')) };
     // ローカル週間
-    if (fs.existsSync(LOCAL_WEEKLY_PATH)) {
-      const data = JSON.parse(fs.readFileSync(LOCAL_WEEKLY_PATH, 'utf-8'));
-      weeklyActivity = { ...weeklyActivity, ...data };
-    }
+    if (fs.existsSync(LOCAL_WEEKLY_PATH)) weeklyActivity = { ...weeklyActivity, ...JSON.parse(fs.readFileSync(LOCAL_WEEKLY_PATH, 'utf-8')) };
 
     console.log('✅ アクティビティデータロード完了');
   } catch (err) {
@@ -65,63 +45,71 @@ async function loadActivity() {
 
 // -------------------- 保存 --------------------
 async function saveActivity() {
-  ensureInitialFiles();
-
+  ensureAppDataDir();
   try {
     fs.writeFileSync(LOCAL_MONTHLY_PATH, JSON.stringify(monthlyActivity, null, 2));
     await uploadToDropbox(DROPBOX_MONTHLY_PATH, JSON.stringify(monthlyActivity, null, 2));
-  } catch (err) {
-    console.error('❌ 月間アクティビティ保存失敗:', err);
-  }
+  } catch (err) { console.error('❌ 月間アクティビティ保存失敗:', err); }
 
   try {
     fs.writeFileSync(LOCAL_WEEKLY_PATH, JSON.stringify(weeklyActivity, null, 2));
     await uploadToDropbox(DROPBOX_WEEKLY_PATH, JSON.stringify(weeklyActivity, null, 2));
-  } catch (err) {
-    console.error('❌ 週間アクティビティ保存失敗:', err);
-  }
+  } catch (err) { console.error('❌ 週間アクティビティ保存失敗:', err); }
 }
 
 // -------------------- メッセージ追加 --------------------
-async function addMessage(guildId, userId, content) {
-  if (!monthlyActivity[guildId]) monthlyActivity[guildId] = {};
-  if (!monthlyActivity[guildId][userId]) monthlyActivity[guildId][userId] = 0;
-  monthlyActivity[guildId][userId]++;
+async function addMessage(userId) {
+  if (EXCLUDED_USERS.includes(userId)) return;
 
-  if (!weeklyActivity[guildId]) weeklyActivity[guildId] = {};
-  if (!weeklyActivity[guildId][userId]) weeklyActivity[guildId][userId] = 0;
-  weeklyActivity[guildId][userId]++;
+  // サーバー全体でカウント
+  if (!monthlyActivity['global']) monthlyActivity['global'] = {};
+  monthlyActivity['global'][userId] = (monthlyActivity['global'][userId] || 0) + 1;
+
+  if (!weeklyActivity['global']) weeklyActivity['global'] = {};
+  weeklyActivity['global'][userId] = (weeklyActivity['global'][userId] || 0) + 1;
 
   await saveActivity();
 }
 
-// -------------------- 月間リセット --------------------
-async function resetMonthlyActivity() {
-  monthlyActivity = {};
-  await saveActivity();
-  console.log('✅ 月間アクティビティリセット完了');
+// -------------------- リセット --------------------
+async function resetMonthlyActivity() { monthlyActivity = {}; await saveActivity(); console.log('✅ 月間アクティビティリセット完了'); }
+async function resetWeeklyActivity() { weeklyActivity = {}; await saveActivity(); console.log('✅ 週間アクティビティリセット完了'); }
+
+// -------------------- ランキング取得 --------------------
+function getTopMonthly(limit = 10) {
+  const data = monthlyActivity['global'] || {};
+  return Object.entries(data)
+    .filter(([userId]) => !EXCLUDED_USERS.includes(userId))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
 }
 
-// -------------------- 週間リセット --------------------
-async function resetWeeklyActivity() {
-  weeklyActivity = {};
-  await saveActivity();
-  console.log('✅ 週間アクティビティリセット完了');
+function getTopWeekly(limit = 10) {
+  const data = weeklyActivity['global'] || {};
+  return Object.entries(data)
+    .filter(([userId]) => !EXCLUDED_USERS.includes(userId))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit);
 }
 
-// -------------------- 上位取得 --------------------
-function getTopMonthly(guildId, limit = 10) {
-  const data = monthlyActivity[guildId] || {};
-  return Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, limit);
-}
+// -------------------- ロール付与用ユーティリティ --------------------
+async function updateActiveRoles(client, guildId, roleId, topCount = 3) {
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) return;
 
-function getTopWeekly(guildId, limit = 10) {
-  const data = weeklyActivity[guildId] || {};
-  return Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, limit);
-}
+  const topUsers = getTopMonthly(topCount).map(([userId]) => userId);
 
-// getRanking エイリアス
-const getRanking = getTopMonthly;
+  const role = guild.roles.cache.get(roleId);
+  if (!role) return;
+
+  guild.members.cache.forEach(member => {
+    if (topUsers.includes(member.id)) {
+      if (!member.roles.cache.has(role.id)) member.roles.add(role).catch(console.error);
+    } else {
+      if (member.roles.cache.has(role.id)) member.roles.remove(role).catch(console.error);
+    }
+  });
+}
 
 module.exports = {
   loadActivity,
@@ -131,5 +119,5 @@ module.exports = {
   resetWeeklyActivity,
   getTopMonthly,
   getTopWeekly,
-  getRanking
+  updateActiveRoles
 };
