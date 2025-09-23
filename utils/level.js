@@ -1,34 +1,34 @@
+// utils/level.js
 const fs = require('fs');
 const path = require('path');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./storage');
 
-const LOCAL_LEVEL_DATA_PATH = path.join(__dirname, '../userLevels.json');
+const LOCAL_LEVEL_DATA_PATH = path.join(__dirname, '../app-data/userLevels.json');
 const DROPBOX_LEVEL_DATA_PATH = '/app-data/userLevels.json';
-const LEVEL_SETTINGS_PATH = path.join(__dirname, '../levels.json');
+const LEVEL_SETTINGS_PATH = path.join(__dirname, '../app-data/levels.json');
 
 let userLevels = {};
 let levelSettings = {};
 const xpCooldown = new Set();
-const COOLDOWN_TIME = 30 * 1000; // 30秒
-const LEVEL_LOG_CHANNEL_ID = process.env.LEVEL_LOG_CHANNEL_ID || null;
-const DROPBOX_RETRY_COUNT = 3;
-const DROPBOX_RETRY_INTERVAL = 2000; // ms
+const COOLDOWN_TIME = 30 * 1000; 
 
-// -------------------- データロード --------------------
+const levelLogChannels = {
+  "1404236535733158018": "1411721928120598739",
+};
+
 async function loadData() {
   try {
     await ensureDropboxInit();
     const data = await downloadFromDropbox(DROPBOX_LEVEL_DATA_PATH);
     if (data) {
       const parsed = JSON.parse(data);
-      userLevels = { ...userLevels, ...parsed }; // 既存データに追記
+      userLevels = { ...userLevels, ...parsed }; 
       console.log('✅ Dropboxユーザーレベルデータをロードしました');
     }
   } catch (err) {
     console.warn('⚠️ Dropboxロード失敗、ローカルを確認します:', err.message);
   }
 
-  // ローカルロード
   try {
     if (fs.existsSync(LOCAL_LEVEL_DATA_PATH)) {
       const localData = JSON.parse(fs.readFileSync(LOCAL_LEVEL_DATA_PATH, 'utf-8'));
@@ -67,16 +67,11 @@ async function saveData() {
     console.error('❌ ローカル保存失敗:', err);
   }
 
-  // Dropbox保存（リトライ）
-  for (let i = 0; i <= DROPBOX_RETRY_COUNT; i++) {
-    try {
-      await ensureDropboxInit();
-      const success = await uploadToDropbox(DROPBOX_LEVEL_DATA_PATH, JSON.stringify(userLevels, null, 2));
-      if (success) return true;
-    } catch (err) {
-      if (i === DROPBOX_RETRY_COUNT) console.error('❌ Dropbox保存最終失敗:', err.message);
-      else await new Promise(res => setTimeout(res, DROPBOX_RETRY_INTERVAL));
-    }
+  try {
+    await ensureDropboxInit();
+    await uploadToDropbox(DROPBOX_LEVEL_DATA_PATH, JSON.stringify(userLevels, null, 2));
+  } catch (err) {
+    console.error('❌ Dropbox保存失敗:', err);
   }
 }
 
@@ -116,9 +111,15 @@ async function handleLevelUp(member, newLevel) {
   if (!data) return;
 
   const msg = data.message.replace("{user}", member.user.tag);
-  let logChannel = LEVEL_LOG_CHANNEL_ID ? member.guild.channels.cache.get(LEVEL_LOG_CHANNEL_ID) : member.guild.systemChannel;
-  if (logChannel) await logChannel.send(`🎉 ${member} ${msg}`);
 
+  // 送信先チャンネル取得
+  const logChannelId = levelLogChannels[member.guild.id];
+  let logChannel = logChannelId ? member.guild.channels.cache.get(logChannelId) : member.guild.systemChannel;
+  if (logChannel) {
+    await logChannel.send(`🎉 ${member} ${msg}`);
+  }
+
+  // レベルに対応するロール付与
   if (data.roleId) {
     const role = member.guild.roles.cache.get(data.roleId);
     if (role) await member.roles.add(role).catch(() => {});
@@ -140,4 +141,10 @@ function calculateRequiredXp(level) {
   return levelSettings[level]?.xp || null;
 }
 
-module.exports = { loadData, addXp, getLevelData, setLevelAndXp, calculateRequiredXp };
+module.exports = {
+  loadData,
+  addXp,
+  getLevelData,
+  setLevelAndXp,
+  calculateRequiredXp
+};
