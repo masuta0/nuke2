@@ -1,11 +1,11 @@
-// utils/activity.js
 const fs = require('fs').promises;
 const path = require('path');
-const { uploadToDropbox, downloadFromDropbox } = require('./storage');
+const { downloadFromDropbox, uploadToDropbox } = require('./storage');
 
-// 保存先パス
-const MONTHLY_FILE = path.join(__dirname, '..', 'app-data', 'userMonthlyActivity.json');
-const WEEKLY_FILE = path.join(__dirname, '..', 'app-data', 'userWeeklyMessages.json');
+// app-data フォルダとファイル
+const APP_DATA_DIR = path.join(__dirname, '..', 'app-data');
+const MONTHLY_FILE = path.join(APP_DATA_DIR, 'userMonthlyActivity.json');
+const WEEKLY_FILE  = path.join(APP_DATA_DIR, 'userWeeklyMessages.json');
 
 // 設定
 const EXCLUDED_USERS = [
@@ -16,17 +16,20 @@ const ACTIVE_ROLE_ID = "1419894684263911505";
 const TOP_RANK_ROLE_COUNT = 3;
 
 // データ
-let monthlyActivity = {};
-let weeklyActivity = {};
+let monthlyActivity = {}; // guildId → userId → メッセージ数
+let weeklyActivity = {};  // guildId → userId → メッセージ数
 
-// ファイルが存在するか確認し、なければ作成
-async function ensureFileExists(filePath) {
+// app-data フォルダとファイルを作る
+async function ensureAppData() {
   try {
-    await fs.access(filePath);
-  } catch {
-    // 存在しない場合は空オブジェクトを保存
-    await fs.writeFile(filePath, JSON.stringify({}, null, 2));
-  }
+    await fs.mkdir(APP_DATA_DIR, { recursive: true });
+  } catch {}
+
+  try { await fs.access(MONTHLY_FILE); } 
+  catch { await fs.writeFile(MONTHLY_FILE, '{}'); }
+
+  try { await fs.access(WEEKLY_FILE); } 
+  catch { await fs.writeFile(WEEKLY_FILE, '{}'); }
 }
 
 // 保存関数
@@ -40,25 +43,21 @@ async function saveActivity(filePath, data) {
   }
 }
 
-// Dropboxからロード
+// 初期化・読み込み
 async function loadActivity() {
-  try {
-    // ファイルが存在するか確認
-    await ensureFileExists(MONTHLY_FILE);
-    await ensureFileExists(WEEKLY_FILE);
+  await ensureAppData();
 
+  try {
     const monthlyData = await downloadFromDropbox('/userMonthlyActivity.json');
     monthlyActivity = monthlyData ? JSON.parse(monthlyData) : {};
+  } catch { monthlyActivity = {}; }
 
+  try {
     const weeklyData = await downloadFromDropbox('/userWeeklyMessages.json');
     weeklyActivity = weeklyData ? JSON.parse(weeklyData) : {};
+  } catch { weeklyActivity = {}; }
 
-    console.log('✅ 月間・週間アクティブデータ読み込み成功');
-  } catch (err) {
-    console.error('❌ アクティブデータ読み込み失敗:', err);
-    monthlyActivity = {};
-    weeklyActivity = {};
-  }
+  console.log('✅ 月間・週間アクティブデータ読み込み成功');
 }
 
 // メッセージ追加
@@ -69,10 +68,12 @@ async function addMessage(guildId, userId, messageContent = "") {
   if (!filtered || filtered.length <= 1) return;
   if (/^([あいうえおa-zA-Z0-9ー]+)$/i.test(filtered)) return;
 
+  // 月間
   if (!monthlyActivity[guildId]) monthlyActivity[guildId] = {};
   if (!monthlyActivity[guildId][userId]) monthlyActivity[guildId][userId] = 0;
   monthlyActivity[guildId][userId] += 1;
 
+  // 週間
   if (!weeklyActivity[guildId]) weeklyActivity[guildId] = {};
   if (!weeklyActivity[guildId][userId]) weeklyActivity[guildId][userId] = 0;
   weeklyActivity[guildId][userId] += 1;
@@ -94,16 +95,17 @@ function getRanking(guildId) {
 // 上位3位にロール付与
 async function updateActiveRolesForAllGuilds(client) {
   for (const guild of client.guilds.cache.values()) {
+    if (!guild) continue;
     try {
       const ranking = getRanking(guild.id);
       const members = await guild.members.fetch();
 
-      // まず全員からロール削除
+      // 全員から削除
       members.forEach(member => {
         if (member.roles.cache.has(ACTIVE_ROLE_ID)) member.roles.remove(ACTIVE_ROLE_ID).catch(() => {});
       });
 
-      // 上位3位にロール付与
+      // 上位3位に付与
       for (const [userId] of ranking) {
         const member = members.get(userId);
         if (member) member.roles.add(ACTIVE_ROLE_ID).catch(() => {});
@@ -118,15 +120,13 @@ async function updateActiveRolesForAllGuilds(client) {
 async function resetMonthlyActivity(client) {
   monthlyActivity = {};
   await saveActivity(MONTHLY_FILE, monthlyActivity);
-
-  // すべてのギルドでロール更新
   await updateActiveRolesForAllGuilds(client);
+  console.log('✅ 月間アクティブデータリセット完了');
 }
 
 module.exports = {
   addMessage,
-  getRanking,
+  loadActivity,
   updateActiveRolesForAllGuilds,
-  resetMonthlyActivity,
-  loadActivity
+  resetMonthlyActivity
 };

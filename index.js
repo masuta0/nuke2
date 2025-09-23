@@ -1,4 +1,3 @@
-// index.js
 require('dotenv').config();
 const cron = require('node-cron');
 const express = require('express');
@@ -25,15 +24,12 @@ const {
   onGuildBanAdd,
   onGuildMemberRemove,
 } = require('./utils/anti-raid');
+const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyActivity } = require('./utils/activity');
 
-const { addMessage, getRanking, updateActiveRolesForAllGuilds, resetMonthlyActivity } = require('./utils/activity');
-
-// 定数
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
 
-// Discordクライアント作成
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -50,41 +46,34 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
-// Expressサーバー（監視用）
 const app = express();
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
-// Bot ready
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
   try {
-    // Dropbox初期化・データロード
     await ensureDropboxInit();
     await loadActivity();
-
-    preloadQuizzes();
-    await loadData();
-    await restoreVerifyMessage(client);
-    await loadWeeklyData();
-    setupWeekly(client, WEEKLY_CHANNEL_ID);
-
-    // 再起動時に全ギルドの上位3位ロール更新
-    await updateActiveRolesForAllGuilds(client);
-
-    // スラッシュコマンド登録
-    try {
-      await registerSlashCommands(client);
-      console.log('✅ スラッシュコマンド登録完了');
-    } catch (e) {
-      console.error('❌ スラッシュコマンド登録失敗:', e);
-    }
   } catch (err) {
     console.error('❌ 初期化エラー:', err);
   }
 
-  // 稼働時間ステータス更新
+  preloadQuizzes();
+  await loadData();
+  await restoreVerifyMessage(client);
+  await loadWeeklyData();
+  setupWeekly(client, WEEKLY_CHANNEL_ID);
+
+  try {
+    await registerSlashCommands(client);
+    console.log('✅ スラッシュコマンド登録完了');
+  } catch (e) {
+    console.error('❌ スラッシュコマンド登録失敗:', e);
+  }
+
+  // 稼働時間表示
   const start = Date.now();
   const updateUptime = () => {
     const elapsed = Date.now() - start;
@@ -99,10 +88,23 @@ client.once('ready', async () => {
   setInterval(updateUptime, 5000);
 });
 
-// メッセージ作成イベント
+// メッセージイベント
 client.on('messageCreate', async (message) => {
-  if (message.author.bot) return await handleMessage(message);
+  if (message.author.bot) return handleMessage(message);
 
+  if (message.guild) await addMessage(message.guild.id, message.author.id, message.content);
+
+  if (message.member) await addXp(message.member);
+
+  await handleMessage(message);
+
+  if (message.channel?.type === ChannelType.DM) return;
+
+  if (!message.content.startsWith('!')) return;
+  const args = message.content.slice(1).trim().split(/ +/);
+  const command = args.shift()?.toLowerCase();
+
+  // ここに !ranking の制限や他コマンド
   // DMはスルー
   if (message.channel?.type === ChannelType.DM) return;
 
