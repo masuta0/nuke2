@@ -1,70 +1,77 @@
 // index.js
-  require('dotenv').config();
+require('dotenv').config();
 const cron = require('node-cron');
-  const express = require('express');
-  const path = require('path');
-  const fs = require('fs').promises;
-  const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
-  const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-  const registerSlashCommands = require('./commands/slash');
-  const handlePrefixMessage = require('./commands/prefix');
-  const { chat } = require('./utils/ai');
-  const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
-  const { preloadQuizzes } = require('./utils/quiz');
-  const { addXp, loadData } = require('./utils/level');
-  const { restoreVerifyMessage } = require('./utils/verify');
-  const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
-  const {
-    handleMemberJoin,
-    handleMessage,
-    handleReactionAdd,
-    handleRoleUpdate,
-    handleAuditLogEntry,
-    handleMessageUpdate,
-    onGuildMemberUpdate,
-    onGuildBanAdd,
-    onGuildMemberRemove,
-  } = require('./utils/anti-raid');
-const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyActivity } = require('./utils/activity');
-  // 定数
-  const TOKEN = process.env.TOKEN;
-  const PORT = process.env.PORT || 3000;
-  const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
+const express = require('express');
+const path = require('path');
+const fs = require('fs').promises;
+const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
+const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
+const registerSlashCommands = require('./commands/slash');
+const handlePrefixMessage = require('./commands/prefix');
+const { chat } = require('./utils/ai');
+const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
+const { preloadQuizzes } = require('./utils/quiz');
+const { addXp, loadData } = require('./utils/level');
+const { restoreVerifyMessage } = require('./utils/verify');
+const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
+const {
+  handleMemberJoin,
+  handleMessage,
+  handleReactionAdd,
+  handleRoleUpdate,
+  handleAuditLogEntry,
+  handleMessageUpdate,
+  onGuildMemberUpdate,
+  onGuildBanAdd,
+  onGuildMemberRemove,
+} = require('./utils/anti-raid');
 
-  // Discordクライアント作成
-  const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.GuildMessageReactions,
-      GatewayIntentBits.GuildVoiceStates,
-      GatewayIntentBits.MessageContent,
-      GatewayIntentBits.GuildModeration,
-      GatewayIntentBits.DirectMessages,
-      GatewayIntentBits.GuildPresences,
-      GatewayIntentBits.GuildBans,
-    ],
-    partials: [Partials.Channel, Partials.Message, Partials.Reaction],
-  });
+const { addMessage, getRanking, updateActiveRolesForAllGuilds, resetMonthlyActivity } = require('./utils/activity');
 
-  // Expressサーバー（監視用）
-  const app = express();
-  app.get('/', (_, res) => res.send('Bot is running'));
-  app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+// 定数
+const TOKEN = process.env.TOKEN;
+const PORT = process.env.PORT || 3000;
+const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
 
-  // Bot ready
-  client.once('ready', async () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
+// Discordクライアント作成
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildBans,
+  ],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
+});
 
-    // 初期化処理はすべてここにまとめる
+// Expressサーバー（監視用）
+const app = express();
+app.get('/', (_, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+
+// Bot ready
+client.once('ready', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+
+  try {
+    // Dropbox初期化・データロード
     await ensureDropboxInit();
     await loadActivity();
+
     preloadQuizzes();
     await loadData();
     await restoreVerifyMessage(client);
     await loadWeeklyData();
     setupWeekly(client, WEEKLY_CHANNEL_ID);
+
+    // 再起動時に全ギルドの上位3位ロール更新
+    await updateActiveRolesForAllGuilds(client);
 
     // スラッシュコマンド登録
     try {
@@ -73,28 +80,40 @@ const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyAct
     } catch (e) {
       console.error('❌ スラッシュコマンド登録失敗:', e);
     }
+  } catch (err) {
+    console.error('❌ 初期化エラー:', err);
+  }
 
-    // 稼働時間ステータス更新
-    const start = Date.now();
-    const updateUptime = () => {
-      const elapsed = Date.now() - start;
-      const h = Math.floor(elapsed / 1000 / 60 / 60);
-      const m = Math.floor((elapsed / 1000 / 60) % 60);
-      const s = Math.floor((elapsed / 1000) % 60);
-      try {
-        client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
-      } catch {}
-    };
-    updateUptime();
-    setInterval(updateUptime, 5000);
-  });
+  // 稼働時間ステータス更新
+  const start = Date.now();
+  const updateUptime = () => {
+    const elapsed = Date.now() - start;
+    const h = Math.floor(elapsed / 1000 / 60 / 60);
+    const m = Math.floor((elapsed / 1000 / 60) % 60);
+    const s = Math.floor((elapsed / 1000) % 60);
+    try {
+      client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
+    } catch {}
+  };
+  updateUptime();
+  setInterval(updateUptime, 5000);
+});
 
-  // メッセージ作成イベント
-  client.on('messageCreate', async (message) => {
-    if (message.author.bot) {
-      await handleMessage(message);
-      return;
-    }
+// メッセージ作成イベント
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return await handleMessage(message);
+
+  // DMはスルー
+  if (message.channel?.type === ChannelType.DM) return;
+
+  // 雑談チャンネルで !ranking 禁止
+  if (message.content.startsWith('!ranking') && message.channel.name.includes('雑談')) {
+    const warn = await message.reply('❌ このチャンネルでは !ranking は使えません');
+    setTimeout(() => warn.delete().catch(() => {}), 5000);
+    message.delete().catch(() => {});
+    return;
+  }
+
   // メッセージ数カウント (月間アクティブ用)
   if (message.guild) {
     await addMessage(message.guild.id, message.author.id, message.content);
@@ -107,21 +126,25 @@ const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyAct
 
   await handleMessage(message);
 
-  // DMでのモデレーション対応
-  if (message.channel?.type === ChannelType.DM) return;
-
   // === プレフィックスコマンド ===
   if (!message.content.startsWith('!')) return;
   const args = message.content.slice(1).trim().split(/ +/);
   const command = args.shift()?.toLowerCase();
-    
-    if (command === 'ranking' && message.channel.name.includes('雑談')) {
-      const warn = await message.reply('❌ このチャンネルでは !ranking は使えません');
-      setTimeout(() => warn.delete().catch(() => {}), 5000);
-      message.delete().catch(() => {});
-      return;
-    }
+
   switch (command) {
+    case 'ranking': {
+      const ranking = getRanking(message.guild.id);
+      if (!ranking.length) return message.reply('ランキングデータがありません');
+
+      let text = '🏆 **月間アクティブランキング** 🏆\n';
+      ranking.forEach(([userId, count], index) => {
+        const member = message.guild.members.cache.get(userId);
+        const name = member ? member.displayName : 'Unknown';
+        text += `**${index + 1}. ${name}** — ${count} メッセージ\n`;
+      });
+      await message.channel.send(text);
+      break;
+    }
     case 'join': {
       if (!message.member?.voice?.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       if (await joinVoice(message.guild, message.member.voice.channel)) {
@@ -161,7 +184,7 @@ const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyAct
       message.channel.send('👋 ボイスチャンネル退出しました');
       break;
     }
-
+    // クイズアップロード / ダウンロード
     case 'uploadquiz': {
       try {
         const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
@@ -182,7 +205,7 @@ const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyAct
       }
       break;
     }
-
+    // AI
     case 'ai': {
       const prompt = args.join(' ').trim();
       if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
@@ -196,12 +219,13 @@ const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyAct
       }
       break;
     }
-
     default:
       await handlePrefixMessage(client, message);
       break;
   }
 });
+
+// 毎月1日0時に月間リセット
 cron.schedule('0 0 1 * *', async () => {
   await resetMonthlyActivity(client);
 });
