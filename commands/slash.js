@@ -223,7 +223,7 @@ async function handleSlashCommand(interaction) {
     // クイズ
     else if (commandName === "quiz") {
       await quizManager(interaction);
-      ephermal: true;,
+      ephermal: true;
     }
 
     // 音楽
