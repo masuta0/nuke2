@@ -85,10 +85,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
           }, 5000);
           return;
         }
-      }
       cooldowns.set(msg.author.id, Date.now());
     }
-  }
   cooldowns.set(msg.author.id, Date.now());
 
   try {
