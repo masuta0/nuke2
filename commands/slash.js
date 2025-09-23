@@ -199,29 +199,32 @@ async function handleSlashCommand(interaction) {
         ephermal: true;
       }
 
-    // レベル
-    else if (commandName === "level") {
-      const user = interaction.options.getUser("user") || interaction.user;
-      const data = getLevelData(interaction.guild.id, user.id);
-      const nextXp = calculateRequiredXp(data.level + 1);
-      const xpDisplay = nextXp ?? "MAX";
-      await interaction.reply(
-        `📊 ${user.tag} のレベル: ${data.level}, XP: ${data.xp}/${xpDisplay}`
-      );
-      ephermal: true;
-    }
+      // レベル確認
+      else if (commandName === "level") {
+        const user = interaction.options.getUser("user") || interaction.user;
+        const data = getLevelData(interaction.guild.id, user.id);
+        const nextXp = calculateRequiredXp(data.level + 1);
+        const xpDisplay = nextXp ?? "MAX";
 
-    // レベル設定
-    else if (commandName === "setlevel") {
-      const user = interaction.options.getUser("user");
-      const level = interaction.options.getInteger("level");
-      const xp = interaction.options.getInteger("xp");
-      await setLevelAndXp(interaction.guild.id, user.id, level, xp);
-      await interaction.reply(
-        `✅ ${user.tag} のレベルを ${level}, XPを ${xp} に設定しました`
-        ephermal: true;
-      );
-    }
+        await interaction.reply({
+          content: `📊 ${user.tag} のレベル: ${data.level}, XP: ${data.xp}/${xpDisplay}`,
+          ephemeral: true, 
+        });
+      }
+
+      // レベル設定
+      else if (commandName === "setlevel") {
+        const user = interaction.options.getUser("user");
+        const level = interaction.options.getInteger("level");
+        const xp = interaction.options.getInteger("xp");
+
+        await setLevelAndXp(interaction.guild.id, user.id, level, xp);
+
+        await interaction.reply({
+          content: `✅ ${user.tag} のレベルを ${level}, XPを ${xp} に設定しました`,
+          ephemeral: true,
+        });
+      }
 
     // クイズ
     else if (commandName === "quiz") {
