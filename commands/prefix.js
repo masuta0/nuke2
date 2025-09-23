@@ -20,7 +20,13 @@ const {
 const { askQuiz } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 
+const connection = joinVoiceChannel({
+  channelId: voiceChannel.id,
+  guildId: voiceChannel.guild.id,
+  adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+});
 const CMD_PREFIX = "!";
 const cooldowns = new Map();
 const COOLDOWN_TIME = 10;
@@ -144,19 +150,30 @@ module.exports = async function handlePrefixMessage(client, msg) {
         break;
       }
 
-      case "play": {
-        const query = args.join(" ");
-        if (!query) return msg.reply("❌ 曲名またはURLを入力してください");
-        if (!msg.member?.voice?.channel) return msg.reply("❌ VCに参加してください");
-        await joinVoice(msg.guild, msg.member.voice.channel);
-        const musicTitle = await playUrl(msg.guild.id, query, msg.channel, msg.member.voice.channel);
-        const { AudioPlayerStatus, players } = require('../utils/music');
-        const player = players.get(msg.guild.id);
-        if (player?.state.status === AudioPlayerStatus.Playing) {
-          await msg.channel.send(`▶️ キューに追加: **${musicTitle}**`);
+        case "play": {
+          const query = args.join(" ");
+          if (!query) return msg.reply("❌ 曲名またはURLを入力してください");
+
+          const voiceChannel = msg.member?.voice.channel;
+          if (!voiceChannel) return msg.reply("❌ VCに参加してください");
+
+          try {
+            // VCに接続
+            const connection = joinVoiceChannel({
+              channelId: voiceChannel.id,
+              guildId: voiceChannel.guild.id,
+              adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+            });
+
+            // 曲再生
+            const musicTitle = await playUrl(msg.guild.id, query, msg.channel, voiceChannel);
+            await msg.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
+          } catch (err) {
+            console.error("!play error:", err);
+            await msg.reply("❌ 再生中にエラーが発生しました");
+          }
+          break;
         }
-        break;
-      }
 
       case "stop": {
         const { stopMusic } = require("../utils/music");
