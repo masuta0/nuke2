@@ -222,7 +222,7 @@ async function handleSlashCommand(interaction) {
         });
         return;
       }
-      await askQuiz(channel, user, "mix");
+      await quizManager(channel, user, "mix");
     }
 
     // 音楽
