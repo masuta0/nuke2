@@ -4,8 +4,8 @@ const path = require('path');
 const { downloadFromDropbox, uploadToDropbox } = require('./storage');
 
 // 保存先パス
-const MONTHLY_FILE = '/app/app-data/userMonthlyActivity.json';
-const WEEKLY_FILE = '/app/app-data/userWeeklyMessages.json';
+const MONTHLY_FILE = path.resolve('/app/app-data/userMonthlyActivity.json');
+const WEEKLY_FILE = path.resolve('/app/app-data/userWeeklyMessages.json');
 
 // 設定
 const EXCLUDED_USERS = [
@@ -24,10 +24,11 @@ async function ensureFilesExist() {
   const files = [MONTHLY_FILE, WEEKLY_FILE];
   for (const file of files) {
     try {
-      await fs.access(file); // 存在確認
+      await fs.access(file);
     } catch {
-      await fs.mkdir(path.dirname(file), { recursive: true });
-      await fs.writeFile(file, '{}'); // 存在しなければ空オブジェクトで作成
+      const dir = path.dirname(file);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(file, '{}');
     }
   }
 }
@@ -35,7 +36,8 @@ async function ensureFilesExist() {
 // 保存関数
 async function saveActivity(filePath, data) {
   try {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const dir = path.dirname(filePath);
+    await fs.mkdir(dir, { recursive: true }); // フォルダがなければ作る
     await fs.writeFile(filePath, JSON.stringify(data, null, 2));
 
     if (filePath === MONTHLY_FILE) await uploadToDropbox('/userMonthlyActivity.json', JSON.stringify(data));
@@ -48,7 +50,6 @@ async function saveActivity(filePath, data) {
 // Dropboxからロード
 async function loadActivity() {
   await ensureFilesExist();
-
   try {
     const monthlyData = await downloadFromDropbox('/userMonthlyActivity.json');
     monthlyActivity = monthlyData ? JSON.parse(monthlyData) : {};
@@ -68,7 +69,7 @@ async function loadActivity() {
 async function addMessage(client, guildId, userId, messageContent = "") {
   if (!guildId || !userId) return;
 
-  // 「あ」など短すぎるメッセージはカウントしない
+  // 「あ」などの短すぎるメッセージはカウントしない
   const filtered = messageContent.trim();
   if (!filtered || filtered.length <= 1) return;
   if (filtered.match(/^([あいうえおa-zA-Z0-9ー]+)$/i)) return;
@@ -85,16 +86,11 @@ async function addMessage(client, guildId, userId, messageContent = "") {
 
   await saveActivity(MONTHLY_FILE, monthlyActivity);
   await saveActivity(WEEKLY_FILE, weeklyActivity);
-
-  // ロール更新
-  const guild = client.guilds.cache.get(guildId);
-  if (guild) await updateActiveRoles(guild);
 }
 
 // 月間ランキング取得
 function getRanking(guildId) {
   if (!guildId || !monthlyActivity[guildId]) return [];
-
   return Object.entries(monthlyActivity[guildId])
     .filter(([userId]) => !EXCLUDED_USERS.includes(userId))
     .sort((a, b) => b[1] - a[1])
@@ -109,7 +105,7 @@ async function updateActiveRoles(guild) {
     const ranking = getRanking(guild.id);
     const members = await guild.members.fetch();
 
-    // 全員からロール削除
+    // まず全員からロール削除
     members.forEach(member => {
       if (member.roles.cache.has(ACTIVE_ROLE_ID)) member.roles.remove(ACTIVE_ROLE_ID).catch(() => {});
     });
@@ -124,7 +120,7 @@ async function updateActiveRoles(guild) {
   }
 }
 
-// 全ギルドの上位3位ロール更新
+// 全ギルドに対してロール更新
 async function updateActiveRolesForAllGuilds(client) {
   for (const guild of client.guilds.cache.values()) {
     await updateActiveRoles(guild);
@@ -135,6 +131,7 @@ async function updateActiveRolesForAllGuilds(client) {
 async function resetMonthlyActivity(client) {
   monthlyActivity = {};
   await saveActivity(MONTHLY_FILE, monthlyActivity);
+  // 上位3位からロール削除
   await updateActiveRolesForAllGuilds(client);
   console.log('✅ 月間アクティブデータをリセットしました');
 }
@@ -144,6 +141,6 @@ module.exports = {
   getRanking,
   updateActiveRoles,
   updateActiveRolesForAllGuilds,
-  loadActivity,
-  resetMonthlyActivity
+  resetMonthlyActivity,
+  loadActivity
 };
