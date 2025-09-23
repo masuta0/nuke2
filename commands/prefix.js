@@ -17,7 +17,7 @@ const {
   loadUserWeatherPref,
   fetchWeather,
 } = require("../utils/weather");
-const { askQuiz } = require("../utils/quiz");
+const { quizManager } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
