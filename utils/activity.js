@@ -1,15 +1,14 @@
 // utils/activity.js
-const { loadFromDropbox, saveToDropbox } = require("./dropbox");
 
-// 固定のアクティブユーザーロールID（運用サーバー1つ想定）
+const { uploadToDropbox, downloadFromDropbox } = require("./storage");
+
+
 const ACTIVE_ROLE_ID = "1419894684263911505";
 
-// 保存先
 const ACTIVITY_FILE = "/app-data/activity.json";
 
-// メモリキャッシュ
 let activityData = {};
-let cooldowns = new Map(); // userId -> 最後にカウントした時刻
+let cooldowns = new Map(); 
 
 // ==================== データ管理 ====================
 async function loadActivity() {
