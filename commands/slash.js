@@ -151,11 +151,12 @@ const commands = [
 ];
 
 // ---------------- コマンド登録 ----------------
-async function registerSlashCommands(clientId, token) {
-  const rest = new REST({ version: "10" }).setToken(token);
+async function registerSlashCommands(client) {
+  const rest = new REST({ version: "10" }).setToken(client.token);
+
   try {
     console.log("📌 スラッシュコマンド登録開始");
-    await rest.put(Routes.applicationCommands(clientId), {
+    await rest.put(Routes.applicationCommands(client.user.id), {
       body: commands.map((c) => c.toJSON()),
     });
     console.log("✅ スラッシュコマンド登録完了");
@@ -163,7 +164,6 @@ async function registerSlashCommands(clientId, token) {
     console.error("❌ スラッシュコマンド登録失敗:", err);
   }
 }
-
 // ---------------- 実行処理 ----------------
 async function handleSlashCommand(interaction) {
   if (!interaction.isChatInputCommand()) return;
