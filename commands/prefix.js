@@ -22,11 +22,6 @@ const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 
-const connection = joinVoiceChannel({
-  channelId: voiceChannel.id,
-  guildId: voiceChannel.guild.id,
-  adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-});
 const CMD_PREFIX = "!";
 const cooldowns = new Map();
 const COOLDOWN_TIME = 10;
