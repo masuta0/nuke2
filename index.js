@@ -3,11 +3,22 @@ const cron = require('node-cron');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
-const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
+const { 
+  Client, 
+  GatewayIntentBits, 
+  Partials, 
+  ActivityType, 
+  ChannelType 
+} = require('discord.js');
+
+const { 
+  joinVoice, 
+  playUrl, 
+  stopMusic, 
+  leaveVoice 
+} = require('./utils/music');
+
 const { registerSlashCommands, handleSlashCommand } = require("./commands/slash");
-console.log("slash export:", slash); 
-const { registerSlashCommands, handleSlashCommand } = slash;
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
@@ -32,6 +43,7 @@ const { addMessage, loadActivity, resetMonthlyActivity } = require('./utils/acti
 const TOKEN = process.env.TOKEN || 'YOUR_TOKEN_HERE';
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID || null;
+const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE'; // スラッシュ用
 
 // --- app-data作成 ---
 const APP_DATA_DIR = path.join(__dirname, 'app-data');
@@ -59,6 +71,15 @@ const app = express();
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
+// --- interactionCreate: スラッシュコマンド対応 ---
+client.on('interactionCreate', async (interaction) => {
+  try {
+    await handleSlashCommand(interaction);
+  } catch (err) {
+    console.error('❌ interactionCreateでエラー:', err);
+  }
+});
+
 // --- Bot Ready ---
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -75,8 +96,9 @@ client.once('ready', async () => {
   await loadWeeklyData();
   setupWeekly(client, WEEKLY_CHANNEL_ID);
 
+  // スラッシュコマンド登録
   try {
-    await registerSlashCommands(client);
+    await registerSlashCommands(CLIENT_ID, TOKEN); // ここで clientId と token を渡す
     console.log('✅ スラッシュコマンド登録完了');
   } catch (err) {
     console.error('❌ スラッシュコマンド登録失敗:', err);
@@ -100,7 +122,7 @@ client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot) return handleMessage(message);
 
-    // サーバー全体アクティビティ（除外ユーザー・不明ユーザーはスキップ）
+    // サーバー全体アクティビティ
     if (message.guild && message.author.id && !message.author.bot) {
       await addMessage(message.guild.id, message.author.id, message.content);
     }
