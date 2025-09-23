@@ -177,15 +177,27 @@ async function handleSlashCommand(interaction) {
       await interaction.deferReply();
       const res = await chat(prompt);
       await interaction.editReply(res);
+      ephermal: true;
     }
 
-    // 天気
-    else if (commandName === "weather") {
-      const location = interaction.options.getString("location");
-      await interaction.deferReply();
-      const res = await getWeather(location);
-      await interaction.editReply(res);
-    }
+      else if (commandName === "weather") {
+        let location = interaction.options.getString("location");
+
+        // location未指定ならユーザーの保存場所を取得
+        if (!location) {
+          const userPref = await loadUserWeatherPref(interaction.user.id);
+          if (userPref) {
+            location = userPref;
+          } else {
+            location = "Tokyo"; // デフォルト
+          }
+        }
+
+        await interaction.deferReply();
+        const res = await fetchWeather(location);
+        await interaction.editReply(res);
+        ephermal: true;
+      }
 
     // レベル
     else if (commandName === "level") {
@@ -195,6 +207,7 @@ async function handleSlashCommand(interaction) {
       await interaction.reply(
         `📊 ${user.tag} のレベル: ${data.level}, XP: ${data.xp}/${
           nextXp ?? "MAX"
+          ephermal: true;
         }`
       );
     }
@@ -207,12 +220,14 @@ async function handleSlashCommand(interaction) {
       await setLevelAndXp(interaction.guild.id, user.id, level, xp);
       await interaction.reply(
         `✅ ${user.tag} のレベルを ${level}, XPを ${xp} に設定しました`
+        ephermal: true;
       );
     }
 
     // クイズ
     else if (commandName === "quiz") {
       await quizManager(interaction);
+      ephermal: true;
     }
 
     // 音楽
@@ -265,6 +280,7 @@ async function handleSlashCommand(interaction) {
     else if (commandName === "invite") {
       const url = await createInvite(interaction.member);
       await interaction.reply(`🔗 あなた専用の招待リンク: ${url}`);
+      ephermal: true;
     }
 
     // 招待数確認
