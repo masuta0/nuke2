@@ -1,4 +1,4 @@
-  // index.js
+// index.js
   require('dotenv').config();
   const express = require('express');
   const path = require('path');
@@ -24,8 +24,7 @@
     onGuildBanAdd,
     onGuildMemberRemove,
   } = require('./utils/anti-raid');
-const { loadActivity, addMessage } = require("./utils/activity");
-
+const { addMessage, loadActivity, updateActiveRolesForAllGuilds, resetMonthlyActivity } = require('./utils/activity');
   // 定数
   const TOKEN = process.env.TOKEN;
   const PORT = process.env.PORT || 3000;
@@ -97,7 +96,7 @@ const { loadActivity, addMessage } = require("./utils/activity");
     }
   // メッセージ数カウント (月間アクティブ用)
   if (message.guild) {
-    await addMessage(client, message.guild.id, message.author.id);
+    await addMessage(message.guild.id, message.author.id, message.content);
   }
 
   // レベルシステム
@@ -195,6 +194,9 @@ const { loadActivity, addMessage } = require("./utils/activity");
       await handlePrefixMessage(client, message);
       break;
   }
+});
+cron.schedule('0 0 1 * *', async () => {
+  await resetMonthlyActivity(client);
 });
 
 // メッセージ更新
