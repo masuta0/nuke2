@@ -1,4 +1,3 @@
-// utils/music.js
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 const { spawn } = require('child_process');
 const stream = require('stream');
@@ -14,7 +13,7 @@ async function joinVoice(guild, channel) {
     const connection = joinVoiceChannel({
       channelId: channel.id,
       guildId: guild.id,
-      adapterCreator: guild.voiceAdapterCreator
+      adapterCreator: guild.voiceAdapterCreator,
     });
     connections.set(guild.id, connection);
   }
@@ -24,15 +23,13 @@ async function joinVoice(guild, channel) {
 // VC退出
 async function leaveVoice(guildId) {
   const conn = connections.get(guildId);
-  if (conn) {
-    conn.destroy();
-    connections.delete(guildId);
-    players.delete(guildId);
-    queues.delete(guildId);
-  }
+  if (conn) conn.destroy();
+  connections.delete(guildId);
+  players.delete(guildId);
+  queues.delete(guildId);
 }
 
-// 次の曲を再生
+// 次の曲再生
 async function playNext(guildId, textChannel, voiceChannel) {
   const queue = queues.get(guildId);
   if (!queue || queue.length === 0) return;
@@ -40,37 +37,62 @@ async function playNext(guildId, textChannel, voiceChannel) {
   const { url, title, isYouTube, isAttachment } = queue.shift();
   let resource;
 
-  if (isYouTube) {
-    const ytdlp = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', url]);
-    const passThrough = new stream.PassThrough();
-    ytdlp.stdout.pipe(passThrough);
-    resource = createAudioResource(passThrough);
-  } else if (isAttachment) {
-    const passThrough = new stream.PassThrough();
-    const ffmpegProcess = spawn(ffmpeg, [
-      '-i', url,
-      '-f', 'mp3',
-      '-ar', '48000',
-      '-ac', '2',
-      'pipe:1'
-    ]);
-    ffmpegProcess.stdout.pipe(passThrough);
-    resource = createAudioResource(passThrough);
-  } else {
-    resource = createAudioResource(url);
+  try {
+    if (isYouTube) {
+      const ytdlp = spawn('yt-dlp', ['-f', 'bestaudio', '-o', '-', url]);
+      const passThrough = new stream.PassThrough();
+      ytdlp.stdout.pipe(passThrough);
+      resource = createAudioResource(passThrough);
+    } else if (isAttachment) {
+      const ffmpegProc = spawn(ffmpeg, ['-i', url, '-f', 'mp3', '-ar', '48000', '-ac', '2', 'pipe:1']);
+      const passThrough = new stream.PassThrough();
+      ffmpegProc.stdout.pipe(passThrough);
+      resource = createAudioResource(passThrough);
+    } else {
+      resource = createAudioResource(url);
+    }
+
+    const player = createAudioPlayer();
+    player.play(resource);
+    player.on(AudioPlayerStatus.Idle, () => playNext(guildId, textChannel, voiceChannel));
+
+    const conn = connections.get(guildId);
+    conn.subscribe(player);
+    players.set(guildId, player);
+
+    textChannel.send(`🎵 再生開始: **${title}**`);
+  } catch (err) {
+    console.error('再生エラー:', err);
+    textChannel.send(`❌ 再生できませんでした: **${title}**`);
+    playNext(guildId, textChannel, voiceChannel);
   }
+}
 
-  const player = createAudioPlayer();
-  player.play(resource);
+// YouTube再生（タイトル不明でも再生）
+async function playYouTube(guildId, url, textChannel, voiceChannel) {
+  if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
 
-  player.on(AudioPlayerStatus.Idle, () => playNext(guildId, textChannel, voiceChannel));
+  let title = '不明なタイトル';
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const ytdlp = spawn('yt-dlp', ['--get-title', '--no-warnings', url]);
+      let buffer = '';
+      ytdlp.stdout.on('data', d => buffer += d.toString());
+      ytdlp.on('close', () => resolve(buffer.trim() || '不明なタイトル'));
+      ytdlp.on('error', reject);
+    });
+    title = data;
+  } catch {}
 
-  const conn = connections.get(guildId);
-  conn.subscribe(player);
-  players.set(guildId, player);
+  if (!queues.has(guildId)) queues.set(guildId, []);
+  const queue = queues.get(guildId);
+  const isPlaying = players.get(guildId)?.state.status === AudioPlayerStatus.Playing;
 
-  // 再生開始メッセージはここだけ
-  textChannel.send(`🎵 再生開始: **${title}**`);
+  queue.push({ url, title, isYouTube: true, isAttachment: false });
+  if (!isPlaying) playNext(guildId, textChannel, voiceChannel);
+  else textChannel.send(`▶️ キューに追加: **${title}**`);
+
+  return title;
 }
 
 // 添付ファイル再生
@@ -79,43 +101,13 @@ async function playAttachment(guildId, attachmentUrl, filename, textChannel, voi
 
   if (!queues.has(guildId)) queues.set(guildId, []);
   const queue = queues.get(guildId);
-
   const isPlaying = players.get(guildId)?.state.status === AudioPlayerStatus.Playing;
-  queue.push({ url: attachmentUrl, title: filename, isYouTube: false, isAttachment: true });
 
+  queue.push({ url: attachmentUrl, title: filename, isYouTube: false, isAttachment: true });
   if (!isPlaying) playNext(guildId, textChannel, voiceChannel);
   else textChannel.send(`▶️ キューに追加: **${filename}**`);
 
   return filename;
-}
-
-// YouTube再生（タイトル取得失敗でも再生）
-async function playYouTube(guildId, url, textChannel, voiceChannel) {
-  if (!connections.has(guildId)) await joinVoice(voiceChannel.guild, voiceChannel);
-
-  let title = '不明なタイトル';
-  try {
-    title = await new Promise((resolve, reject) => {
-      const ytdlp = spawn('yt-dlp', ['--get-title', '--no-warnings', url]);
-      let data = '';
-      ytdlp.stdout.on('data', chunk => data += chunk.toString());
-      ytdlp.on('close', () => resolve(data.trim() || '不明なタイトル'));
-      ytdlp.on('error', reject);
-    });
-  } catch (err) {
-    console.error('yt-dlp title error:', err);
-  }
-
-  if (!queues.has(guildId)) queues.set(guildId, []);
-  const queue = queues.get(guildId);
-
-  const isPlaying = players.get(guildId)?.state.status === AudioPlayerStatus.Playing;
-  queue.push({ url, title, isYouTube: true, isAttachment: false });
-
-  if (!isPlaying) playNext(guildId, textChannel, voiceChannel);
-  else textChannel.send(`▶️ キューに追加: **${title}**`);
-
-  return title;
 }
 
 // 共通入口
@@ -134,9 +126,4 @@ function stopMusic(guildId) {
   return true;
 }
 
-module.exports = {
-  joinVoice,
-  leaveVoice,
-  playUrl,
-  stopMusic
-};
+module.exports = { joinVoice, leaveVoice, playUrl, stopMusic, AudioPlayerStatus, players };
