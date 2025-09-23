@@ -1,83 +1,73 @@
 // utils/activity.js
+const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require("./storage");
 
-const { uploadToDropbox, downloadFromDropbox } = require("./storage");
-
-
+const ACTIVITY_FILE = "/app-data/userMonthlyMessages.json";
 const ACTIVE_ROLE_ID = "1419894684263911505";
 
-const ACTIVITY_FILE = "/app-data/activity.json";
+let activityData = {}; // guildId: { userId: count }
+let lastMessageTimestamps = {}; // userId: timestamp
+const MESSAGE_COOLDOWN = 10 * 1000; // 10秒
 
-let activityData = {};
-let cooldowns = new Map(); 
-
-// ==================== データ管理 ====================
-async function loadActivity() {
-  try {
-    activityData = await loadFromDropbox(ACTIVITY_FILE) || {};
-  } catch {
-    activityData = {};
+// 初期化・Dropboxからデータロード
+async function initActivity() {
+  await ensureDropboxInit();
+  const data = await downloadFromDropbox(ACTIVITY_FILE);
+  if (data) {
+    try { activityData = JSON.parse(data); }
+    catch(e){ console.error("activity.json parse error:",e); }
   }
 }
 
+// 保存
 async function saveActivity() {
-  await saveToDropbox(ACTIVITY_FILE, activityData);
+  await uploadToDropbox(ACTIVITY_FILE, JSON.stringify(activityData));
 }
 
-// ==================== カウント ====================
-function addMessage(guildId, userId) {
+// メッセージをカウント
+async function addMessage(userId, guildId) {
   const now = Date.now();
-  if (cooldowns.has(userId) && now - cooldowns.get(userId) < 10000) {
-    return; // 10秒クールダウン
+  if (lastMessageTimestamps[userId] && now - lastMessageTimestamps[userId] < MESSAGE_COOLDOWN) {
+    return; // クールダウン内はカウントしない
   }
-  cooldowns.set(userId, now);
+  lastMessageTimestamps[userId] = now;
 
   if (!activityData[guildId]) activityData[guildId] = {};
   if (!activityData[guildId][userId]) activityData[guildId][userId] = 0;
-
-  activityData[guildId][userId] += 1;
-  saveActivity();
-}
-
-// ==================== ランキング ====================
-function getRanking(guildId) {
-  if (!activityData[guildId]) return [];
-  return Object.entries(activityData[guildId])
-    .sort((a, b) => b[1] - a[1]); // [ [userId, count], ... ]
-}
-
-// ==================== アクティブロール付与/削除 ====================
-async function updateActiveRoles(guild) {
-  const ranking = getRanking(guild.id).slice(0, 3).map(([uid]) => uid);
-  const role = guild.roles.cache.get(ACTIVE_ROLE_ID);
-  if (!role) return;
-
-  // 剥奪
-  for (const member of guild.members.cache.values()) {
-    if (member.roles.cache.has(role.id) && !ranking.includes(member.id)) {
-      await member.roles.remove(role).catch(() => {});
-    }
-  }
-  // 付与
-  for (const uid of ranking) {
-    const member = await guild.members.fetch(uid).catch(() => null);
-    if (member && !member.roles.cache.has(role.id)) {
-      await member.roles.add(role).catch(() => {});
-    }
-  }
-}
-
-// ==================== 月間リセット ====================
-async function resetMonthly() {
-  activityData = {};
+  activityData[guildId][userId]++;
   await saveActivity();
 }
 
+// 指定ギルドのランキング取得（降順）
+function getRanking(guildId) {
+  if (!activityData[guildId]) return [];
+  return Object.entries(activityData[guildId])
+    .sort((a,b) => b[1]-a[1]);
+}
+
+// アクティブユーザーロール更新
+async function updateActiveRoles(guild) {
+  if (!activityData[guild.id]) return;
+  const ranking = getRanking(guild.id).slice(0,3); // 上位3人
+  const members = await guild.members.fetch();
+
+  // ロールを持たせるべき上位3人のID
+  const topIds = ranking.map(([id]) => id);
+
+  for (const member of members.values()) {
+    const hasRole = member.roles.cache.has(ACTIVE_ROLE_ID);
+    const shouldHave = topIds.includes(member.id);
+
+    if (shouldHave && !hasRole) {
+      await member.roles.add(ACTIVE_ROLE_ID).catch(console.error);
+    } else if (!shouldHave && hasRole) {
+      await member.roles.remove(ACTIVE_ROLE_ID).catch(console.error);
+    }
+  }
+}
+
 module.exports = {
-  ACTIVE_ROLE_ID,
-  loadActivity,
-  saveActivity,
+  initActivity,
   addMessage,
   getRanking,
   updateActiveRoles,
-  resetMonthly,
 };
