@@ -99,7 +99,7 @@ client.once('ready', async () => {
     const h = Math.floor(elapsed/1000/60/60);
     const m = Math.floor((elapsed/1000/60)%60);
     const s = Math.floor((elapsed/1000)%60);
-    client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching }).catch(() => {});
+    client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
   }, 5000);
 });
 
