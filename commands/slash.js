@@ -284,4 +284,7 @@ async function handleSlashCommand(interaction) {
   }
 }
 
-module.exports = { registerSlashCommands, handleSlashCommand };
+module.exports = {
+  registerSlashCommands,
+  handleSlashCommand,
+};
