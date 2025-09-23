@@ -11,7 +11,7 @@ const {
   getLevelData,
   setLevelAndXp,
   calculateRequiredXp,
-} = require("../utils/levels");
+} = require("../utils/level");
 const { quizManager } = require("../utils/quiz");
 const {
   playMusic,
