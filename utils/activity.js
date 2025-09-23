@@ -1,91 +1,89 @@
-/// utils/activity.js
-const { uploadToDropbox, downloadFromDropbox } = require("./storage");
+// utils/activity.js
+const fs = require("fs").promises;
+const path = require("path");
+const { uploadToDropbox } = require("./storage");
 
-const ACTIVITY_FILE = "/app-data/userMonthlyActivity.json";
-const ACTIVE_ROLE_ID = "1419894684263911505"; // ←アクティブロールのIDに置き換え
-const COOLDOWN_MS = 10 * 1000; // 10秒
+const ACTIVITY_FILE = path.join(__dirname, "../app-data/userMonthlyActivity.json");
 
+// 除外したいユーザーID
+const EXCLUDED_USERS = [
+  "1366740571707801610",
+  "1399725671357354014"// 例
+];
+
+// 付与するロールID
+const ACTIVE_ROLE_ID = "1419894684263911505";
+
+// データ初期化
 let activityData = {};
-let lastMessageTime = {}; // userId: timestamp
 
-// 初期化: Dropboxからロード
+// 初期化（Dropbox等からロード）
 async function initActivity() {
   try {
-    const data = await downloadFromDropbox(ACTIVITY_FILE);
-    if (data) activityData = JSON.parse(data);
-  } catch (err) {
-    console.error("activity.js: Dropboxロード失敗", err);
+    const data = await fs.readFile(ACTIVITY_FILE, "utf8");
+    activityData = JSON.parse(data);
+  } catch {
     activityData = {};
   }
 }
 
-// 保存
+// データ保存
 async function saveActivity() {
-  try {
-    await uploadToDropbox(ACTIVITY_FILE, JSON.stringify(activityData, null, 2));
-  } catch (err) {
-    console.error("activity.js: Dropbox保存失敗", err);
-  }
+  await fs.writeFile(ACTIVITY_FILE, JSON.stringify(activityData, null, 2));
+  await uploadToDropbox(ACTIVITY_FILE, JSON.stringify(activityData, null, 2));
 }
 
-// メッセージカウント（クールダウン付き）
-async function addMessage(client, guildId, userId) {
-  const now = Date.now();
-  const key = `${guildId}-${userId}`;
-  if (lastMessageTime[key] && now - lastMessageTime[key] < COOLDOWN_MS) return;
-  lastMessageTime[key] = now;
+// メッセージをカウント
+async function addMessage(guildId, userId, content) {
+  if (!content || content.trim().length < 3) return; // 短すぎるメッセージ除外
+  if (EXCLUDED_USERS.includes(userId)) return; // 除外ユーザー無視
 
   if (!activityData[guildId]) activityData[guildId] = {};
   if (!activityData[guildId][userId]) activityData[guildId][userId] = 0;
+
   activityData[guildId][userId]++;
-
   await saveActivity();
-  await updateActiveRoles(client, guildId);
 }
 
-// 上位3人にアクティブロール付与、抜けた人は削除
-async function updateActiveRoles(client, guildId) {
-  const guild = client.guilds.cache.get(guildId);
-  if (!guild) return;
-
-  const guildData = activityData[guildId];
-  if (!guildData) return;
-
-  // メッセージ数でソート
-  const sorted = Object.entries(guildData)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3); // 上位3人
-
-  const topUserIds = sorted.map(([userId]) => userId);
-
-  // ギルドメンバーを取得
-  await guild.members.fetch();
-
-  guild.members.cache.forEach(async (member) => {
-    if (topUserIds.includes(member.id)) {
-      // 上位3名: ロールがなければ付与
-      if (!member.roles.cache.has(ACTIVE_ROLE_ID)) {
-        member.roles.add(ACTIVE_ROLE_ID).catch(() => {});
-      }
-    } else {
-      // 上位から外れた: ロールがあれば削除
-      if (member.roles.cache.has(ACTIVE_ROLE_ID)) {
-        member.roles.remove(ACTIVE_ROLE_ID).catch(() => {});
-      }
-    }
-  });
-}
-
-// ランキング取得
+// ギルドごとのランキング取得（上位3位だけ）
 function getRanking(guildId) {
   if (!activityData[guildId]) return [];
-  return Object.entries(activityData[guildId])
-    .sort((a, b) => b[1] - a[1]); // [[userId, count], ...]
+  const entries = Object.entries(activityData[guildId]);
+  entries.sort((a, b) => b[1] - a[1]); // メッセージ数降順
+  return entries.slice(0, 3); // 上位3位
+}
+
+// アクティブロールを更新（上位3人のみ）
+async function updateActiveRoles(guild) {
+  if (!guild) return;
+  const role = guild.roles.cache.get(ACTIVE_ROLE_ID);
+  if (!role) return;
+
+  // まず全メンバーからロールを削除
+  guild.members.cache.forEach(member => {
+    if (member.roles.cache.has(role.id)) {
+      member.roles.remove(role).catch(() => {});
+    }
+  });
+
+  // 上位3位のメンバーにロール付与
+  const ranking = getRanking(guild.id);
+  for (const [userId] of ranking) {
+    const member = await guild.members.fetch(userId).catch(() => null);
+    if (member) member.roles.add(role).catch(() => {});
+  }
+}
+
+// 雑談チャンネルではランキング禁止
+function isRankingAllowed(channel) {
+  if (!channel || !channel.name) return true;
+  return !channel.name.includes("雑談");
 }
 
 module.exports = {
   initActivity,
   addMessage,
-  updateActiveRoles,
   getRanking,
+  updateActiveRoles,
+  isRankingAllowed,
 };

@@ -231,20 +231,31 @@
                   break;
                 }
 
-                case "ranking": {
-                  const ranking = getRanking(msg.guild.id).slice(0,10);
-                  if(!ranking.length) return msg.reply("📊 今月のランキングデータはありません");
+                  case "ranking": {
+                    if (!msg.guild) return msg.reply("⚠️ サーバーでのみ使用可能です");
 
-                  let text = "🏆 **月間アクティブユーザーランキング** 🏆\n\n";
-                  for(let i=0;i<ranking.length;i++){
-                    const [userId,count] = ranking[i];
-                    const user = await msg.guild.members.fetch(userId).catch(()=>null);
-                    text += `${i+1}位: **${user?user.user.username:"不明ユーザー"}** (${count} メッセージ)\n`;
+                    // チャンネル名に「雑談」が含まれる場合は禁止
+                    if (msg.channel.name.includes("雑談")) {
+                      await msg.delete().catch(() => {});
+                      const warnMsg = await msg.channel.send("⚠️ このチャンネルでは !ranking は使用できません");
+                      setTimeout(() => warnMsg.delete().catch(() => {}), 5000);
+                      return;
+                    }
+
+                    const ranking = getFilteredRanking(msg.guild.id).slice(0, 10);
+                    if (!ranking.length) return msg.reply("📊 今月のランキングデータはありません");
+
+                    let text = "🏆 **月間アクティブユーザーランキング** 🏆\n\n";
+                    for (let i = 0; i < ranking.length; i++) {
+                      const [userId, count] = ranking[i];
+                      const user = await msg.guild.members.fetch(userId).catch(() => null);
+                      text += `${i + 1}位: **${user ? user.user.username : "不明ユーザー"}** (${count} コマンド使用)\n`;
+                    }
+
+                    await msg.channel.send(text);
+                    await updateActiveRoles(msg.guild);
+                    break;
                   }
-                  await msg.channel.send(text);
-                  await updateActiveRoles(msg.guild);
-                  break;
-                }
 
                 default: {
                   const langMap = { 英語:"en",えいご:"en",日本語:"ja",にほんご:"ja",中国語:"zh-CN",ちゅうごくご:"zh-CN",韓国語:"ko",かんこくご:"ko",フランス語:"fr",スペイン語:"es",ドイツ語:"de" };
