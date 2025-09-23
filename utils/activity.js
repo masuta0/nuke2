@@ -110,6 +110,17 @@ async function updateActiveRoles(client, guildId, roleId, topCount = 3) {
     }
   });
 }
+// activity.js の最後に追加
+/**
+ * ランキング取得
+ * @param {string} guildId
+ * @param {'weekly'|'monthly'} type
+ * @param {number} limit
+ */
+function getRanking(guildId, type='monthly', limit=10){
+  if(type==='weekly') return getTopWeekly(guildId, limit);
+  return getTopMonthly(guildId, limit);
+}
 
 module.exports = {
   loadActivity,
@@ -119,5 +130,5 @@ module.exports = {
   resetWeeklyActivity,
   getTopMonthly,
   getTopWeekly,
-  updateActiveRoles
+  getRanking
 };
