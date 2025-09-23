@@ -228,9 +228,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
           if (!hasManageGuildPermission(msg.member))
             return msg.reply("⚠️ 管理者権限が必要です");
 
-          // 最初にコマンドメッセージを削除
-          await msg.delete().catch(()=>{});
-
           if (args.length === 0)
             return msg.channel.send("使い方: `!clear <数> [@ユーザー]`");
 
@@ -244,10 +241,16 @@ module.exports = async function handlePrefixMessage(client, msg) {
             targetUser = msg.mentions.members.first();
           }
 
-          // guild.js 側で targetUser を渡す
-          const deletedCount = await clearMessages(msg.channel, amount, waitingMsg, targetUser);
+          // コマンド自身も含めるため +1
+          const deleteCount = amount + 1;
 
-          await waitingMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`);
+          // guild.js 側の clearMessages に deleteCount を渡す
+          const deletedCount = await clearMessages(msg.channel, deleteCount, targetUser);
+
+          const notice = await msg.channel.send(
+            `🧹 ${deletedCount}件のメッセージを削除しました。`
+          );
+          setTimeout(() => notice.delete().catch(() => {}), 5000);
           break;
         }
       default: {
