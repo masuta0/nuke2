@@ -204,12 +204,11 @@ async function handleSlashCommand(interaction) {
       const user = interaction.options.getUser("user") || interaction.user;
       const data = getLevelData(interaction.guild.id, user.id);
       const nextXp = calculateRequiredXp(data.level + 1);
+      const xpDisplay = nextXp ?? "MAX";
       await interaction.reply(
-        `📊 ${user.tag} のレベル: ${data.level}, XP: ${data.xp}/${
-          nextXp ?? "MAX"
-          ephermal: true;
-        }`
+        `📊 ${user.tag} のレベル: ${data.level}, XP: ${data.xp}/${xpDisplay}`
       );
+      ephermal: true;
     }
 
     // レベル設定
