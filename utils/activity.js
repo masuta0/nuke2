@@ -118,5 +118,6 @@ module.exports = {
   resetMonthlyActivity,
   resetWeeklyActivity,
   getTopMonthly,
-  getTopWeekly
+  getTopWeekly,
+  getRanking
 };
