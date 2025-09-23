@@ -18,9 +18,17 @@ function ensureAppDataDir() {
   }
 }
 
+// -------------------- 初期ファイル作成 --------------------
+function ensureInitialFiles() {
+  ensureAppDataDir();
+
+  if (!fs.existsSync(LOCAL_MONTHLY_PATH)) fs.writeFileSync(LOCAL_MONTHLY_PATH, JSON.stringify({}, null, 2));
+  if (!fs.existsSync(LOCAL_WEEKLY_PATH)) fs.writeFileSync(LOCAL_WEEKLY_PATH, JSON.stringify({}, null, 2));
+}
+
 // -------------------- データロード --------------------
 async function loadActivity() {
-  ensureAppDataDir(); // フォルダ確認
+  ensureInitialFiles();
 
   try {
     await ensureDropboxInit();
@@ -57,7 +65,7 @@ async function loadActivity() {
 
 // -------------------- 保存 --------------------
 async function saveActivity() {
-  ensureAppDataDir(); // フォルダ確認
+  ensureInitialFiles();
 
   try {
     fs.writeFileSync(LOCAL_MONTHLY_PATH, JSON.stringify(monthlyActivity, null, 2));
@@ -88,7 +96,7 @@ async function addMessage(guildId, userId, content) {
 }
 
 // -------------------- 月間リセット --------------------
-async function resetMonthlyActivity(client) {
+async function resetMonthlyActivity() {
   monthlyActivity = {};
   await saveActivity();
   console.log('✅ 月間アクティビティリセット完了');
@@ -98,6 +106,7 @@ async function resetMonthlyActivity(client) {
 async function resetWeeklyActivity() {
   weeklyActivity = {};
   await saveActivity();
+  console.log('✅ 週間アクティビティリセット完了');
 }
 
 // -------------------- 上位取得 --------------------
@@ -110,6 +119,9 @@ function getTopWeekly(guildId, limit = 10) {
   const data = weeklyActivity[guildId] || {};
   return Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, limit);
 }
+
+// getRanking エイリアス
+const getRanking = getTopMonthly;
 
 module.exports = {
   loadActivity,
