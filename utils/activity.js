@@ -1,95 +1,112 @@
-const fs = require("fs").promises;
-const path = require("path");
-const { uploadToDropbox } = require("./storage");
+// utils/activity.js
+const fs = require('fs').promises;
+const path = require('path');
+const { downloadFromDropbox, uploadToDropbox } = require('./storage');
+const { Client, Guild } = require('discord.js');
 
-const DATA_DIR = path.join(__dirname, "../app-data");
-const ACTIVITY_FILE = path.join(DATA_DIR, "userMonthlyActivity.json");
+// 保存先パス
+const MONTHLY_FILE = '/app/app-data/userMonthlyActivity.json';
+const WEEKLY_FILE = '/app/app-data/userWeeklyMessages.json';
 
-// 除外するユーザーID
+// 設定
 const EXCLUDED_USERS = [
   "1366740571707801610",
-  "1399725671357354014"
+  "1399725671357354014" // 除外したいユーザーID
 ];
+const ACTIVE_ROLE_ID = "1419894684263911505"; // 付与するロールID
+const TOP_RANK_ROLE_COUNT = 3; // 上位何人にロール付与するか
 
-// 付与するロールID
-const ACTIVE_ROLE_ID = "1419894684263911505";
+// データ
+let monthlyActivity = {}; // guildId → userId → メッセージ数
+let weeklyActivity = {};  // guildId → userId → メッセージ数
 
-// 短文無視用（1文字や「あ」など）
-const MIN_MESSAGE_LENGTH = 2;
-
-let activityData = {};
-
-async function initActivity() {
+// 保存関数
+async function saveActivity(filePath, data) {
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const data = await fs.readFile(ACTIVITY_FILE, "utf8");
-    activityData = JSON.parse(data);
-  } catch {
-    activityData = {};
-    await saveActivity();
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+    if (filePath === MONTHLY_FILE) await uploadToDropbox('/userMonthlyActivity.json', JSON.stringify(data));
+    if (filePath === WEEKLY_FILE) await uploadToDropbox('/userWeeklyMessages.json', JSON.stringify(data));
+  } catch (err) {
+    console.error(`❌ ${filePath} 保存失敗:`, err);
   }
 }
 
-async function saveActivity() {
+// Dropboxからロード
+async function loadActivity() {
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    await fs.writeFile(ACTIVITY_FILE, JSON.stringify(activityData, null, 2));
-    await uploadToDropbox(ACTIVITY_FILE, JSON.stringify(activityData, null, 2));
+    const monthlyData = await downloadFromDropbox('/userMonthlyActivity.json');
+    monthlyActivity = monthlyData ? JSON.parse(monthlyData) : {};
+
+    const weeklyData = await downloadFromDropbox('/userWeeklyMessages.json');
+    weeklyActivity = weeklyData ? JSON.parse(weeklyData) : {};
+
+    console.log('✅ 月間・週間アクティブデータ読み込み成功');
   } catch (err) {
-    console.error("❌ activityData 保存失敗:", err);
+    console.error('❌ アクティブデータ読み込み失敗:', err);
+    monthlyActivity = {};
+    weeklyActivity = {};
   }
 }
 
 // メッセージ追加
-async function addMessage(userId, guildId, content) {
-  if (!content || content.trim().length < MIN_MESSAGE_LENGTH) return;
-  if (EXCLUDED_USERS.includes(userId)) return;
+async function addMessage(guildId, userId, messageContent = "") {
+  if (!guildId || !userId) return;
 
-  if (!activityData[guildId]) activityData[guildId] = {};
-  if (!activityData[guildId][userId]) activityData[guildId][userId] = 0;
+  // 「あ」などの短すぎるメッセージはカウントしない
+  const filtered = messageContent.trim();
+  if (!filtered || filtered.length <= 1) return;
+  if (filtered.match(/^([あいうえおa-zA-Z0-9ー]+)$/i)) return;
 
-  activityData[guildId][userId]++;
-  await saveActivity();
+  // 月間
+  if (!monthlyActivity[guildId]) monthlyActivity[guildId] = {};
+  if (!monthlyActivity[guildId][userId]) monthlyActivity[guildId][userId] = 0;
+  monthlyActivity[guildId][userId] += 1;
+
+  // 週間
+  if (!weeklyActivity[guildId]) weeklyActivity[guildId] = {};
+  if (!weeklyActivity[guildId][userId]) weeklyActivity[guildId][userId] = 0;
+  weeklyActivity[guildId][userId] += 1;
+
+  await saveActivity(MONTHLY_FILE, monthlyActivity);
+  await saveActivity(WEEKLY_FILE, weeklyActivity);
 }
 
 // 月間ランキング取得
 function getRanking(guildId) {
-  if (!activityData[guildId]) return [];
-  return Object.entries(activityData[guildId])
-    .sort((a, b) => b[1] - a[1]);
+  if (!guildId || !monthlyActivity[guildId]) return [];
+
+  return Object.entries(monthlyActivity[guildId])
+    .filter(([userId]) => !EXCLUDED_USERS.includes(userId))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TOP_RANK_ROLE_COUNT);
 }
 
-// 上位3位にロール付与（非対象ユーザーはスキップ）
+// 上位3位にロール付与
 async function updateActiveRoles(guild) {
-  if (!guild) return;
+  if (!guild || !guild.members) return;
+
   try {
     const ranking = getRanking(guild.id);
-    const top3 = ranking.slice(0, 3);
     const members = await guild.members.fetch();
 
-    // 一旦全員からロールを除去
-    for (const member of members.values()) {
-      if (member.roles.cache.has(ACTIVE_ROLE_ID)) {
-        await member.roles.remove(ACTIVE_ROLE_ID).catch(() => {});
-      }
-    }
+    // まず全員からロール削除
+    members.forEach(member => {
+      if (member.roles.cache.has(ACTIVE_ROLE_ID)) member.roles.remove(ACTIVE_ROLE_ID).catch(() => {});
+    });
 
-    // 上位3位のみロール付与
-    for (const [userId] of top3) {
-      if (EXCLUDED_USERS.includes(userId)) continue;
+    // 上位3位にロール付与
+    for (const [userId] of ranking) {
       const member = members.get(userId);
-      if (member) {
-        await member.roles.add(ACTIVE_ROLE_ID).catch(() => {});
-      }
+      if (member) member.roles.add(ACTIVE_ROLE_ID).catch(() => {});
     }
   } catch (err) {
-    console.error("❌ updateActiveRoles error:", err);
+    console.error('❌ updateActiveRoles エラー:', err);
   }
 }
 
 module.exports = {
-  initActivity,
   addMessage,
   getRanking,
-  updateActiveRoles
+  updateActiveRoles,
+  loadActivity
 };
