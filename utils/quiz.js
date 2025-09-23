@@ -8,8 +8,8 @@ const blockedChannelIds = [
   "1415189080861315112",
   "1416773830537642115",
   "1409520151749070880",
-  "1410891781846994956"
-];
+  "1410891781846994956",
+]; // クイズ禁止チャンネル
 
 // ---------------- クイズデータロード ----------------
 function preloadQuizzes() {
@@ -22,53 +22,52 @@ function preloadQuizzes() {
   }
 }
 
-// ---------------- ランダムに問題取得 ----------------
+// ---------------- ランダムクイズ取得 ----------------
 function getRandomQuiz(category = null) {
   const categories = Object.keys(quizzes);
   if (categories.length === 0) return null;
 
-  if (category && quizzes[category]) {
-    const questions = quizzes[category];
-    if (!questions || questions.length === 0) return null;
-    const q = questions[Math.floor(Math.random() * questions.length)];
-    return { category, ...q };
-  }
-
-  // ランダムカテゴリ
-  const randomCategory = categories[Math.floor(Math.random() * categories.length)];
-  const questions = quizzes[randomCategory];
+  let selectedCategory = category && quizzes[category] ? category : categories[Math.floor(Math.random() * categories.length)];
+  const questions = quizzes[selectedCategory];
   if (!questions || questions.length === 0) return null;
+
   const q = questions[Math.floor(Math.random() * questions.length)];
-  return { category: randomCategory, ...q };
+
+  return {
+    category: selectedCategory,
+    question: q.q,      // JSONの q
+    choices: q.choices,
+    answer: q.a,        // JSONの a
+  };
 }
 
 // ---------------- クイズマネージャ ----------------
-async function quizManager({ interaction = null, message = null }) {
-  const channel = interaction?.channel || message?.channel;
-  const user = interaction?.user || message?.author;
+// interaction がある場合は slash コマンド
+// channel / user が渡された場合は prefix コマンド
+async function quizManager(arg1, arg2 = null, category = null) {
+  let channel, user;
 
-  if (!channel || !user) return;
+  if (arg1.channel && arg1.isChatInputCommand) {
+    // Slash
+    channel = arg1.channel;
+    user = arg1.user;
+    category = category || null;
+  } else {
+    // Prefix
+    channel = arg1;
+    user = arg2;
+  }
 
-  // 禁止チャンネル・雑談チャンネル
-  if (blockedChannelIds.includes(channel.id) || channel.name.includes("雑談")) {
-    const reply = interaction
-      ? await interaction.reply({ content: "❌ このチャンネルではクイズは使えません", ephemeral: true })
-      : await channel.send("❌ このチャンネルではクイズは使えません");
-
-    if (message) {
-      setTimeout(() => {
-        reply.delete().catch(() => {});
-        message.delete().catch(() => {});
-      }, 5000);
-    }
+  // クイズ禁止チャンネル判定
+  if (blockedChannelIds.includes(channel.id) || channel.name?.includes("雑談")) {
+    const warningMsg = await channel.send(`❌ このチャンネルではクイズは使えません`);
+    setTimeout(() => warningMsg.delete().catch(() => {}), 5000);
     return;
   }
 
-  const quiz = getRandomQuiz();
+  const quiz = getRandomQuiz(category);
   if (!quiz || !quiz.choices || quiz.choices.length === 0) {
-    const msg = interaction
-      ? await interaction.reply({ content: "⚠️ クイズデータが不十分です。", ephemeral: true })
-      : await channel.send("⚠️ クイズデータが不十分です。");
+    await channel.send("⚠️ クイズデータが不十分です。");
     return;
   }
 
@@ -83,10 +82,12 @@ async function quizManager({ interaction = null, message = null }) {
     );
   });
 
-  if (interaction) await interaction.reply({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] });
-  else await channel.send({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] });
+  // メッセージ送信
+  const msg = await channel.send({
+    content: `📝 **${quiz.category}クイズ**\n${quiz.question}`,
+    components: [buttons],
+  });
 
-  // Collector
   const filter = (i) => i.user.id === user.id;
   const collector = channel.createMessageComponentCollector({ filter, time: 30000 });
 
@@ -110,7 +111,7 @@ async function quizManager({ interaction = null, message = null }) {
     });
   });
 
-  collector.on("end", (_, reason) => {
+  collector.on("end", (collected, reason) => {
     if (reason === "time") {
       channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
     }
@@ -121,14 +122,9 @@ async function quizManager({ interaction = null, message = null }) {
   nextCollector.on("collect", async (i) => {
     if (i.customId === "quiz_next") {
       await i.deferUpdate();
-      await quizManager({ interaction, message }); // 再帰的に次の問題
+      await quizManager(channel, user, category); // 再帰的に次の問題
     }
   });
 }
 
-module.exports = {
-  preloadQuizzes,
-  getRandomQuiz,
-  quizManager,
-  blockedChannelIds
-};
+module.exports = { preloadQuizzes, getRandomQuiz, quizManager, blockedChannelIds };
