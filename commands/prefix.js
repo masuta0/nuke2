@@ -241,16 +241,26 @@ module.exports = async function handlePrefixMessage(client, msg) {
             targetUser = msg.mentions.members.first();
           }
 
-          // コマンド自身も含めるため +1
-          const deleteCount = amount + 1;
+          // メッセージをフェッチ
+          const fetched = await msg.channel.messages.fetch({ limit: amount + 1 }); // +1 でコマンド自身を含める
+          let messagesToDelete;
 
-          // guild.js 側の clearMessages に deleteCount を渡す
-          const deletedCount = await clearMessages(msg.channel, deleteCount, targetUser);
+          if (targetUser) {
+            // 指定ユーザーのみに絞る
+            messagesToDelete = fetched.filter(m => m.author.id === targetUser.id);
+          } else {
+            messagesToDelete = fetched;
+          }
 
+          // 削除
+          const deleted = await msg.channel.bulkDelete(messagesToDelete, true);
+
+          // 件数はユーザー指定数をそのまま表示（コマンド自身は内部的に含まれている）
           const notice = await msg.channel.send(
-            `🧹 ${deletedCount}件のメッセージを削除しました。`
+            `🧹 ${deleted.size}件のメッセージを削除しました。`
           );
           setTimeout(() => notice.delete().catch(() => {}), 5000);
+
           break;
         }
       default: {
