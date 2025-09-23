@@ -256,34 +256,42 @@ module.exports = async function handlePrefixMessage(client, msg) {
           if (args.length === 0)
             return msg.channel.send("使い方: `!clear <数> [@ユーザー]`");
 
-          const amount = parseInt(args[0], 10);
+          let amount = parseInt(args[0], 10);
           if (!amount || amount < 1 || amount > 1000)
             return msg.channel.send("⚠️ 削除件数は1〜1000の範囲で指定してください");
 
-          // ユーザー指定がある場合
+          // ユーザー指定
           let targetUser = null;
           if (msg.mentions.members.size > 0) {
             targetUser = msg.mentions.members.first();
           }
 
-          // メッセージをフェッチ
-          const fetched = await msg.channel.messages.fetch({ limit: amount + 1 }); // +1 でコマンド自身を含める
-          let messagesToDelete;
+          // コマンド自身を削除
+          await msg.delete().catch(() => {});
 
-          if (targetUser) {
-            // 指定ユーザーのみに絞る
-            messagesToDelete = fetched.filter(m => m.author.id === targetUser.id);
-          } else {
-            messagesToDelete = fetched;
+          let totalDeleted = 0;
+
+          while (amount > 0) {
+            const fetchAmount = Math.min(amount, 100); // Discord API 上限100
+            const fetched = await msg.channel.messages.fetch({ limit: fetchAmount });
+
+            let messagesToDelete;
+            if (targetUser) {
+              messagesToDelete = fetched.filter(m => m.author.id === targetUser.id);
+            } else {
+              messagesToDelete = fetched;
+            }
+
+            if (messagesToDelete.size === 0) break;
+
+            const deleted = await msg.channel.bulkDelete(messagesToDelete, true);
+            totalDeleted += deleted.size;
+            amount -= deleted.size;
+
+            if (deleted.size < fetchAmount) break; // 取得できるメッセージがなくなったら終了
           }
 
-          // 削除
-          const deleted = await msg.channel.bulkDelete(messagesToDelete, true);
-
-          // 件数はユーザー指定数をそのまま表示（コマンド自身は内部的に含まれている）
-          const notice = await msg.channel.send(
-            `🧹 ${deleted.size}件のメッセージを削除しました。`
-          );
+          const notice = await msg.channel.send(`🧹 ${totalDeleted}件のメッセージを削除しました。`);
           setTimeout(() => notice.delete().catch(() => {}), 5000);
 
           break;
