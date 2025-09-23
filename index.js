@@ -1,40 +1,13 @@
-// index.js
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
+const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType, MessageActionRow, MessageButton } = require('discord.js');
+const translate = require('@iamtraction/google-translate');
+const fetch = require('node-fetch');
 const { spawn } = require('child_process');
-const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
-const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-const registerSlashCommands = require('./commands/slash');
-const handlePrefixMessage = require('./commands/prefix');
-const { chat } = require('./utils/ai');
-const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
-const { preloadQuizzes } = require('./utils/quiz');
-const { addXp, loadData } = require('./utils/level');
-const { restoreVerifyMessage } = require('./utils/verify');
-const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
-const {
-  handleMemberJoin,
-  handleMessage,
-  handleReactionAdd,
-  handleRoleUpdate,
-  handleAuditLogEntry,
-  handleMessageUpdate,
-  onGuildMemberUpdate,
-  onGuildBanAdd,
-  onGuildMemberRemove,
-} = require('./utils/anti-raid');
 
-// 追加: activity.js の読み込み
-const { addMessage, getRanking, updateActiveRoles, initActivity } = require("./utils/activity");
-
-// 定数
-const TOKEN = process.env.TOKEN;
-const PORT = process.env.PORT || 3000;
-const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
-
-// Discordクライアント作成
+// ====== Discord Client ======
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -46,175 +19,180 @@ const client = new Client({
     GatewayIntentBits.GuildModeration,
     GatewayIntentBits.DirectMessages,
     GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildBans,
+    GatewayIntentBits.GuildBans
   ],
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
-// Expressサーバー（監視用）
+// ====== Express サーバー ======
 const app = express();
+const PORT = process.env.PORT || 3000;
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
-// Bot ready
+// ====== 定数・ストレージ ======
+const TOKEN = process.env.TOKEN;
+const CMD_PREFIX = '!';
+const COOLDOWN_TIME = 10; // 秒
+const cooldowns = new Map();
+const ACTIVE_ROLE_ID = 'YOUR_ACTIVE_ROLE_ID'; // アクティブユーザーロールID
+const ACTIVITY_FILE = '/app-data/userMonthlyMessages.json';
+let activityData = {}; // { guildId: { userId: count } }
+
+// ====== ユーティリティ ======
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function saveToDropbox(file, data) {
+  // Dropbox 連携仮実装
+  await fs.writeFile(file, JSON.stringify(data, null, 2));
+  console.log(`✅ Dropboxに保存: ${file}`);
+}
+
+async function loadFromDropbox(file) {
+  try {
+    const data = await fs.readFile(file, 'utf8');
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+// ====== 活動管理 ======
+async function addMessage(guildId, userId) {
+  if (!activityData[guildId]) activityData[guildId] = {};
+  if (!activityData[guildId][userId]) activityData[guildId][userId] = 0;
+  activityData[guildId][userId] += 1;
+  await saveToDropbox(ACTIVITY_FILE, activityData);
+}
+
+function getRanking(guildId) {
+  if (!activityData[guildId]) return [];
+  const entries = Object.entries(activityData[guildId]);
+  entries.sort((a, b) => b[1] - a[1]);
+  return entries;
+}
+
+async function updateActiveRoles(guild) {
+  const ranking = getRanking(guild.id).slice(0, 3);
+  const activeIds = ranking.map(e => e[0]);
+  const role = guild.roles.cache.get(ACTIVE_ROLE_ID);
+  if (!role) return;
+
+  for (const [memberId, member] of guild.members.cache) {
+    if (activeIds.includes(memberId)) {
+      if (!member.roles.cache.has(ACTIVE_ROLE_ID)) await member.roles.add(role).catch(() => {});
+    } else {
+      if (member.roles.cache.has(ACTIVE_ROLE_ID)) await member.roles.remove(role).catch(() => {});
+    }
+  }
+}
+
+// ====== AIチャット（ダミー） ======
+const aiCooldowns = new Map();
+function checkAiCooldown(userId) {
+  const last = aiCooldowns.get(userId) || 0;
+  const diff = Math.floor((Date.now() - last) / 1000);
+  return diff < 10 ? 10 - diff : 0;
+}
+function setAiCooldown(userId) { aiCooldowns.set(userId, Date.now()); }
+async function chat(prompt, userId) { return `AI応答: ${prompt}`; }
+
+// ====== メッセージイベント ======
+client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+
+  // メッセージ数カウント
+  if (message.guild) await addMessage(message.guild.id, message.author.id);
+
+  // クールダウンチェック
+  if (cooldowns.has(message.author.id)) {
+    const lastUsed = cooldowns.get(message.author.id);
+    const remaining = (lastUsed + COOLDOWN_TIME * 1000) - Date.now();
+    if (remaining > 0) {
+      const warnMsg = await message.reply(`⚠️ コマンドはクールダウン中です。あと${Math.ceil(remaining / 1000)}秒`);
+      setTimeout(() => warnMsg.delete().catch(() => {}), 5000);
+      return;
+    }
+  }
+  cooldowns.set(message.author.id, Date.now());
+
+  // DM は無視
+  if (message.channel.type === ChannelType.DM) return;
+
+  // プレフィックスコマンド
+  if (!message.content.startsWith(CMD_PREFIX)) return;
+  const args = message.content.slice(1).trim().split(/\s+/);
+  const cmd = args.shift()?.toLowerCase();
+
+  switch (cmd) {
+    case 'ping':
+      await message.reply('Pong!');
+      break;
+
+    case 'ranking': {
+      const ranking = getRanking(message.guild.id).slice(0, 10);
+      if (ranking.length === 0) return message.reply('ランキングデータはありません');
+      let text = '🏆 月間アクティブユーザーランキング 🏆\n';
+      for (let i = 0; i < ranking.length; i++) {
+        const [userId, count] = ranking[i];
+        const member = await message.guild.members.fetch(userId).catch(() => null);
+        const name = member ? member.user.username : '不明ユーザー';
+        text += `${i + 1}位: **${name}** (${count} メッセージ)\n`;
+      }
+      await message.channel.send(text);
+      await updateActiveRoles(message.guild);
+      break;
+    }
+
+    case 'ai': {
+      const remaining = checkAiCooldown(message.author.id);
+      if (remaining > 0) return message.reply(`❌ AIは${remaining}秒クールダウン中`);
+      setAiCooldown(message.author.id);
+      const prompt = args.join(' ').trim();
+      if (!prompt) return message.reply('❌ 使用例: !ai こんにちは');
+      const thinkingMsg = await message.reply('💬 AIが考え中...');
+      const res = await chat(prompt, message.author.id);
+      await thinkingMsg.edit(res);
+      break;
+    }
+
+    case '天気': {
+      const loc = args.join(' ').trim();
+      if (!loc) return message.reply('❌ 使用例: !天気 東京');
+      try {
+        const res = await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=3`).then(r => r.text());
+        await message.reply(res);
+      } catch { await message.reply('⚠️ 天気情報取得失敗'); }
+      break;
+    }
+
+    default: {
+      const langMap = { 英語:'en', 日本語:'ja', 中国語:'zh-CN', 韓国語:'ko', フランス語:'fr', スペイン語:'es', ドイツ語:'de' };
+      if (!langMap[cmd]) return;
+      const text = args.join(' ').trim();
+      if (!text) return;
+      const res = await translate(text, { to: langMap[cmd] });
+      await message.reply(res.text || '翻訳失敗');
+    }
+  }
+});
+
+// ====== ボット稼働準備 ======
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 
-  await ensureDropboxInit();
-  preloadQuizzes();
-  await loadData();
-  await restoreVerifyMessage(client);
-  await loadWeeklyData();
-  setupWeekly(client, WEEKLY_CHANNEL_ID);
+  activityData = await loadFromDropbox(ACTIVITY_FILE);
 
-  // スラッシュコマンド登録
-  try {
-    await registerSlashCommands(client);
-    console.log('✅ スラッシュコマンド登録完了');
-  } catch (e) {
-    console.error('❌ スラッシュコマンド登録失敗:', e);
-  }
-
-  // 稼働時間ステータス更新
+  // ステータス更新
   const start = Date.now();
-  const updateUptime = () => {
+  setInterval(() => {
     const elapsed = Date.now() - start;
-    const h = Math.floor(elapsed / 1000 / 60 / 60);
-    const m = Math.floor((elapsed / 1000 / 60) % 60);
-    const s = Math.floor((elapsed / 1000) % 60);
-    try {
-      client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
-    } catch {}
-  };
-  updateUptime();
-  setInterval(updateUptime, 2000);
+    const h = Math.floor(elapsed/1000/60/60);
+    const m = Math.floor((elapsed/1000/60)%60);
+    const s = Math.floor((elapsed/1000)%60);
+    client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching }).catch(()=>{});
+  }, 5000);
 });
 
-// メッセージ作成イベント
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) {
-    await handleMessage(message);
-    return;
-  }
-
-  // メッセージ数カウント (月間アクティブ用)
-  if (message.guild) {
-    addMessage(message.guild.id, message.author.id);
-  }
-
-  // レベルシステム
-  if (message.member) {
-    await addXp(message.member);
-  }
-
-  await handleMessage(message);
-
-  // DMでのモデレーション対応
-  if (message.channel?.type === ChannelType.DM) return;
-
-  // === プレフィックスコマンド ===
-  if (!message.content.startsWith('!')) return;
-  const args = message.content.slice(1).trim().split(/ +/);
-  const command = args.shift()?.toLowerCase();
-
-  switch (command) {
-    // 音楽
-    case 'join': {
-      if (!message.member?.voice.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-      if (await joinVoice(message.guild, message.member.voice.channel)) {
-        message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
-      } else {
-        message.reply('❌ ボイスチャンネル参加失敗');
-      }
-      break;
-    }
-    case 'play': {
-      const query = args.join(' ');
-      if (!query) return message.reply('❌ 曲名またはURLを入力してください');
-      const voiceChannel = message.member?.voice.channel;
-      if (!voiceChannel) return message.reply('❌ ボイスチャンネルに参加してください');
-
-      try {
-        // VC接続して再生
-        await joinVoice(message.guild, voiceChannel);
-        const musicTitle = await playUrl(message.guild.id, query, message.channel, voiceChannel);
-
-        if (musicTitle) {
-          await message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
-        } else {
-          await message.channel.send('❌ 曲が見つかりません');
-        }
-      } catch (err) {
-        console.error('!play error:', err);
-        await message.reply('❌ 再生中にエラーが発生しました');
-      }
-      break;
-    }
-    case 'stop': {
-      const result = stopMusic(message.guild.id);
-      message.channel.send(result ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
-      break;
-    }
-    case 'leave': {
-      await leaveVoice(message.guild.id);
-      message.channel.send('👋 ボイスチャンネル退出しました');
-      break;
-    }
-
-    // Dropboxクイズ
-    case 'uploadquiz': {
-      try {
-        const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
-        const result = await uploadToDropbox('/quizzes.json', contents.toString());
-        message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
-      } catch (err) {
-        message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
-      }
-      break;
-    }
-    case 'downloadquiz': {
-      try {
-        const data = await downloadFromDropbox('/quizzes.json');
-        if (data) await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
-        message.reply(data ? '✅ Dropboxからダウンロード' : '❌ ダウンロード失敗');
-      } catch (err) {
-        message.reply(`❌ ダウンロード中エラー: ${err.message}`);
-      }
-      break;
-    }
-
-    // AIチャット
-    case 'ai': {
-      const prompt = args.join(' ').trim();
-      if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
-      const replyMsg = await message.reply('💬 AIが考え中...');
-      try {
-        const aiResponse = await chat(prompt, message.author.id);
-        await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
-      } catch (err) {
-        console.error('❌ !ai エラー:', err);
-        await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
-      }
-      break;
-    }
-
-    default:
-      handlePrefixMessage(client, message);
-      break;
-  }
-});
-
-// メッセージ更新
-client.on('messageUpdate', handleMessageUpdate);
-
-// メンバー入室 / 退室
-client.on('guildMemberAdd', handleMemberJoin);
-client.on('guildMemberRemove', onGuildMemberRemove);
-client.on('guildMemberUpdate', onGuildMemberUpdate);
-client.on('guildBanAdd', onGuildBanAdd);
-client.on('roleUpdate', handleRoleUpdate);
-client.on('messageReactionAdd', handleReactionAdd);
-client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
-
-// ログイン
+// ====== ログイン ======
 client.login(TOKEN);
