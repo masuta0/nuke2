@@ -1,227 +1,191 @@
-  require('dotenv').config();
-  const cron = require('node-cron');
-  const express = require('express');
-  const path = require('path');
-  const fs = require('fs').promises;
-  const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
-  const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-  const registerSlashCommands = require('./commands/slash');
-  const handlePrefixMessage = require('./commands/prefix');
-  const { chat } = require('./utils/ai');
-  const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
-  const { preloadQuizzes } = require('./utils/quiz');
-  const { addXp, loadData } = require('./utils/level');
-  const { restoreVerifyMessage } = require('./utils/verify');
-  const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
-  const {
-    handleMemberJoin,
-    handleMessage,
-    handleReactionAdd,
-    handleRoleUpdate,
-    handleAuditLogEntry,
-    handleMessageUpdate,
-    onGuildMemberUpdate,
-    onGuildBanAdd,
-    onGuildMemberRemove,
-  } = require('./utils/anti-raid');
-  const {
-    addMessage,
-    loadActivity,
-    updateActiveRolesForAllGuilds,
-    resetMonthlyActivity,
-    getRanking
-  } = require('./utils/activity');
+// index.js
+require('dotenv').config();
+const cron = require('node-cron');
+const express = require('express');
+const path = require('path');
+const fs = require('fs').promises;
+const { existsSync, mkdirSync } = require('fs');
+const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
+const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
+const registerSlashCommands = require('./commands/slash');
+const handlePrefixMessage = require('./commands/prefix');
+const { chat } = require('./utils/ai');
+const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
+const { preloadQuizzes } = require('./utils/quiz');
+const { addXp, loadData: loadLevelData } = require('./utils/level');
+const { restoreVerifyMessage } = require('./utils/verify');
+const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
+const {
+  handleMemberJoin,
+  handleMessage,
+  handleReactionAdd,
+  handleRoleUpdate,
+  handleAuditLogEntry,
+  handleMessageUpdate,
+  onGuildMemberUpdate,
+  onGuildBanAdd,
+  onGuildMemberRemove,
+} = require('./utils/anti-raid');
 
-  const TOKEN = process.env.TOKEN;
-  const PORT = process.env.PORT || 3000;
-  const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
+const { addMessage, loadActivity, resetMonthlyActivity } = require('./utils/activity');
 
-  const client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMembers,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.GuildMessageReactions,
-      GatewayIntentBits.GuildVoiceStates,
-      GatewayIntentBits.MessageContent,
-      GatewayIntentBits.GuildModeration,
-      GatewayIntentBits.DirectMessages,
-      GatewayIntentBits.GuildPresences,
-      GatewayIntentBits.GuildBans,
-    ],
-    partials: [Partials.Channel, Partials.Message, Partials.Reaction],
-  });
+const TOKEN = process.env.TOKEN;
+const PORT = process.env.PORT || 3000;
+const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
 
-  // Express
-  const app = express();
-  app.get('/', (_, res) => res.send('Bot is running'));
-  app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+// --- /app/app-data/ が無ければ作る ---
+const APP_DATA_DIR = path.join(__dirname, 'app-data');
+if (!existsSync(APP_DATA_DIR)) mkdirSync(APP_DATA_DIR, { recursive: true });
 
-  // Ready
-  client.once('ready', async () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
+// --- Discord Client ---
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildPresences,
+    GatewayIntentBits.GuildBans,
+  ],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
+});
 
+// --- Expressサーバー ---
+const app = express();
+app.get('/', (_, res) => res.send('Bot is running'));
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+
+// --- Bot Ready ---
+client.once('ready', async () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+
+  try {
+    await ensureDropboxInit();
+    await loadActivity();       // 月間・週間アクティビティロード
+    await loadLevelData();      // レベルデータロード
+  } catch (err) {
+    console.error('❌ 初期化エラー:', err);
+  }
+
+  preloadQuizzes();
+  await restoreVerifyMessage(client);
+  await loadWeeklyData();
+  setupWeekly(client, WEEKLY_CHANNEL_ID);
+
+  try {
+    await registerSlashCommands(client);
+    console.log('✅ スラッシュコマンド登録完了');
+  } catch (e) {
+    console.error('❌ スラッシュコマンド登録失敗:', e);
+  }
+
+  // 稼働時間ステータス
+  const start = Date.now();
+  const updateUptime = () => {
+    const elapsed = Date.now() - start;
+    const h = Math.floor(elapsed / 1000 / 60 / 60);
+    const m = Math.floor((elapsed / 1000 / 60) % 60);
+    const s = Math.floor((elapsed / 1000) % 60);
     try {
-      await ensureDropboxInit();
-      await loadActivity();
-    } catch (err) {
-      console.error('❌ 初期化エラー:', err);
-    }
+      client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
+    } catch {}
+  };
+  updateUptime();
+  setInterval(updateUptime, 5000);
+});
 
-    preloadQuizzes();
-    await loadData();
-    await restoreVerifyMessage(client);
-    await loadWeeklyData();
-    setupWeekly(client, WEEKLY_CHANNEL_ID);
+// --- メッセージイベント ---
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return handleMessage(message);
 
-    try {
-      await registerSlashCommands(client);
-      console.log('✅ スラッシュコマンド登録完了');
-    } catch (e) {
-      console.error('❌ スラッシュコマンド登録失敗:', e);
-    }
+  // 月間・週間アクティビティ追記
+  if (message.guild) await addMessage(message.guild.id, message.author.id, message.content);
 
-    // 稼働時間表示
-    const start = Date.now();
-    const updateUptime = () => {
-      const elapsed = Date.now() - start;
-      const h = Math.floor(elapsed / 1000 / 60 / 60);
-      const m = Math.floor((elapsed / 1000 / 60) % 60);
-      const s = Math.floor((elapsed / 1000) % 60);
+  // レベル
+  if (message.member) await addXp(message.member);
+
+  await handleMessage(message);
+
+  if (message.channel?.type === ChannelType.DM) return;
+
+  if (!message.content.startsWith('!')) return;
+  const args = message.content.slice(1).trim().split(/ +/);
+  const command = args.shift()?.toLowerCase();
+
+  // 雑談チャンネルで !ranking 禁止
+  if (command === 'ranking' && message.channel.name.includes('雑談')) {
+    const warn = await message.reply('❌ このチャンネルでは !ranking は使えません');
+    setTimeout(() => warn.delete().catch(() => {}), 5000);
+    message.delete().catch(() => {});
+    return;
+  }
+
+  switch (command) {
+    case 'join':
+      if (!message.member?.voice?.channel) return message.reply('❌ ボイスチャンネルに参加してください');
+      if (await joinVoice(message.guild, message.member.voice.channel)) {
+        message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
+      } else message.reply('❌ ボイスチャンネル参加失敗');
+      break;
+
+    case 'play':
+      if (!message.member?.voice?.channel) return message.reply('❌ ボイスチャンネルに参加してください');
       try {
-        client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
-      } catch {}
-    };
-    updateUptime();
-    setInterval(updateUptime, 5000);
-  });
-
-  // メッセージ作成
-  client.on('messageCreate', async (message) => {
-    if (message.author.bot) return handleMessage(message);
-    if (message.channel?.type === ChannelType.DM) return;
-
-    // メッセージカウント
-    if (message.guild) await addMessage(message.guild.id, message.author.id, message.content);
-
-    // レベルシステム
-    if (message.member) await addXp(message.member);
-
-    await handleMessage(message);
-
-    if (!message.content.startsWith('!')) return;
-    const args = message.content.slice(1).trim().split(/ +/);
-    const command = args.shift()?.toLowerCase();
-
-    // 雑談チャンネルで !ranking 禁止
-    if (command === 'ranking' && message.channel.name.includes('雑談')) {
-      const warn = await message.reply('❌ このチャンネルでは !ranking は使えません');
-      setTimeout(() => warn.delete().catch(() => {}), 5000);
-      message.delete().catch(() => {});
-      return;
-    }
-
-    switch (command) {
-      case 'ranking': {
-        const ranking = getRanking(message.guild.id);
-        if (!ranking.length) return message.reply('ランキングデータがありません');
-        let text = '🏆 **月間アクティブランキング** 🏆\n';
-        ranking.forEach(([userId, count], index) => {
-          const member = message.guild.members.cache.get(userId);
-          const name = member ? member.displayName : 'Unknown';
-          text += `**${index + 1}. ${name}** — ${count} メッセージ\n`;
-        });
-        await message.channel.send(text);
-        break;
+        await joinVoice(message.guild, message.member.voice.channel);
+        const musicTitle = await playUrl(message.guild.id, args.join(' '), message.channel, message.member.voice.channel);
+        if (musicTitle) await message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
+        else await message.channel.send('❌ 曲が見つかりません');
+      } catch {
+        await message.reply('❌ 再生中にエラーが発生しました');
       }
-      case 'join': {
-        if (!message.member?.voice?.channel) return message.reply('❌ ボイスチャンネルに参加してください');
-        if (await joinVoice(message.guild, message.member.voice.channel)) {
-          message.channel.send(`✅ **${message.member.voice.channel.name}** に参加しました！`);
-        } else {
-          message.reply('❌ ボイスチャンネル参加失敗');
-        }
-        break;
-      }
-      case 'play': {
-        const query = args.join(' ');
-        if (!query) return message.reply('❌ 曲名またはURLを入力してください');
-        const voiceChannel = message.member?.voice.channel;
-        if (!voiceChannel) return message.reply('❌ ボイスチャンネルに参加してください');
+      break;
 
-        try {
-          await joinVoice(message.guild, voiceChannel);
-          const musicTitle = await playUrl(message.guild.id, query, message.channel, voiceChannel);
-          if (musicTitle) await message.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
-          else await message.channel.send('❌ 曲が見つかりません');
-        } catch (err) {
-          console.error('!play error:', err);
-          await message.reply('❌ 再生中にエラーが発生しました');
-        }
-        break;
-      }
-      case 'stop': {
-        const result = stopMusic(message.guild.id);
-        message.channel.send(result ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
-        break;
-      }
-      case 'leave': {
-        await leaveVoice(message.guild.id);
-        message.channel.send('👋 ボイスチャンネル退出しました');
-        break;
-      }
-      case 'uploadquiz': {
-        try {
-          const contents = await fs.readFile(path.join(__dirname, 'quizzes.json'));
-          const result = await uploadToDropbox('/quizzes.json', contents.toString());
-          message.reply(result ? '✅ Dropboxにアップロードしました' : '❌ アップロード失敗');
-        } catch (err) {
-          message.reply(err.code === 'ENOENT' ? '❌ quizzes.json が存在しません' : `❌ エラー: ${err.message}`);
-        }
-        break;
-      }
-      case 'downloadquiz': {
-        try {
-          const data = await downloadFromDropbox('/quizzes.json');
-          if (data) await fs.writeFile(path.join(__dirname, 'quizzes.json'), data);
-          message.reply(data ? '✅ Dropboxからダウンロード' : '❌ ダウンロード失敗');
-        } catch (err) {
-          message.reply(`❌ ダウンロード中エラー: ${err.message}`);
-        }
-        break;
-      }
-      case 'ai': {
-        const prompt = args.join(' ').trim();
-        if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
-        const replyMsg = await message.reply('💬 AIが考え中...');
-        try {
-          const aiResponse = await chat(prompt, message.author.id);
-          await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
-        } catch (err) {
-          console.error('❌ !ai エラー:', err);
-          await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
-        }
-        break;
-      }
-      default:
-        await handlePrefixMessage(client, message);
-        break;
-    }
-  });
+    case 'stop':
+      const result = stopMusic(message.guild.id);
+      message.channel.send(result ? '⏹️ 再生停止・キュークリア' : '❌ 再生中の曲なし');
+      break;
 
-  // 月間リセット
-  cron.schedule('0 0 1 * *', async () => {
-    await resetMonthlyActivity(client);
-  });
+    case 'leave':
+      await leaveVoice(message.guild.id);
+      message.channel.send('👋 ボイスチャンネル退出しました');
+      break;
 
-  // その他イベント
-  client.on('messageUpdate', handleMessageUpdate);
-  client.on('guildMemberAdd', handleMemberJoin);
-  client.on('guildMemberRemove', onGuildMemberRemove);
-  client.on('guildMemberUpdate', onGuildMemberUpdate);
-  client.on('guildBanAdd', onGuildBanAdd);
-  client.on('roleUpdate', handleRoleUpdate);
-  client.on('messageReactionAdd', handleReactionAdd);
-  client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
+    case 'ai':
+      const prompt = args.join(' ').trim();
+      if (!prompt) return message.reply('❌ 使用例: `!ai こんにちは`');
+      const replyMsg = await message.reply('💬 AIが考え中...');
+      try {
+        const aiResponse = await chat(prompt, message.author.id);
+        await replyMsg.edit(aiResponse || 'AIからの応答に失敗しました。');
+      } catch {
+        await replyMsg.edit('❌ AIとの通信中にエラーが発生しました。');
+      }
+      break;
 
-  client.login(TOKEN);
+    default:
+      await handlePrefixMessage(client, message);
+      break;
+  }
+});
+
+// --- cron: 毎月1日0時に月間リセット ---
+cron.schedule('0 0 1 * *', async () => {
+  await resetMonthlyActivity(client);
+});
+
+// --- その他イベント ---
+client.on('messageUpdate', handleMessageUpdate);
+client.on('guildMemberAdd', handleMemberJoin);
+client.on('guildMemberRemove', onGuildMemberRemove);
+client.on('guildMemberUpdate', onGuildMemberUpdate);
+client.on('guildBanAdd', onGuildBanAdd);
+client.on('roleUpdate', handleRoleUpdate);
+client.on('messageReactionAdd', handleReactionAdd);
+client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
+
+// --- ログイン ---
+client.login(TOKEN);
