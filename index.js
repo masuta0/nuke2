@@ -26,7 +26,10 @@ const {
 } = require('./utils/anti-raid');
 
 // 追加: activity.js
-const { initActivity, addMessage, getRanking, updateActiveRoles } = require("./utils/activity");
+// 変更前
+const { loadActivity, initActivity } = require("./utils/activity");
+  await loadActivity(); // ← これだけでOK
+});
 
 // 定数
 const TOKEN = process.env.TOKEN;
