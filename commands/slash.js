@@ -6,13 +6,13 @@ const {
   PermissionFlagsBits,
 } = require("discord.js");
 const { chat } = require("../utils/ai");
-const { getWeather } = require("../utils/weather");
+const { fetchWeather, loadUserWeatherPref } = require("../utils/weather");
 const {
   getLevelData,
   setLevelAndXp,
   calculateRequiredXp,
 } = require("../utils/level");
-const { quizManager } = require("../utils/quiz");
+const { quizManager } = require("../utils/quiz"); // quizManager は関数であること
 const {
   playMusic,
   skipMusic,
@@ -48,7 +48,7 @@ const commands = [
     .setName("weather")
     .setDescription("天気を取得します")
     .addStringOption((opt) =>
-      opt.setName("location").setDescription("場所").setRequired(true)
+      opt.setName("location").setDescription("場所").setRequired(false)
     ),
 
   // レベル確認
@@ -152,6 +152,8 @@ const commands = [
 
 // ---------------- コマンド登録 ----------------
 async function registerSlashCommands(client) {
+  if (!client.user) throw new Error("client.user がまだ存在しません。Botは ready ですか？");
+
   const rest = new REST({ version: "10" }).setToken(client.token);
 
   try {
@@ -164,6 +166,7 @@ async function registerSlashCommands(client) {
     console.error("❌ スラッシュコマンド登録失敗:", err);
   }
 }
+
 // ---------------- 実行処理 ----------------
 async function handleSlashCommand(interaction) {
   if (!interaction.isChatInputCommand()) return;
@@ -172,71 +175,71 @@ async function handleSlashCommand(interaction) {
 
   try {
     // AI
-      if (commandName === "ai") {
-        const prompt = interaction.options.getString("prompt");
-        await interaction.deferReply({ ephemeral: true });
-        const res = await chat(prompt);
-        await interaction.editReply(res);
-      }
-        
-        else if (commandName === "weather") {
-          let location = interaction.options.getString("location");
+    if (commandName === "ai") {
+      const prompt = interaction.options.getString("prompt");
+      await interaction.deferReply({ ephemeral: true });
+      const res = await chat(prompt);
+      await interaction.editReply(res);
+    }
 
-          // location未指定ならユーザーの保存場所を取得
-          if (!location) {
-            const userPref = await loadUserWeatherPref(interaction.user.id);
-            location = userPref || "Tokyo"; // デフォルト
-          }
+    // 天気
+    else if (commandName === "weather") {
+      let location = interaction.options.getString("location");
 
-          await interaction.deferReply({ ephemeral: true });
-          const res = await fetchWeather(location);
-          await interaction.editReply(res);
-        }
-          
-      // レベル確認
-      else if (commandName === "level") {
-        const user = interaction.options.getUser("user") || interaction.user;
-        const data = getLevelData(interaction.guild.id, user.id);
-        const nextXp = calculateRequiredXp(data.level + 1);
-        const xpDisplay = nextXp ?? "MAX";
-
-        await interaction.reply({
-          content: `📊 ${user.tag} のレベル: ${data.level}, XP: ${data.xp}/${xpDisplay}`,
-          ephemeral: true, 
-        });
+      if (!location) {
+        const userPref = await loadUserWeatherPref(interaction.user.id);
+        location = userPref || "Tokyo";
       }
 
-      // レベル設定
-      else if (commandName === "setlevel") {
-        const user = interaction.options.getUser("user");
-        const level = interaction.options.getInteger("level");
-        const xp = interaction.options.getInteger("xp");
+      await interaction.deferReply({ ephemeral: true });
+      const res = await fetchWeather(location);
+      await interaction.editReply(res);
+    }
 
-        await setLevelAndXp(interaction.guild.id, user.id, level, xp);
+    // レベル確認
+    else if (commandName === "level") {
+      const user = interaction.options.getUser("user") || interaction.user;
+      const data = getLevelData(interaction.guild.id, user.id);
+      const nextXp = calculateRequiredXp(data.level + 1);
+      const xpDisplay = nextXp ?? "MAX";
 
-        await interaction.reply({
-          content: `✅ ${user.tag} のレベルを ${level}, XPを ${xp} に設定しました`,
-          ephemeral: true,
-        });
-      }
+      await interaction.reply({
+        content: `📊 ${user.tag} のレベル: ${data.level}, XP: ${data.xp}/${xpDisplay}`,
+        ephemeral: true,
+      });
+    }
+
+    // レベル設定
+    else if (commandName === "setlevel") {
+      const user = interaction.options.getUser("user");
+      const level = interaction.options.getInteger("level");
+      const xp = interaction.options.getInteger("xp");
+
+      await setLevelAndXp(interaction.guild.id, user.id, level, xp);
+
+      await interaction.reply({
+        content: `✅ ${user.tag} のレベルを ${level}, XPを ${xp} に設定しました`,
+        ephemeral: true,
+      });
+    }
 
     // クイズ
     else if (commandName === "quiz") {
+      if (typeof quizManager !== "function") throw new Error("quizManager が関数ではありません");
       await quizManager(interaction);
-      ephermal: true;
     }
 
     // 音楽
-    else if (commandName === "play") {
+    else if (commandName === "mplay") {
       const url = interaction.options.getString("url");
       await playMusic(interaction, url);
-    } else if (commandName === "skip") {
+    } else if (commandName === "mskip") {
       await skipMusic(interaction);
-    } else if (commandName === "stop") {
+    } else if (commandName === "mstop") {
       await stopMusic(interaction);
-    } else if (commandName === "pause") {
+    } else if (commandName === "mpause") {
       await pauseMusic(interaction);
-    } else if (commandName === "resume") {
+    } else if (commandName === "mresume") {
       await resumeMusic(interaction);
     }
 
@@ -272,20 +275,22 @@ async function handleSlashCommand(interaction) {
       await ticketCommand(interaction);
     }
 
-      else if (commandName === "invite") {
-        const url = await createInvite(interaction.member);
-        await interaction.reply({
-          content: `🔗 あなた専用の招待リンク: ${url}`,
-          ephemeral: true, 
-        });
-      }
+    // 招待リンク作成
+    else if (commandName === "invite") {
+      const url = await createInvite(interaction.member);
+      await interaction.reply({
+        content: `🔗 あなた専用の招待リンク: ${url}`,
+        ephemeral: true,
+      });
+    }
 
     // 招待数確認
     else if (commandName === "invitecount") {
       const count = await fetchInviteCount(interaction.member);
-      await interaction.reply(
-        `📊 あなたの招待数は **${count}** 人です`
-      );
+      await interaction.reply({
+        content: `📊 あなたの招待数は **${count}** 人です`,
+        ephemeral: true,
+      });
     }
   } catch (err) {
     console.error("❌ SlashCommand Error:", err);
