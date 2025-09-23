@@ -1,101 +1,101 @@
-// index.js
-require('dotenv').config();
-const express = require('express');
-const path = require('path');
-const fs = require('fs').promises;
-const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
-const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
-const registerSlashCommands = require('./commands/slash');
-const handlePrefixMessage = require('./commands/prefix');
-const { chat } = require('./utils/ai');
-const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
-const { preloadQuizzes } = require('./utils/quiz');
-const { addXp, loadData } = require('./utils/level');
-const { restoreVerifyMessage } = require('./utils/verify');
-const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
-const {
-  handleMemberJoin,
-  handleMessage,
-  handleReactionAdd,
-  handleRoleUpdate,
-  handleAuditLogEntry,
-  handleMessageUpdate,
-  onGuildMemberUpdate,
-  onGuildBanAdd,
-  onGuildMemberRemove,
-} = require('./utils/anti-raid');
-const { loadActivity, initActivity } = require("./utils/activity");
+  // index.js
+  require('dotenv').config();
+  const express = require('express');
+  const path = require('path');
+  const fs = require('fs').promises;
+  const { Client, GatewayIntentBits, Partials, ActivityType, ChannelType } = require('discord.js');
+  const { joinVoice, playUrl, stopMusic, leaveVoice } = require('./utils/music');
+  const registerSlashCommands = require('./commands/slash');
+  const handlePrefixMessage = require('./commands/prefix');
+  const { chat } = require('./utils/ai');
+  const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./utils/storage');
+  const { preloadQuizzes } = require('./utils/quiz');
+  const { addXp, loadData } = require('./utils/level');
+  const { restoreVerifyMessage } = require('./utils/verify');
+  const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
+  const {
+    handleMemberJoin,
+    handleMessage,
+    handleReactionAdd,
+    handleRoleUpdate,
+    handleAuditLogEntry,
+    handleMessageUpdate,
+    onGuildMemberUpdate,
+    onGuildBanAdd,
+    onGuildMemberRemove,
+  } = require('./utils/anti-raid');
+  const { loadActivity, initActivity } = require("./utils/activity");
 
-// 定数
-const TOKEN = process.env.TOKEN;
-const PORT = process.env.PORT || 3000;
-const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
+  // 定数
+  const TOKEN = process.env.TOKEN;
+  const PORT = process.env.PORT || 3000;
+  const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID;
 
-// Discordクライアント作成
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMessageReactions,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildModeration,
-    GatewayIntentBits.DirectMessages,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildBans,
-  ],
-  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
-});
-
-// Expressサーバー（監視用）
-const app = express();
-app.get('/', (_, res) => res.send('Bot is running'));
-app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
-
-// Bot ready
-client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
-    await loadActivity(); // ← これだけでOK
+  // Discordクライアント作成
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.GuildMessageReactions,
+      GatewayIntentBits.GuildVoiceStates,
+      GatewayIntentBits.MessageContent,
+      GatewayIntentBits.GuildModeration,
+      GatewayIntentBits.DirectMessages,
+      GatewayIntentBits.GuildPresences,
+      GatewayIntentBits.GuildBans,
+    ],
+    partials: [Partials.Channel, Partials.Message, Partials.Reaction],
   });
-  await ensureDropboxInit();
-  await initActivity();
-  preloadQuizzes();
-  await loadData();
-  await restoreVerifyMessage(client);
-  await loadWeeklyData();
-  setupWeekly(client, WEEKLY_CHANNEL_ID);
 
-  // スラッシュコマンド登録
-  try {
-    await registerSlashCommands(client);
-    console.log('✅ スラッシュコマンド登録完了');
-  } catch (e) {
-    console.error('❌ スラッシュコマンド登録失敗:', e);
-  }
+  // Expressサーバー（監視用）
+  const app = express();
+  app.get('/', (_, res) => res.send('Bot is running'));
+  app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
-  // 稼働時間ステータス更新
-  const start = Date.now();
-  const updateUptime = () => {
-    const elapsed = Date.now() - start;
-    const h = Math.floor(elapsed / 1000 / 60 / 60);
-    const m = Math.floor((elapsed / 1000 / 60) % 60);
-    const s = Math.floor((elapsed / 1000) % 60);
+  // Bot ready
+  client.once('ready', async () => {
+    console.log(`✅ Logged in as ${client.user.tag}`);
+
+    // 初期化処理はすべてここにまとめる
+    await ensureDropboxInit();
+    await loadActivity();
+    await initActivity();
+    preloadQuizzes();
+    await loadData();
+    await restoreVerifyMessage(client);
+    await loadWeeklyData();
+    setupWeekly(client, WEEKLY_CHANNEL_ID);
+
+    // スラッシュコマンド登録
     try {
-      client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
-    } catch {}
-  };
-  updateUptime();
-  setInterval(updateUptime, 5000);
-});
+      await registerSlashCommands(client);
+      console.log('✅ スラッシュコマンド登録完了');
+    } catch (e) {
+      console.error('❌ スラッシュコマンド登録失敗:', e);
+    }
 
-// メッセージ作成イベント
-client.on('messageCreate', async (message) => {
-  if (message.author.bot) {
-    await handleMessage(message);
-    return;
-  }
+    // 稼働時間ステータス更新
+    const start = Date.now();
+    const updateUptime = () => {
+      const elapsed = Date.now() - start;
+      const h = Math.floor(elapsed / 1000 / 60 / 60);
+      const m = Math.floor((elapsed / 1000 / 60) % 60);
+      const s = Math.floor((elapsed / 1000) % 60);
+      try {
+        client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
+      } catch {}
+    };
+    updateUptime();
+    setInterval(updateUptime, 5000);
+  });
 
+  // メッセージ作成イベント
+  client.on('messageCreate', async (message) => {
+    if (message.author.bot) {
+      await handleMessage(message);
+      return;
+    }
   // メッセージ数カウント (月間アクティブ用)
   if (message.guild) {
     await addMessage(client, message.guild.id, message.author.id);
