@@ -172,33 +172,27 @@ async function handleSlashCommand(interaction) {
 
   try {
     // AI
-    if (commandName === "ai") {
-      const prompt = interaction.options.getString("prompt");
-      await interaction.deferReply();
-      const res = await chat(prompt);
-      await interaction.editReply(res);
-      ephermal: true;
-    }
-
-      else if (commandName === "weather") {
-        let location = interaction.options.getString("location");
-
-        // location未指定ならユーザーの保存場所を取得
-        if (!location) {
-          const userPref = await loadUserWeatherPref(interaction.user.id);
-          if (userPref) {
-            location = userPref;
-          } else {
-            location = "Tokyo"; // デフォルト
-          }
-        }
-
-        await interaction.deferReply();
-        const res = await fetchWeather(location);
+      if (commandName === "ai") {
+        const prompt = interaction.options.getString("prompt");
+        await interaction.deferReply({ ephemeral: true });
+        const res = await chat(prompt);
         await interaction.editReply(res);
-        ephermal: true;
       }
+        
+        else if (commandName === "weather") {
+          let location = interaction.options.getString("location");
 
+          // location未指定ならユーザーの保存場所を取得
+          if (!location) {
+            const userPref = await loadUserWeatherPref(interaction.user.id);
+            location = userPref || "Tokyo"; // デフォルト
+          }
+
+          await interaction.deferReply({ ephemeral: true });
+          const res = await fetchWeather(location);
+          await interaction.editReply(res);
+        }
+          
       // レベル確認
       else if (commandName === "level") {
         const user = interaction.options.getUser("user") || interaction.user;
@@ -229,7 +223,7 @@ async function handleSlashCommand(interaction) {
     // クイズ
     else if (commandName === "quiz") {
       await quizManager(interaction);
-      ephermal: true;
+      ephermal: true;,
     }
 
     // 音楽
@@ -278,12 +272,13 @@ async function handleSlashCommand(interaction) {
       await ticketCommand(interaction);
     }
 
-    // 招待リンク作成
-    else if (commandName === "invite") {
-      const url = await createInvite(interaction.member);
-      await interaction.reply(`🔗 あなた専用の招待リンク: ${url}`);
-      ephermal: true;
-    }
+      else if (commandName === "invite") {
+        const url = await createInvite(interaction.member);
+        await interaction.reply({
+          content: `🔗 あなた専用の招待リンク: ${url}`,
+          ephemeral: true, 
+        });
+      }
 
     // 招待数確認
     else if (commandName === "invitecount") {
