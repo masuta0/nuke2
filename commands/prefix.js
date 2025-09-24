@@ -114,7 +114,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
 
         case "クイズ":
         const { startQuiz } = require("../utils/quiz");
-        + await quizManager(msg, null, args[0]?.toLowerCase() || "mix");
+        await quizManager(msg);
         break;
       case "ai": {
         const remainingCooldown = checkAiCooldown(msg.author.id);
