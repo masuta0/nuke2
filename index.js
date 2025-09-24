@@ -39,6 +39,9 @@ const {
 } = require('./utils/anti-raid');
 const { addMessage, loadActivity, resetMonthlyActivity } = require('./utils/activity');
 
+// verify.js を読み込み
+const verify = require('./utils/verify');
+
 // --- 設定 ---
 const TOKEN = process.env.TOKEN || 'YOUR_TOKEN_HERE';
 const PORT = process.env.PORT || 3000;
@@ -71,10 +74,16 @@ const app = express();
 app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
-// --- interactionCreate: スラッシュコマンド対応 ---
+// --- interactionCreate: スラッシュ/ボタン/モーダル ---
 client.on('interactionCreate', async (interaction) => {
   try {
-    await handleSlashCommand(interaction);
+    if (interaction.isChatInputCommand()) {
+      await handleSlashCommand(interaction);
+    } else if (interaction.isButton()) {
+      await verify.buttonHandler(interaction);
+    } else if (interaction.isModalSubmit()) {
+      await verify.modalHandler(interaction);
+    }
   } catch (err) {
     console.error('❌ interactionCreateでエラー:', err);
   }
@@ -98,7 +107,7 @@ client.once('ready', async () => {
 
   // スラッシュコマンド登録
   try {
-    await registerSlashCommands(CLIENT_ID, TOKEN); // ここで clientId と token を渡す
+    await registerSlashCommands(CLIENT_ID, TOKEN);
     console.log('✅ スラッシュコマンド登録完了');
   } catch (err) {
     console.error('❌ スラッシュコマンド登録失敗:', err);
