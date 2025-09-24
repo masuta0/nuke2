@@ -75,20 +75,22 @@ app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
 // --- interactionCreate: スラッシュ/ボタン/モーダル ---
+// --- interactionCreate: スラッシュ/ボタン/モーダル ---
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
       await handleSlashCommand(interaction);
     } else if (interaction.isButton()) {
+      // verify.js 内の buttonHandler を呼ぶ
       await verify.buttonHandler(interaction);
     } else if (interaction.isModalSubmit()) {
+      // verify.js 内の modalHandler を呼ぶ
       await verify.modalHandler(interaction);
     }
   } catch (err) {
     console.error('❌ interactionCreateでエラー:', err);
   }
 });
-
 // --- Bot Ready ---
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);

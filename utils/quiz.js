@@ -26,40 +26,18 @@ function getRandomQuiz(category = null) {
   const categories = Object.keys(quizzes);
   if (categories.length === 0) return null;
 
-  if (category && quizzes[category]) {
-    const questions = quizzes[category];
-    if (!questions || questions.length === 0) return null;
-    const q = questions[Math.floor(Math.random() * questions.length)];
-    return { category, question: q.q, answer: q.a, choices: q.choices };
-  }
-
-  // ランダム
-  const randomCategory = categories[Math.floor(Math.random() * categories.length)];
-  const questions = quizzes[randomCategory];
+  let chosenCategory = category && quizzes[category] ? category : categories[Math.floor(Math.random() * categories.length)];
+  const questions = quizzes[chosenCategory];
   if (!questions || questions.length === 0) return null;
   const q = questions[Math.floor(Math.random() * questions.length)];
-  return { category: randomCategory, question: q.q, answer: q.a, choices: q.choices };
+  return { category: chosenCategory, question: q.q, answer: q.a, choices: q.choices };
 }
 
-// target: prefixの場合はTextChannel/Message、slashの場合はInteraction
-async function quizManager(target, user = null, category = null) {
-  let channel, isSlash = false, userId;
-
-  if (target.isChatInputCommand) {
-    // Slash
-    isSlash = true;
-    channel = target.channel;
-    user = target.user;
-    userId = user.id;
-  } else {
-    // Prefix
-    channel = target.channel || target; // target が Message の場合
-    userId = user?.id || target.author?.id;
-  }
-
-  // クイズ禁止チャンネル
+// クイズ開始
+async function startQuiz(target, user, category = null) {
+  const channel = target.channel || target; // Slashの場合は interaction.channel
   if (blockedChannelIds.includes(channel.id) || channel.name?.includes("雑談")) {
-    const warningMsg = await channel.send(`❌ このチャンネルではクイズは使えません`);
+    const warningMsg = await channel.send("❌ このチャンネルではクイズは使えません");
     setTimeout(() => warningMsg.delete().catch(() => {}), 5000);
     return;
   }
@@ -75,72 +53,60 @@ async function quizManager(target, user = null, category = null) {
   quiz.choices.forEach((choice, idx) => {
     buttons.addComponents(
       new ButtonBuilder()
-        .setCustomId(`quiz_${idx}`)
+        .setCustomId(`quiz_${idx}_${user.id}`)
         .setLabel(choice)
         .setStyle(ButtonStyle.Primary)
     );
   });
 
-  // クイズ出題
+  // メッセージ送信
   let msg;
-  if (isSlash) {
-    msg = await target.reply({
-      content: `📝 **${quiz.category}クイズ**\n${quiz.question}`,
-      components: [buttons],
-      fetchReply: true,
-    });
+  if (target.isChatInputCommand) {
+    msg = await target.reply({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons], fetchReply: true });
   } else {
-    msg = await channel.send({
-      content: `📝 **${quiz.category}クイズ**\n${quiz.question}`,
-      components: [buttons],
-    });
+    msg = await channel.send({ content: `📝 **${quiz.category}クイズ**\n${quiz.question}`, components: [buttons] });
   }
 
-  const filter = i => i.user.id === userId;
-  const collector = msg.createMessageComponentCollector({ filter, time: 30000 });
-
-  collector.on("collect", async (i) => {
-    if (!i.isButton()) return;
-    const selectedIndex = parseInt(i.customId.split("_")[1], 10);
-    const isCorrect = quiz.choices[selectedIndex] === quiz.answer;
-
-    const content = isCorrect
-      ? `✅ 正解！ (${quiz.answer})`
-      : `❌ 不正解... 正解は **${quiz.answer}** でした。`;
-
-    const nextButton = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("quiz_next")
-        .setLabel("👍 次の問題")
-        .setStyle(ButtonStyle.Success)
-    );
-
+  // 30秒後にタイムアウト
+  setTimeout(async () => {
     try {
-      await i.update({ content, components: [nextButton] });
-    } catch (err) {
-      // Interactionが古くなった場合、channel.sendで代替
-      await channel.send({ content, components: [nextButton] });
-    }
-  });
+      await msg.edit({ components: [] });
+      await channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
+    } catch {}
+  }, 30000);
 
-  collector.on("end", (_, reason) => {
-    if (reason === "time") {
-      channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
-    }
-  });
-
-  // 次の問題ボタン
-  const nextCollector = msg.createMessageComponentCollector({ filter, time: 60000 });
-  nextCollector.on("collect", async (i) => {
-    if (i.customId === "quiz_next") {
-      await i.deferUpdate();
-      if (isSlash) {
-        await quizManager(target, user, category);
-      } else {
-        await quizManager(target, { id: userId }, category);
-      }
-    }
-  });
+  return { quiz, msg };
 }
 
-module.exports = { preloadQuizzes, getRandomQuiz, quizManager, blockedChannelIds };
+// Interactionでの回答処理
+async function handleQuizInteraction(interaction) {
+  if (!interaction.isButton()) return;
+  const [prefix, idxStr, authorId] = interaction.customId.split("_");
+  if (prefix !== "quiz") return;
+
+  // ボタン押したのがクイズ実行者本人か確認
+  if (interaction.user.id !== authorId) {
+    return interaction.reply({ content: "⚠️ このクイズはあなたのものではありません", ephemeral: true });
+  }
+
+  const selectedIndex = parseInt(idxStr, 10);
+  const content = interaction.message.content;
+  const quizAnswerMatch = content.match(/正解は \*\*(.+)\*\*/);
+  // 正解は埋め込まれてない場合のみ
+  let answer = quizAnswerMatch ? quizAnswerMatch[1] : null;
+
+  // 一度回答したらボタン無効化
+  const newRow = new ActionRowBuilder();
+  interaction.message.components[0].components.forEach((btn) => {
+    btn.setDisabled(true);
+    newRow.addComponents(btn);
+  });
+
+  // 正解チェック
+  const selectedText = interaction.component.label;
+  const correct = selectedText === answer;
+
+  await interaction.update({ content: correct ? `✅ 正解！ (${selectedText})` : `❌ 不正解... 正解は **${answer || "不明"}**`, components: [newRow] });
+}
+
+module.exports = { preloadQuizzes, startQuiz, handleQuizInteraction, blockedChannelIds };
