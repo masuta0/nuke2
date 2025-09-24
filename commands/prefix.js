@@ -17,7 +17,7 @@ const {
   loadUserWeatherPref,
   fetchWeather,
 } = require("../utils/weather");
-const { quizManager } = require("../utils/quiz");
+const { quizManager, activeUsers } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
@@ -112,10 +112,15 @@ module.exports = async function handlePrefixMessage(client, msg) {
         break;
       }
 
-        case "クイズ":
-        const { startQuiz } = require("../utils/quiz");
-        await quizManager(msg);
-        break;
+        case "クイズ": {
+          if (activeUsers.has(msg.author.id)) {
+            return msg.reply("⚠️ あなたはすでにクイズに参加中です");
+          }
+
+          // クイズ開始
+          await quizManager(msg, msg.author);
+          break;
+        }
       case "ai": {
         const remainingCooldown = checkAiCooldown(msg.author.id);
         if (remainingCooldown > 0) return msg.reply(`❌ AIはクールタイム中です。あと${remainingCooldown}秒`);
