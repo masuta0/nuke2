@@ -113,7 +113,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
       }
 
         case "クイズ":
-        await quizManager({ message: msg, category: args[0]?.toLowerCase() || "mix" });
+        await quizManager(msg.channel, { message: msg, category: args[0]?.toLowerCase() || "mix" });
         break;
 
       case "ai": {
