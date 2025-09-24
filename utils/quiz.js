@@ -10,8 +10,7 @@ const blockedChannelIds = [
   "1409520151749070880",
   "1410891781846994956"
 ];
-
-const activeUsers = new Set(); // 同時参加防止
+const activeUsers = new Set();
 
 function preloadQuizzes() {
   try {
@@ -138,4 +137,4 @@ async function quizManager(target, user = null, category = null) {
   });
 }
 
-module.exports = { preloadQuizzes, getRandomQuiz, quizManager, blockedChannelIds };
+module.exports = { preloadQuizzes, getRandomQuiz, quizManager, blockedChannelIds, activeUsers };
