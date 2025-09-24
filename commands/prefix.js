@@ -114,9 +114,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
 
         case "クイズ":
         const { startQuiz } = require("../utils/quiz");
-        await startQuiz(msg, msg.author, args[0]?.toLowerCase() || "mix");
+        + await quizManager(msg, null, args[0]?.toLowerCase() || "mix");
         break;
-
       case "ai": {
         const remainingCooldown = checkAiCooldown(msg.author.id);
         if (remainingCooldown > 0) return msg.reply(`❌ AIはクールタイム中です。あと${remainingCooldown}秒`);
