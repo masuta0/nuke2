@@ -9,12 +9,10 @@ const blockedChannelIds = [
   "1416773830537642115",
   "1409520151749070880",
   "1410891781846994956"
-]; // クイズ禁止チャンネル
+];
 
-// 同時参加防止用
-const activeUsers = new Set();
+const activeUsers = new Set(); // 同時参加防止
 
-// クイズデータロード
 function preloadQuizzes() {
   try {
     const data = fs.readFileSync(path.join(__dirname, "../quizzes.json"), "utf-8");
@@ -36,7 +34,6 @@ function getRandomQuiz(category = null) {
     return { category, question: q.q, answer: q.a, choices: q.choices };
   }
 
-  // ランダム
   const randomCategory = categories[Math.floor(Math.random() * categories.length)];
   const questions = quizzes[randomCategory];
   if (!questions || questions.length === 0) return null;
@@ -44,56 +41,34 @@ function getRandomQuiz(category = null) {
   return { category: randomCategory, question: q.q, answer: q.a, choices: q.choices };
 }
 
-// target: prefixの場合はMessageオブジェクト、slashの場合はInteraction
 async function quizManager(target, user = null, category = null) {
   let channel, isSlash = false;
 
   if (target.channel && target.isChatInputCommand) {
-    // Slash interaction
     isSlash = true;
     channel = target.channel;
     user = target.user;
-  } else if (target.author && target.channel) {
-    // Prefix Message
-    channel = target.channel;
-    user = target.author;
-  } else if (target.send) {
-    // 直接 TextChannel を渡す場合
-    channel = target;
-    if (!user) {
-      console.error("❌ TextChannel を渡す場合は user も指定してください");
-      return;
-    }
   } else {
-    console.error("❌ 不正な target:", target);
-    return;
+    channel = target;
   }
 
-  if (!user) return;
+  if (activeUsers.has(user?.id)) return;
+  if (user) activeUsers.add(user.id);
 
-  // 同時参加防止
-  if (activeUsers.has(user.id)) {
-    await channel.send(`⚠️ ${user.username} さんはすでにクイズに参加中です`);
-    return;
-  }
-  activeUsers.add(user.id);
-
-  // クイズ禁止チャンネル
   if (blockedChannelIds.includes(channel.id) || channel.name?.includes("雑談")) {
     const warningMsg = await channel.send(`❌ このチャンネルではクイズは使えません`);
     setTimeout(() => warningMsg.delete().catch(() => {}), 5000);
-    activeUsers.delete(user.id);
+    activeUsers.delete(user?.id);
     return;
   }
 
   const quiz = getRandomQuiz(category);
   if (!quiz || !quiz.choices || quiz.choices.length === 0) {
     await channel.send("⚠️ クイズデータが不十分です。");
-    activeUsers.delete(user.id);
+    activeUsers.delete(user?.id);
     return;
   }
 
-  // ボタン作成
   const buttons = new ActionRowBuilder();
   quiz.choices.forEach((choice, idx) => {
     buttons.addComponents(
@@ -104,7 +79,6 @@ async function quizManager(target, user = null, category = null) {
     );
   });
 
-  // クイズ出題
   let msg;
   if (isSlash) {
     msg = await target.reply({
@@ -120,11 +94,10 @@ async function quizManager(target, user = null, category = null) {
   }
 
   const filter = (i) => i.user.id === user.id;
-  const collector = channel.createMessageComponentCollector({ filter, time: 30000 });
+  const collector = msg.createMessageComponentCollector({ filter, time: 30000 });
 
   collector.on("collect", async (i) => {
     if (!i.isButton()) return;
-
     const selectedIndex = parseInt(i.customId.split("_")[1], 10);
     const isCorrect = quiz.choices[selectedIndex] === quiz.answer;
 
@@ -135,7 +108,7 @@ async function quizManager(target, user = null, category = null) {
     const nextButton = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("quiz_next")
-        .setLabel("👍 次の問題")
+        .setLabel("クイズを続ける")
         .setStyle(ButtonStyle.Success)
     );
 
@@ -146,23 +119,21 @@ async function quizManager(target, user = null, category = null) {
     }
   });
 
-  collector.on("end", (_, reason) => {
+  collector.on("end", async (_, reason) => {
     if (reason === "time") {
-      channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
+      await channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
+      activeUsers.delete(user?.id);
     }
-    activeUsers.delete(user.id); // 終了後に解除
   });
 
-  // 次の問題ボタン
-  const nextCollector = channel.createMessageComponentCollector({ filter, time: 60000 });
+  const nextCollector = msg.createMessageComponentCollector({ filter, time: 60000 });
   nextCollector.on("collect", async (i) => {
     if (i.customId === "quiz_next") {
       await i.deferUpdate();
-      if (isSlash) {
-        await quizManager(target, user, category);
-      } else {
-        await quizManager(channel, user, category);
-      }
+      collector.stop("next"); // 前回の collector を終了
+      nextCollector.stop();   // この collector も終了
+      if (isSlash) await quizManager(target, user, category);
+      else await quizManager(channel, user, category);
     }
   });
 }
