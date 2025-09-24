@@ -11,7 +11,7 @@ const blockedChannelIds = [
   "1410891781846994956"
 ]; // クイズ禁止チャンネル
 
-// 同時参加防止用セット
+// 同時参加防止用
 const activeUsers = new Set();
 
 // クイズデータロード
@@ -44,40 +44,44 @@ function getRandomQuiz(category = null) {
   return { category: randomCategory, question: q.q, answer: q.a, choices: q.choices };
 }
 
-// target: prefixの場合はMessage、slashの場合はInteraction
+// target: prefixの場合はMessageオブジェクト、slashの場合はInteraction
 async function quizManager(target, user = null, category = null) {
   let channel, isSlash = false;
 
   if (target.channel && target.isChatInputCommand) {
-    // Slash
+    // Slash interaction
     isSlash = true;
     channel = target.channel;
     user = target.user;
-  } else if (target.channel && target.author) {
-    // Prefix
+  } else if (target.author && target.channel) {
+    // Prefix Message
     channel = target.channel;
     user = target.author;
+  } else if (target.send) {
+    // 直接 TextChannel を渡す場合
+    channel = target;
+    if (!user) {
+      console.error("❌ TextChannel を渡す場合は user も指定してください");
+      return;
+    }
   } else {
     console.error("❌ 不正な target:", target);
     return;
   }
 
+  if (!user) return;
+
   // 同時参加防止
   if (activeUsers.has(user.id)) {
-    const warning = isSlash
-      ? await target.reply({ content: "⚠️ 既にクイズに参加中です", ephemeral: true })
-      : await channel.send(`${user.username} さん、既にクイズに参加中です`);
-    if (!isSlash) setTimeout(() => warning.delete().catch(() => {}), 5000);
+    await channel.send(`⚠️ ${user.username} さんはすでにクイズに参加中です`);
     return;
   }
   activeUsers.add(user.id);
 
   // クイズ禁止チャンネル
   if (blockedChannelIds.includes(channel.id) || channel.name?.includes("雑談")) {
-    const warningMsg = isSlash
-      ? await target.reply({ content: "❌ このチャンネルではクイズは使えません", ephemeral: true })
-      : await channel.send("❌ このチャンネルではクイズは使えません");
-    if (!isSlash) setTimeout(() => warningMsg.delete().catch(() => {}), 5000);
+    const warningMsg = await channel.send(`❌ このチャンネルではクイズは使えません`);
+    setTimeout(() => warningMsg.delete().catch(() => {}), 5000);
     activeUsers.delete(user.id);
     return;
   }
@@ -120,6 +124,7 @@ async function quizManager(target, user = null, category = null) {
 
   collector.on("collect", async (i) => {
     if (!i.isButton()) return;
+
     const selectedIndex = parseInt(i.customId.split("_")[1], 10);
     const isCorrect = quiz.choices[selectedIndex] === quiz.answer;
 
@@ -141,11 +146,11 @@ async function quizManager(target, user = null, category = null) {
     }
   });
 
-  collector.on("end", async (_, reason) => {
+  collector.on("end", (_, reason) => {
     if (reason === "time") {
-      await channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
+      channel.send(`⌛ 時間切れ！ 正解は **${quiz.answer}** でした。`);
     }
-    activeUsers.delete(user.id);
+    activeUsers.delete(user.id); // 終了後に解除
   });
 
   // 次の問題ボタン
