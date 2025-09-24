@@ -41,18 +41,20 @@ function getRandomQuiz(category = null) {
   return { category: randomCategory, question: q.q, answer: q.a, choices: q.choices };
 }
 
-// target: prefixの場合はTextChannel、slashの場合はInteraction
+// target: prefixの場合はTextChannel/Message、slashの場合はInteraction
 async function quizManager(target, user = null, category = null) {
-  let channel, isSlash = false;
+  let channel, isSlash = false, userId;
 
-  if (target.channel && target.isChatInputCommand) {
+  if (target.isChatInputCommand) {
     // Slash
     isSlash = true;
     channel = target.channel;
     user = target.user;
+    userId = user.id;
   } else {
     // Prefix
-    channel = target;
+    channel = target.channel || target; // target が Message の場合
+    userId = user?.id || target.author?.id;
   }
 
   // クイズ禁止チャンネル
@@ -94,8 +96,8 @@ async function quizManager(target, user = null, category = null) {
     });
   }
 
-  const filter = (i) => i.user.id === user.id;
-  const collector = channel.createMessageComponentCollector({ filter, time: 30000 });
+  const filter = i => i.user.id === userId;
+  const collector = msg.createMessageComponentCollector({ filter, time: 30000 });
 
   collector.on("collect", async (i) => {
     if (!i.isButton()) return;
@@ -128,14 +130,14 @@ async function quizManager(target, user = null, category = null) {
   });
 
   // 次の問題ボタン
-  const nextCollector = channel.createMessageComponentCollector({ filter, time: 60000 });
+  const nextCollector = msg.createMessageComponentCollector({ filter, time: 60000 });
   nextCollector.on("collect", async (i) => {
     if (i.customId === "quiz_next") {
       await i.deferUpdate();
       if (isSlash) {
         await quizManager(target, user, category);
       } else {
-        await quizManager(channel, user, category);
+        await quizManager(target, { id: userId }, category);
       }
     }
   });
