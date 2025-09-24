@@ -118,7 +118,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
           }
 
           // クイズ開始
-          await quizManager(message.channel, message.author, category);
+          const category = args[0] || null; // 引数からカテゴリ指定
+          await quizManager(msg.channel, msg.author, category);
           break;
         }
       case "ai": {
