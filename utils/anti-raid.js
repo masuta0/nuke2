@@ -149,7 +149,7 @@
     'ますまに顔',
 　　'#mute',
     'molmol',
-    '.gg/mol
+    '.gg/mol'
   ];
 
   const DANGEROUS_PERMISSIONS = [
