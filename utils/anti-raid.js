@@ -1,8 +1,4 @@
-  コードを確認し、指摘された「'などの半角にしなければならないところ」を全て半角（'または"）に修正しました。
-  主に以下の箇所の修正を行いました。
-   * 文字列リテラルと環境変数設定: ’（全角シングルクォート）、“、”（全角ダブルクォート）で囲まれていた文字列リテラルを、半角の'または"に統一しました。
-   * 配列の区切り文字: split(’,') のように全角カンマを使っていた箇所を半角カンマ（,）に修正しました。
-  <!-- end list -->
+
   // utils/anti-raid.js
   // Discord.js v14 完全統合版 + 自動復元 + バックアップ機能
 
@@ -28,7 +24,7 @@
 
   // ===== 設定 =====
   const LOG_CHANNEL_ID = process.env.ANTI_RAID_LOG_CHANNEL_ID || '1405660583025709106';
-  const AUTH_CHANNEL_ID = process.env.ANTI_RAID_AUTH_CHANNEL_ID || 'YOUR_AUTH_CHANNEL_ID';
+  const AUTH_CHANNEL_ID = process.env.ANTI_RAID_AUTH_CHANNEL_ID || '1407717252945543250';
   const JOIN_LOG_CHANNEL_ID = process.env.JOIN_LOG_CHANNEL_ID || '1407669514425860136';
 
   // ホワイトリスト（ユーザー / ロール）
