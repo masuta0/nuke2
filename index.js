@@ -26,6 +26,8 @@ const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
 const { restoreVerifyMessage } = require('./utils/verify');
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
+// --- anti-raid.js から必要なモジュールを全てインポート
+const antiRaid = require('./utils/anti-raid'); 
 const {
   handleMemberJoin,
   handleMessage,
@@ -36,7 +38,8 @@ const {
   onGuildMemberUpdate,
   onGuildBanAdd,
   onGuildMemberRemove,
-} = require('./utils/anti-raid');
+  // handleMessage, // handleMessage は botのメッセージ処理と競合するため、ここではインポートしないが、後続で antiRaid.handleMessage として使う
+} = antiRaid;
 const { addMessage, loadActivity, resetMonthlyActivity } = require('./utils/activity');
 
 // verify.js を読み込み
@@ -75,7 +78,6 @@ app.get('/', (_, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
 
 // --- interactionCreate: スラッシュ/ボタン/モーダル ---
-// --- interactionCreate: スラッシュ/ボタン/モーダル ---
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
@@ -91,6 +93,7 @@ client.on('interactionCreate', async (interaction) => {
     console.error('❌ interactionCreateでエラー:', err);
   }
 });
+
 // --- Bot Ready ---
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -115,6 +118,16 @@ client.once('ready', async () => {
     console.error('❌ スラッシュコマンド登録失敗:', err);
   }
 
+  // ★ 【追加】1時間ごとのハッシュクリーンアップ処理の実行設定
+  setInterval(() => {
+    // antiRaid モジュールから similarityTracker と定数を取得し、クリーンアップを実行
+    for (const guildTracker of antiRaid.similarityTracker.values()) {
+        antiRaid.cleanupSimilarityTracker(guildTracker, antiRaid.SIMILARITY_HASH_EXPIRY_MS);
+    }
+  }, antiRaid.CLEANUP_INTERVAL_MS);
+
+  console.log(`[Anti-Raid] Hash cleanup started. (Interval: ${antiRaid.CLEANUP_INTERVAL_MS / 1000 / 60} minutes).`);
+
   // 稼働時間ステータス
   const start = Date.now();
   setInterval(() => {
@@ -131,7 +144,13 @@ client.once('ready', async () => {
 // --- メッセージイベント ---
 client.on('messageCreate', async (message) => {
   try {
-    if (message.author.bot) return handleMessage(message);
+    // messageCreateハンドラ内では、anti-raidのhandleMessageを先に実行してからボット固有の処理へ移行
+    // ボットのbot判定処理の前に、anti-raidのbot判定を含めた処理を通すことで柔軟性を高める
+
+    // anti-raid.js のメッセージ処理を実行
+    await antiRaid.handleMessage(message);
+
+    if (message.author.bot) return; // anti-raidの処理後にボットのメッセージを無視
 
     // サーバー全体アクティビティ
     if (message.guild && message.author.id && !message.author.bot) {
@@ -140,8 +159,6 @@ client.on('messageCreate', async (message) => {
 
     // レベル
     if (message.member) await addXp(message.member);
-
-    await handleMessage(message);
 
     if (message.channel?.type === ChannelType.DM) return;
 
@@ -213,7 +230,7 @@ cron.schedule('0 0 1 * *', async () => {
 });
 
 // --- その他イベント ---
-client.on('messageUpdate', handleMessageUpdate);
+client.on('messageUpdate', antiRaid.handleMessageUpdate); // antiRaidから直接呼び出し
 client.on('guildMemberAdd', handleMemberJoin);
 client.on('guildMemberRemove', onGuildMemberRemove);
 client.on('guildMemberUpdate', onGuildMemberUpdate);
@@ -221,6 +238,8 @@ client.on('guildBanAdd', onGuildBanAdd);
 client.on('roleUpdate', handleRoleUpdate);
 client.on('messageReactionAdd', handleReactionAdd);
 client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
+// DM処理を追加
+client.on('messageCreate', antiRaid.handleDirectMessage);
 
 // --- ログイン ---
 client.login(TOKEN);
