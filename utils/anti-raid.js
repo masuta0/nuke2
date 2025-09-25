@@ -143,12 +143,12 @@
     'raid by',
     'on top',
     '.ozeu',
-    '.gg/oze'
+    '.gg/oze',
     '.gg/dpko',
     'ますまにの顔',
-    'ますまに顔'
+    'ますまに顔',
 　　'#mute',
-    'molmol'
+    'molmol',
     '.gg/mol
   ];
 
