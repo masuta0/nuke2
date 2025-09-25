@@ -142,12 +142,14 @@
   const RAID_KEYWORDS = [
     'raid by',
     'on top',
-    'このサーバーをレイドしました',
-    '包囲した',
     '.ozeu',
-    '.dpko',
+    '.gg/oze'
+    '.gg/dpko',
     'ますまにの顔',
     'ますまに顔'
+　　'#mute',
+    'molmol'
+    '.gg/mol
   ];
 
   const DANGEROUS_PERMISSIONS = [
