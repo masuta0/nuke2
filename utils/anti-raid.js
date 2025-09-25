@@ -20,7 +20,7 @@ try { ({ chat } = require('./ai')); } catch {}
 // ===== 設定 =====
 const LOG_CHANNEL_ID = process.env.ANTI_RAID_LOG_CHANNEL_ID || '1405660583025709106';
 const AUTH_CHANNEL_ID = process.env.ANTI_RAID_AUTH_CHANNEL_ID ||'YOUR_AUTH_CHANNEL_ID';
-const JOIN_LOG_CHANNEL_ID = process.env.JOIN_LOG_CHANNEL_ID || '''1407669514425860136';
+const JOIN_LOG_CHANNEL_ID = process.env.JOIN_LOG_CHANNEL_ID || '1407669514425860136';
 
 // ホワイトリスト（ユーザー / ロール）
 const WHITELIST_USERS = (process.env.ANTI_RAID_WHITELIST_USERS || ‘’)
