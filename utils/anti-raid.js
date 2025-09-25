@@ -1,8 +1,8 @@
 // utils/anti-raid.js
 // Discord.js v14 完全統合版 + 自動復元 + バックアップ機能
 
-const fs = require(‘fs’);
-const path = require(‘path’);
+const fs = require('fs');
+const path = require('path');
 const {
 AuditLogEvent,
 PermissionsBitField,
