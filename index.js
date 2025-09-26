@@ -112,17 +112,13 @@ client.once('ready', async () => {
     await restoreVerifyMessage(client);
     await loadWeeklyData();
     setupWeekly(client, WEEKLY_CHANNEL_ID);
-
+    // スラッシュコマンド登録
+      await registerSlashCommands(CLIENT_ID, TOKEN);
+      console.log('✅ スラッシュコマンド登録完了');
+    } catch (err) {
+      console.error('❌ スラッシュコマンド登録失敗:', err);
   } catch (err) {
     console.error('❌ Readyイベント初期化エラー:', err);
-  }
-
-  // スラッシュコマンド登録
-  try {
-    await registerSlashCommands(CLIENT_ID, TOKEN);
-    console.log('✅ スラッシュコマンド登録完了');
-  } catch (err) {
-    console.error('❌ スラッシュコマンド登録失敗:', err);
   }
 
   // 1時間ごとのハッシュクリーンアップ
