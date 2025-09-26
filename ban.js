@@ -1,1 +1,1 @@
-npm install @vladmandic/face-api @tensorflow/tfjs-node canvas node-fetch
+npm install @vladmandic/face-api @tensorflow/tfjs-node canvas node-fetch@2
