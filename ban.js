@@ -1,3 +1,1 @@
-npm install canvas
-npm install @tensorflow/tfjs-node
-npm install @vladmandic/face-api
+npm install @vladmandic/face-api canvas @tensorflow/tfjs-node
