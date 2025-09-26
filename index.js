@@ -141,7 +141,6 @@ client.once('ready', async () => {
   }, 5000);
 });
 
-// --- メッセージイベント ---
 client.on('messageCreate', async (message) => {
   try {
     // 顔画像判定（画像が含まれている場合）
@@ -153,6 +152,16 @@ client.on('messageCreate', async (message) => {
             if (match) {
               await message.delete();
               console.log(`🧠 類似顔画像を削除しました: ${message.id}`);
+
+              // ログ送信
+              const logChannel = await client.channels.fetch('1405660583025709106');
+              if (logChannel?.isTextBased()) {
+                await logChannel.send({
+                  content: `🧹 類似顔画像を削除しました。\n投稿者: <@${message.author.id}>\nチャンネル: <#${message.channel.id}>`,
+                  allowedMentions: { users: [], roles: [] }
+                });
+              }
+
               return;
             }
           } catch (err) {
@@ -175,6 +184,7 @@ client.on('messageCreate', async (message) => {
     if (message.member) await addXp(message.member);
     if (message.channel?.type === ChannelType.DM) return;
 
+    // プレフィックスコマンド処理
     if (!message.content.startsWith('!')) return;
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift()?.toLowerCase();

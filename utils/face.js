@@ -15,7 +15,7 @@ async function initFaceRecognition() {
   await faceapi.nets.faceRecognitionNet.loadFromDisk('./models');
   await faceapi.nets.faceLandmark68Net.loadFromDisk('./models');
 
-  const imgPath = path.join(__dirname, '../app-data/my-face.jpg');
+  const imgPath = path.join(__dirname, '../face.jpg');
   if (!fs.existsSync(imgPath)) {
     console.warn('⚠️ 顔画像が見つかりません:', imgPath);
     return;
