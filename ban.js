@@ -1,1 +1,2 @@
-npm install @vladmandic/face-api @tensorflow/tfjs-node canvas node-fetch@2
+rm -rf node_modules package-lock.json
+npm install

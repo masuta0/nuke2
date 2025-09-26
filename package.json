@@ -20,7 +20,7 @@
     "@google/generative-ai": "^0.21.0",
     "@iamtraction/google-translate": "^2.0.1",
     "@snazzah/davey": "^0.1.6",
-    "@tensorflow/tfjs-node": "^4.22.0",
+    "@tensorflow/tfjs": "^4.22.0",
     "@vitalets/google-translate-api": "^9.2.1",
     "axios": "^1.11.0",
     "canvas": "^3.2.0",
@@ -55,3 +55,4 @@
   },
   "homepage": "https://github.com/masuta0/nuke2#readme"
 }
+
