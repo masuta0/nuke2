@@ -88,58 +88,75 @@ client.on('interactionCreate', async (interaction) => {
     }
   } catch (err) {
     console.error('❌ interactionCreateでエラー:', err);
-  }
-});
+  }// Bot Ready イベントの修正版
+client.once(‘ready’, async () => {
+console.log(`✅ Logged in as ${client.user.tag}`);
 
-// --- Bot Ready ---
-client.once('ready', async () => {
-  console.log(`✅ Logged in as ${client.user.tag}`);
+try {
+// 顔認識初期化
+await initFaceRecognition();
+console.log(‘⚡ 顔認識初期化完了’);
 
+```
+// --- 顔登録（エラーハンドリング追加） ---
+try {
+  // 元のURL: https://i.imgur.com/DkoHDM9.png
+  // .jpg 拡張子を明示的に指定してみる
+  await registerFace('https://i.imgur.com/DkoHDM9.jpg');
+  console.log('✅ 自分の顔を登録しました');
+} catch (faceError) {
+  console.error('❌ 顔登録失敗:', faceError.message);
+  console.log('⚠️ 顔登録をスキップして続行します...');
+
+  // 代替案: 異なる形式のURLを試す
   try {
-    // 顔認識初期化
-    await initFaceRecognition();
-    console.log('⚡ 顔認識初期化完了');
-
-    // --- ここでImgurリンクを貼って顔登録 ---
-    await registerFace('https://i.imgur.com/DkoHDM9.png'); // ←ここに自分の顔画像リンク
-    console.log('✅ 自分の顔を登録しました');
-
-    // 既存の初期化処理
-    await ensureDropboxInit();
-    await loadActivity();
-    await loadLevelData();
-    preloadQuizzes();
-    await restoreVerifyMessage(client);
-    await loadWeeklyData();
-    setupWeekly(client, WEEKLY_CHANNEL_ID);
-    // スラッシュコマンド登録
-      await registerSlashCommands(CLIENT_ID, TOKEN);
-      console.log('✅ スラッシュコマンド登録完了');
-  } catch (err) {
-    console.error('❌ Readyイベント初期化エラー:', err);
+    console.log('🔄 代替画像URLで再試行...');
+    await registerFace('https://i.imgur.com/DkoHDM9.png');
+    console.log('✅ 代替URLで顔登録成功');
+  } catch (altError) {
+    console.error('❌ 代替URLでも失敗:', altError.message);
+    console.log('ℹ️ 手動で顔を登録してください: /register-face コマンドを使用');
   }
+}
 
-  // 1時間ごとのハッシュクリーンアップ
-  setInterval(() => {
-    for (const guildTracker of antiRaid.similarityTracker.values()) {
-        antiRaid.cleanupSimilarityTracker(guildTracker, antiRaid.SIMILARITY_HASH_EXPIRY_MS);
-    }
-  }, antiRaid.CLEANUP_INTERVAL_MS);
-  console.log(`[Anti-Raid] Hash cleanup started.`);
+// 既存の初期化処理
+await ensureDropboxInit();
+await loadActivity();
+await loadLevelData();
+preloadQuizzes();
+await restoreVerifyMessage(client);
+await loadWeeklyData();
+setupWeekly(client, WEEKLY_CHANNEL_ID);
 
-  // 稼働時間ステータス
-  const start = Date.now();
-  setInterval(() => {
-    const elapsed = Date.now() - start;
-    const h = Math.floor(elapsed / 1000 / 60 / 60);
-    const m = Math.floor((elapsed / 1000 / 60) % 60);
-    const s = Math.floor((elapsed / 1000) % 60);
-    try {
-      client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
-    } catch {}
-  }, 5000);
+// スラッシュコマンド登録
+await registerSlashCommands(CLIENT_ID, TOKEN);
+console.log('✅ スラッシュコマンド登録完了');
+```
+
+} catch (err) {
+console.error(‘❌ Readyイベント初期化エラー:’, err);
+}
+
+// 1時間ごとのハッシュクリーンアップ
+setInterval(() => {
+for (const guildTracker of antiRaid.similarityTracker.values()) {
+antiRaid.cleanupSimilarityTracker(guildTracker, antiRaid.SIMILARITY_HASH_EXPIRY_MS);
+}
+}, antiRaid.CLEANUP_INTERVAL_MS);
+console.log(`[Anti-Raid] Hash cleanup started.`);
+
+// 稼働時間ステータス
+const start = Date.now();
+setInterval(() => {
+const elapsed = Date.now() - start;
+const h = Math.floor(elapsed / 1000 / 60 / 60);
+const m = Math.floor((elapsed / 1000 / 60) % 60);
+const s = Math.floor((elapsed / 1000) % 60);
+try {
+client.user.setActivity(`稼働中 | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
+} catch {}
+}, 5000);
 });
-
 // --- メッセージ処理 ---
 client.on('messageCreate', async (message) => {
   try {
