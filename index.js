@@ -115,8 +115,6 @@ client.once('ready', async () => {
     // スラッシュコマンド登録
       await registerSlashCommands(CLIENT_ID, TOKEN);
       console.log('✅ スラッシュコマンド登録完了');
-    } catch (err) {
-      console.error('❌ スラッシュコマンド登録失敗:', err);
   } catch (err) {
     console.error('❌ Readyイベント初期化エラー:', err);
   }

@@ -12,16 +12,6 @@ faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 const MODELS_DIR = path.join(__dirname, 'models');
 if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
 
-// GitHubからモデルを自動ダウンロード
-const MODEL_FILES = [
-  'ssd_mobilenetv1_model-weights_manifest.json',
-  'ssd_mobilenetv1_model-shard1',
-  'face_recognition_model-weights_manifest.json',
-  'face_recognition_model-shard1',
-  'face_landmark_68_model-weights_manifest.json',
-  'face_landmark_68_model-shard1'
-];
-
 async function downloadModelFile(file) {
   const url = `https://raw.githubusercontent.com/vladmandic/face-api/master/weights/${file}`;
   const dest = path.join(MODELS_DIR, file);
