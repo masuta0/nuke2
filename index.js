@@ -144,22 +144,35 @@ client.once('ready', async () => {
 // --- メッセージイベント ---
 client.on('messageCreate', async (message) => {
   try {
-    // messageCreateハンドラ内では、anti-raidのhandleMessageを先に実行してからボット固有の処理へ移行
-    // ボットのbot判定処理の前に、anti-raidのbot判定を含めた処理を通すことで柔軟性を高める
+    // 顔画像判定（画像が含まれている場合）
+    if (message.attachments.size > 0) {
+      for (const attachment of message.attachments.values()) {
+        if (attachment.contentType?.startsWith('image/')) {
+          try {
+            const match = await isSimilarFace(attachment.url);
+            if (match) {
+              await message.delete();
+              console.log(`🧠 類似顔画像を削除しました: ${message.id}`);
+              return;
+            }
+          } catch (err) {
+            console.error('❌ 顔画像判定エラー:', err);
+          }
+        }
+      }
+    }
 
     // anti-raid.js のメッセージ処理を実行
     await antiRaid.handleMessage(message);
-
-    if (message.author.bot) return; // anti-raidの処理後にボットのメッセージを無視
+    if (message.author.bot) return;
 
     // サーバー全体アクティビティ
     if (message.guild && message.author.id && !message.author.bot) {
       await addMessage(message.guild.id, message.author.id, message.content);
     }
 
-    // レベル
+    // レベル処理
     if (message.member) await addXp(message.member);
-
     if (message.channel?.type === ChannelType.DM) return;
 
     if (!message.content.startsWith('!')) return;
