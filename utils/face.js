@@ -8,6 +8,11 @@ const https = require('https');
 
 const { Canvas, Image, ImageData } = canvas;
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
+const MODEL_FILES = [
+  'face_recognition_model-weights_manifest.json',
+  'face_landmark_68_model-weights_manifest.json',
+  'ssd_mobilenetv1_model-weights_manifest.json'
+];
 
 const MODELS_DIR = path.join(__dirname, 'models');
 if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
