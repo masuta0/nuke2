@@ -17,7 +17,8 @@ const {
   stopMusic, 
   leaveVoice 
 } = require('./utils/music');
-const { initFaceRecognition, isSimilarFace } = require('./utils/face');
+
+const { initFaceRecognition, isSimilarFace, registerFace } = require('./utils/face');
 const { registerSlashCommands, handleSlashCommand } = require("./commands/slash");
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
@@ -26,11 +27,11 @@ const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
 const { restoreVerifyMessage } = require('./utils/verify');
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
-// --- anti-raid.js から必要なモジュールを全てインポート
+
+// --- anti-raid.js から必要なモジュールを全てインポート ---
 const antiRaid = require('./utils/anti-raid'); 
 const {
   handleMemberJoin,
-  handleMessage,
   handleReactionAdd,
   handleRoleUpdate,
   handleAuditLogEntry,
@@ -38,18 +39,16 @@ const {
   onGuildMemberUpdate,
   onGuildBanAdd,
   onGuildMemberRemove,
-  // handleMessage, // handleMessage は botのメッセージ処理と競合するため、ここではインポートしないが、後続で antiRaid.handleMessage として使う
 } = antiRaid;
-const { addMessage, loadActivity, resetMonthlyActivity } = require('./utils/activity');
 
-// verify.js を読み込み
+const { addMessage, loadActivity, resetMonthlyActivity } = require('./utils/activity');
 const verify = require('./utils/verify');
 
 // --- 設定 ---
-const TOKEN = process.env.TOKEN || 'YOUR_TOKEN_HERE';
-const PORT = process.env.PORT || 3000;
+const TOKEN = process.env.TOKEN;
+const PORT = process.env.PORT;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID || null;
-const CLIENT_ID = process.env.CLIENT_ID || 'YOUR_CLIENT_ID_HERE'; // スラッシュ用
+const CLIENT_ID = process.env.CLIENT_ID;
 
 // --- app-data作成 ---
 const APP_DATA_DIR = path.join(__dirname, 'app-data');
@@ -83,10 +82,8 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isChatInputCommand()) {
       await handleSlashCommand(interaction);
     } else if (interaction.isButton()) {
-      // verify.js 内の buttonHandler を呼ぶ
       await verify.buttonHandler(interaction);
     } else if (interaction.isModalSubmit()) {
-      // verify.js 内の modalHandler を呼ぶ
       await verify.modalHandler(interaction);
     }
   } catch (err) {
@@ -97,18 +94,28 @@ client.on('interactionCreate', async (interaction) => {
 // --- Bot Ready ---
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  try {
-    await ensureDropboxInit();
-    await loadActivity(); // 月間・週間アクティビティロード
-    await loadLevelData(); // レベルデータロード
-  } catch (err) {
-    console.error('❌ 初期化エラー:', err);
-  }
 
-  preloadQuizzes();
-  await restoreVerifyMessage(client);
-  await loadWeeklyData();
-  setupWeekly(client, WEEKLY_CHANNEL_ID);
+  try {
+    // 顔認識初期化
+    await initFaceRecognition();
+    console.log('⚡ 顔認識初期化完了');
+
+    // --- ここでImgurリンクを貼って顔登録 ---
+    await registerFace('https://i.imgur.com/DkoHDM9.png'); // ←ここに自分の顔画像リンク
+    console.log('✅ 自分の顔を登録しました');
+
+    // 既存の初期化処理
+    await ensureDropboxInit();
+    await loadActivity();
+    await loadLevelData();
+    preloadQuizzes();
+    await restoreVerifyMessage(client);
+    await loadWeeklyData();
+    setupWeekly(client, WEEKLY_CHANNEL_ID);
+
+  } catch (err) {
+    console.error('❌ Readyイベント初期化エラー:', err);
+  }
 
   // スラッシュコマンド登録
   try {
@@ -118,15 +125,13 @@ client.once('ready', async () => {
     console.error('❌ スラッシュコマンド登録失敗:', err);
   }
 
-  // ★ 【追加】1時間ごとのハッシュクリーンアップ処理の実行設定
+  // 1時間ごとのハッシュクリーンアップ
   setInterval(() => {
-    // antiRaid モジュールから similarityTracker と定数を取得し、クリーンアップを実行
     for (const guildTracker of antiRaid.similarityTracker.values()) {
         antiRaid.cleanupSimilarityTracker(guildTracker, antiRaid.SIMILARITY_HASH_EXPIRY_MS);
     }
   }, antiRaid.CLEANUP_INTERVAL_MS);
-
-  console.log(`[Anti-Raid] Hash cleanup started. (Interval: ${antiRaid.CLEANUP_INTERVAL_MS / 1000 / 60} minutes).`);
+  console.log(`[Anti-Raid] Hash cleanup started.`);
 
   // 稼働時間ステータス
   const start = Date.now();
@@ -141,9 +146,10 @@ client.once('ready', async () => {
   }, 5000);
 });
 
+// --- メッセージ処理 ---
 client.on('messageCreate', async (message) => {
   try {
-    // 顔画像判定（画像が含まれている場合）
+    // 顔画像判定
     if (message.attachments.size > 0) {
       for (const attachment of message.attachments.values()) {
         if (attachment.contentType?.startsWith('image/')) {
@@ -153,11 +159,18 @@ client.on('messageCreate', async (message) => {
               await message.delete();
               console.log(`🧠 類似顔画像を削除しました: ${message.id}`);
 
+              // 1週間タイムアウト
+              const member = message.member;
+              if (member?.manageable) {
+                await member.timeout(7 * 24 * 60 * 60 * 1000, '顔画像投稿による自動タイムアウト');
+                console.log(`⏱ 1週間タイムアウト: ${member.user.tag}`);
+              }
+
               // ログ送信
               const logChannel = await client.channels.fetch('1405660583025709106');
               if (logChannel?.isTextBased()) {
                 await logChannel.send({
-                  content: `🧹 類似顔画像を削除しました。\n投稿者: <@${message.author.id}>\nチャンネル: <#${message.channel.id}>`,
+                  content: `🧹 類似顔画像を削除 & 1週間タイムアウトを実行しました。\n投稿者: <@${message.author.id}>\nチャンネル: <#${message.channel.id}>`,
                   allowedMentions: { users: [], roles: [] }
                 });
               }
@@ -171,25 +184,21 @@ client.on('messageCreate', async (message) => {
       }
     }
 
-    // anti-raid.js のメッセージ処理を実行
+    // anti-raid.js メッセージ処理
     await antiRaid.handleMessage(message);
     if (message.author.bot) return;
 
-    // サーバー全体アクティビティ
     if (message.guild && message.author.id && !message.author.bot) {
       await addMessage(message.guild.id, message.author.id, message.content);
     }
 
-    // レベル処理
     if (message.member) await addXp(message.member);
     if (message.channel?.type === ChannelType.DM) return;
 
-    // プレフィックスコマンド処理
     if (!message.content.startsWith('!')) return;
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift()?.toLowerCase();
 
-    // 雑談チャンネルで !ranking 禁止
     if (command === 'ranking' && message.channel.name.includes('雑談')) {
       const warn = await message.reply('❌ このチャンネルでは !ranking は使えません');
       setTimeout(() => warn.delete().catch(() => {}), 5000);
@@ -253,7 +262,7 @@ cron.schedule('0 0 1 * *', async () => {
 });
 
 // --- その他イベント ---
-client.on('messageUpdate', antiRaid.handleMessageUpdate); // antiRaidから直接呼び出し
+client.on('messageUpdate', antiRaid.handleMessageUpdate);
 client.on('guildMemberAdd', handleMemberJoin);
 client.on('guildMemberRemove', onGuildMemberRemove);
 client.on('guildMemberUpdate', onGuildMemberUpdate);
@@ -261,7 +270,6 @@ client.on('guildBanAdd', onGuildBanAdd);
 client.on('roleUpdate', handleRoleUpdate);
 client.on('messageReactionAdd', handleReactionAdd);
 client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
-// DM処理を追加
 client.on('messageCreate', antiRaid.handleDirectMessage);
 
 // --- ログイン ---
