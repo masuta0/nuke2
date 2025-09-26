@@ -17,7 +17,7 @@ const {
   stopMusic, 
   leaveVoice 
 } = require('./utils/music');
-
+const { initFaceRecognition, isSimilarFace } = require('./utils/face');
 const { registerSlashCommands, handleSlashCommand } = require("./commands/slash");
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
