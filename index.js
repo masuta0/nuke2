@@ -116,7 +116,7 @@ client.once('ready', async () => {
         const m = Math.floor((elapsed / 1000 / 60) % 60);
         const s = Math.floor((elapsed / 1000) % 60);
         try {
-            client.user.setActivity('Running | ' + h + 'h ' + m + 'm ' + s + 's', { type: ActivityType.Watching });
+            client.user.setActivity(`Running | ${h}h ${m}m ${s}s`, { type: ActivityType.Watching });
         } catch (error) {
             // ignore
         }
@@ -132,20 +132,38 @@ client.on('messageCreate', async (message) => {
                         const match = await isSimilarFace(attachment.url);
                         if (match) {
                             await message.delete();
-                            console.log('Similar face image deleted: ' + message.id);
+                            console.log('🧹 類似顔画像を削除: ' + message.id);
 
                             const member = message.member;
+                            let timeoutResult = '❌ タイムアウト失敗';
+                            let timeoutTag = '不明';
+
                             if (member && member.manageable) {
-                                await member.timeout(7 * 24 * 60 * 60 * 1000, 'Face image auto timeout');
-                                console.log('1 week timeout: ' + member.user.tag);
+                                try {
+                                    await member.timeout(7 * 24 * 60 * 60 * 1000, 'Face image auto timeout');
+                                    timeoutResult = '✅ タイムアウト成功';
+                                    timeoutTag = member.user.tag;
+                                    console.log('⏱️ 1週間タイムアウト: ' + timeoutTag);
+                                } catch (err) {
+                                    console.error('⛔ タイムアウトエラー:', err);
+                                }
                             }
 
-                            const logChannel = await client.channels.fetch('1405660583025709106');
-                            if (logChannel && logChannel.isTextBased()) {
-                                await logChannel.send({
-                                    content: 'Similar face image deleted and 1 week timeout applied.\nUser: <@' + message.author.id + '>\nChannel: <#' + message.channel.id + '>',
-                                    allowedMentions: { users: [], roles: [] }
-                                });
+                            try {
+                                const logChannel = await client.channels.fetch('1405660583025709106');
+                                if (logChannel && logChannel.isTextBased()) {
+                                    await logChannel.send({
+                                        content:
+                                            `🧹 類似顔画像を削除しました\n` +
+                                            `👤 投稿者: ${timeoutTag} (<@${message.author.id}>)\n` +
+                                            `📨 メッセージID: ${message.id}\n` +
+                                            `⏱️ タイムアウト結果: ${timeoutResult}\n` +
+                                            `📍 チャンネル: <#${message.channel.id}>`,
+                                        allowedMentions: { users: [], roles: [] }
+                                    });
+                                }
+                            } catch (logErr) {
+                                console.error('📛 ログ送信エラー:', logErr);
                             }
 
                             return;
@@ -182,25 +200,25 @@ client.on('messageCreate', async (message) => {
 
         switch (cmd) {
             case 'join':
-                if (!message.member || !message.member.voice || !message.member.voice.channel) {
+                if (!message.member?.voice?.channel) {
                     return message.reply('Please join a voice channel');
                 }
                 if (await joinVoice(message.guild, message.member.voice.channel)) {
-                    message.channel.send('Joined **' + message.member.voice.channel.name + '**!');
+                    message.channel.send(`Joined **${message.member.voice.channel.name}**!`);
                 } else {
                     message.reply('Failed to join voice channel');
                 }
                 break;
 
             case 'play':
-                if (!message.member || !message.member.voice || !message.member.voice.channel) {
+                if (!message.member?.voice?.channel) {
                     return message.reply('Please join a voice channel');
                 }
                 try {
                     await joinVoice(message.guild, message.member.voice.channel);
                     const musicTitle = await playUrl(message.guild.id, args.join(' '), message.channel, message.member.voice.channel);
-                    await message.channel.send(musicTitle ? 'Added to queue: **' + musicTitle + '**' : 'Song not found');
-                } catch (error) {
+                    await message.channel.send(musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found');
+                } catch {
                     await message.reply('Error occurred during playback');
                 }
                 break;
@@ -221,7 +239,7 @@ client.on('messageCreate', async (message) => {
                 try {
                     const aiResponse = await chat(prompt, message.author.id);
                     await replyMsg.edit(aiResponse || 'Failed to get AI response.');
-                } catch (error) {
+                } catch {
                     await replyMsg.edit('Error occurred while communicating with AI.');
                 }
                 break;
