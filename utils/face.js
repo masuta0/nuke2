@@ -1,76 +1,22 @@
 // utils/face.js
 const faceapi = require('@vladmandic/face-api');
 const canvas = require('canvas');
-const fs = require('fs');
 const path = require('path');
+const fs = require('fs');
 const fetch = require('node-fetch');
-const https = require('https');
 
 const { Canvas, Image, ImageData } = canvas;
 faceapi.env.monkeyPatch({ Canvas, Image, ImageData });
 
-// GitHub のモデル置き場
-const BASE_URL = 'https://raw.githubusercontent.com/vladmandic/face-api/master/model';
-
-// ダウンロード対象の JSON マニフェスト
-const MODEL_MANIFESTS = [
-  'face_recognition_model-weights_manifest.json',
-  'face_landmark_68_model-weights_manifest.json',
-  'ssd_mobilenetv1_model-weights_manifest.json'
-];
-
 const MODELS_DIR = path.join(__dirname, 'models');
-if (!fs.existsSync(MODELS_DIR)) fs.mkdirSync(MODELS_DIR, { recursive: true });
 
-// ---------------- ファイルダウンロード ----------------
-async function downloadFile(file) {
-  const url = `${BASE_URL}/${file}`;
-  const dest = path.join(MODELS_DIR, file);
-  if (fs.existsSync(dest)) return;
-
-  return new Promise((resolve, reject) => {
-    const fileStream = fs.createWriteStream(dest);
-    https.get(url, (res) => {
-      if (res.statusCode !== 200) {
-        reject(new Error(`❌ Failed to download ${url} (${res.statusCode})`));
-        return;
-      }
-      res.pipe(fileStream);
-      fileStream.on('finish', () => fileStream.close(resolve));
-    }).on('error', reject);
-  });
-}
-
-// JSON とそれが参照する bin を落とす
-async function downloadModelWithWeights(manifestFile) {
-  await downloadFile(manifestFile);
-
-  const manifestPath = path.join(MODELS_DIR, manifestFile);
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-
-  if (manifest && manifest.weights) {
-    for (const w of manifest.weights) {
-      if (w.paths) {
-        for (const p of w.paths) {
-          await downloadFile(p);
-        }
-      }
-    }
-  }
-}
-
-async function ensureModels() {
-  for (const manifest of MODEL_MANIFESTS) {
-    await downloadModelWithWeights(manifest);
-  }
-}
-
-// ---------------- 顔認識処理 ----------------
 let referenceDescriptor = null;
 
 // 初期化（モデル読み込み）
 async function initFaceRecognition() {
-  await ensureModels();
+  if (!fs.existsSync(MODELS_DIR)) {
+    throw new Error(`モデルフォルダが存在しません: ${MODELS_DIR}`);
+  }
 
   await faceapi.nets.ssdMobilenetv1.loadFromDisk(MODELS_DIR);
   await faceapi.nets.faceRecognitionNet.loadFromDisk(MODELS_DIR);
@@ -79,95 +25,48 @@ async function initFaceRecognition() {
   console.log('⚡ 顔認識モデル読み込み完了');
 }
 
-// 画像を安全に読み込む関数
-async function loadImageSafely(imgUrl) {
-  try {
-    console.log(`🔍 画像を読み込み中: ${imgUrl}`);
+// 顔登録（基準画像を読み込む）
+async function registerFace(localPath) {
+  const img = await canvas.loadImage(localPath);
+  const detection = await faceapi
+    .detectSingleFace(img)
+    .withFaceLandmarks()
+    .withFaceDescriptor();
 
-    const res = await fetch(imgUrl);
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    }
-
-    const contentType = res.headers.get('content-type');
-    console.log(`📷 Content-Type: ${contentType}`);
-
-    if (!contentType || !contentType.startsWith('image/')) {
-      throw new Error(`サポートされていないコンテンツタイプ: ${contentType}`);
-    }
-
-    const buffer = await res.buffer();
-    console.log(`📦 画像サイズ: ${buffer.length} bytes`);
-
-    if (buffer.length === 0) {
-      throw new Error('空の画像ファイルです');
-    }
-
-    const img = await canvas.loadImage(buffer);
-    console.log(`🖼️ 画像読み込み成功: ${img.width}x${img.height}`);
-
-    return img;
-
-  } catch (error) {
-    console.error(`❌ 画像読み込みエラー: ${error.message}`);
-    throw error;
+  if (!detection) {
+    throw new Error('顔が検出できませんでした。別の画像を試してください。');
   }
-}
 
-// 顔登録
-async function registerFace(imgUrl) {
-  try {
-    console.log('🔧 顔登録を開始...');
-    const img = await loadImageSafely(imgUrl);
-
-    console.log('🧠 顔検出を実行中...');
-    const detection = await faceapi
-      .detectSingleFace(img)
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!detection) {
-      throw new Error('顔が検出できませんでした。別の画像を試してください。');
-    }
-
-    referenceDescriptor = detection.descriptor;
-    console.log('✅ 顔登録完了');
-    return true;
-
-  } catch (error) {
-    console.error('❌ 顔登録エラー:', error.message);
-    throw error;
-  }
+  referenceDescriptor = detection.descriptor;
+  console.log('✅ 顔登録完了');
+  return true;
 }
 
 // 類似顔判定
 async function isSimilarFace(imgUrl) {
-  try {
-    if (!referenceDescriptor) {
-      console.log('⚠️ 参照顔が登録されていません');
-      return false;
-    }
-
-    const img = await loadImageSafely(imgUrl);
-    const detection = await faceapi
-      .detectSingleFace(img)
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-
-    if (!detection) {
-      console.log('👤 顔が検出されませんでした');
-      return false;
-    }
-
-    const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
-    console.log(`🔍 顔の距離: ${distance.toFixed(3)} (閾値: 0.6)`);
-
-    return distance < 0.6;
-
-  } catch (error) {
-    console.error('❌ 顔判定エラー:', error.message);
+  if (!referenceDescriptor) {
+    console.log('⚠️ 参照顔が登録されていません');
     return false;
   }
+
+  const res = await fetch(imgUrl);
+  const buffer = await res.buffer();
+  const img = await canvas.loadImage(buffer);
+
+  const detection = await faceapi
+    .detectSingleFace(img)
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
+  if (!detection) {
+    console.log('👤 顔が検出されませんでした');
+    return false;
+  }
+
+  const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
+  console.log(`🔍 顔の距離: ${distance.toFixed(3)} (閾値: 0.6)`);
+
+  return distance < 0.6;
 }
 
 module.exports = {
