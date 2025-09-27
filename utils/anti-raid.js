@@ -132,13 +132,10 @@ const MARK_EXPIRE_MS = 48 * 60 * 60 * 1000;
 const SIMILARITY_DELETE_THRESHOLD = 4; // 4回で削除
 const SIMILARITY_TIMEOUT_THRESHOLD = 10; // 10回でタイムアウト
 const SIMILARITY_TIMEOUT_DURATION = 5 * 60 * 1000; // 5分
-const SIMILARITY_PERCENT_THRESHOLD = 80; // 50%類似
-
+const SIMILARITY_PERCENT_THRESHOLD = 50; // 50%類似
 // 【ここから追加】ハッシュの有効期限とクリーンアップ間隔
-const SIMILARITY_HASH_EXPIRY_MS = 60 * 60 * 1000; // 1時間でハッシュを破棄
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1時間ごとにクリーンアップ実行
-// 【ここまで追加】
-
+const SIMILARITY_HASH_EXPIRY_MS = 5 * 60 * 1000; // 5分でハッシュを破棄
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5分ごとにクリーンアップ実行
 const MASS_ACTION_WINDOW_MS = 2 * 60 * 1000;
 const MASS_ACTION_THRESHOLD = 2;
 const PROBATION_MS = 24 * 60 * 60 * 1000;
