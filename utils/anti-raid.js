@@ -76,38 +76,38 @@ try {
 } catch {}
 
 // ===== 閾値（昼/夜で可変）=====
-const NIGHT_START_HOUR = 35;
-const NIGHT_END_HOUR = 35;
+const NIGHT_START_HOUR = 35; // 意図的に無効化
+const NIGHT_END_HOUR = 35; // 意図的に無効化
 
 const cfg = {
-  // ★ 修正: 閾値を緩和
+  // ★ 修正: 閾値とスコアを大幅に緩和し、誤検知を減らす調整
   day: {
-    THRESHOLD: 10,
-    MASS_JOIN: 10,
-    KEYWORD: 10,
-    SIMILAR: 10,
-    CMD_ABUSE: 10,
-    REACT_SPAM: 10,
-    NEWLINES: 20,
-    ZALGO: 20,
-    MASS_SPAM: 7,
-    WEBHOOK: 25,
-    AUDIT_ABUSE: 10,
-    ACCOUNT_AGE: 15,
+    THRESHOLD: 30,      // タイムアウトの閾値を10→30に引き上げ
+    MASS_JOIN: 5,       // 大量参加: 10→5
+    KEYWORD: 15,        // NGワード: 10→15（一発アウト回避）
+    SIMILAR: 8,         // 類似メッセージ: 10→8
+    CMD_ABUSE: 5,       // コマンド乱用: 10→5
+    REACT_SPAM: 5,      // リアクションスパム: 10→5
+    NEWLINES: 10,       // 過度な改行: 20→10
+    ZALGO: 10,          // Zalgo文字: 20→10
+    MASS_SPAM: 7,       // メッセージ連投: 7のまま（閾値30に対しては妥当）
+    WEBHOOK: 20,        // Webhook作成: 25→20
+    AUDIT_ABUSE: 15,    // 監査ログ悪用: 10→15
+    ACCOUNT_AGE: 10,    // 新規アカウント: 15→10（一発アウト回避）
   },
-  night: {
-    THRESHOLD: 10,
-    MASS_JOIN: 15,
-    KEYWORD: 20,
-    SIMILAR: 10,
-    CMD_ABUSE: 20,
-    REACT_SPAM: 10,
-    NEWLINES: 15,
-    ZALGO: 13,
+  night: { // 夜間も昼間と同じ設定に緩和。必要であれば個別に調整してください。
+    THRESHOLD: 30,
+    MASS_JOIN: 5,
+    KEYWORD: 15,
+    SIMILAR: 8,
+    CMD_ABUSE: 5,
+    REACT_SPAM: 5,
+    NEWLINES: 10,
+    ZALGO: 10,
     MASS_SPAM: 7,
-    WEBHOOK: 30,
-    AUDIT_ABUSE: 10,
-    ACCOUNT_AGE: 18,
+    WEBHOOK: 20,
+    AUDIT_ABUSE: 15,
+    ACCOUNT_AGE: 10,
   }
 };
 
@@ -120,27 +120,25 @@ function currentCfg() {
 // ===== ルール定数 =====
 const RAID_MEMBER_THRESHOLD = 3;
 const RAID_TIME_WINDOW = 60 * 1000;
-// ★ 修正: 連投検知の閾値を緩和
-const MASS_SPAM_THRESHOLD = 3;
-const MASS_SPAM_WINDOW = 3 * 60;
 
-// 改善された類似メッセージ検知の設定
-const SIMILAR_MESSAGE_THRESHOLD = 5; // 個人の連投閾値を3→5に緩和
-const SIMILAR_MESSAGE_LENGTH = 10; // 最小文字数を5→10に増加（短いメッセージは除外）
+// ★ 修正: 連投検知の閾値を現実的な値に修正・緩和
+const MASS_SPAM_THRESHOLD = 4; // 3→4回に緩和 (5秒間に4回)
+const MASS_SPAM_WINDOW = 5 * 1000; // 180ms(バグ)→5秒に修正
 
-const TIMEOUT_MS = 10 * 60 * 1000; // Timeout時間を10分に延長
+const SIMILAR_MESSAGE_THRESHOLD = 5;
+const SIMILAR_MESSAGE_LENGTH = 10;
+
+const TIMEOUT_MS = 10 * 60 * 1000;
 const MARK_EXPIRE_MS = 48 * 60 * 60 * 1000;
 
-// ★ 新機能: 類似メッセージ検知の設定（大幅に緩和）
-const SIMILARITY_DELETE_THRESHOLD = 8; // 4→8回で削除
-const SIMILARITY_TIMEOUT_THRESHOLD = 15; // 10→15回でタイムアウト
-const SIMILARITY_TIMEOUT_DURATION = 3 * 60 * 1000; // 5→3分に短縮
-const SIMILARITY_PERCENT_THRESHOLD = 70; // 50→70%に厳格化（より似ているもののみ）
-const SIMILARITY_MIN_USERS = 3; // 最低3人のユーザーが同じメッセージを送った場合のみ処理
+const SIMILARITY_DELETE_THRESHOLD = 8;
+const SIMILARITY_TIMEOUT_THRESHOLD = 15;
+const SIMILARITY_TIMEOUT_DURATION = 3 * 60 * 1000;
+const SIMILARITY_PERCENT_THRESHOLD = 70;
+const SIMILARITY_MIN_USERS = 3;
 
-// 【追加】ハッシュの有効期限とクリーンアップ間隔
-const SIMILARITY_HASH_EXPIRY_MS = 3 * 60 * 1000; // 5分でハッシュを破棄
-const CLEANUP_INTERVAL_MS = 3 * 60 * 1000; // 5分ごとにクリーンアップ実行
+const SIMILARITY_HASH_EXPIRY_MS = 3 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 3 * 60 * 1000;
 const MASS_ACTION_WINDOW_MS = 2 * 60 * 1000;
 const MASS_ACTION_THRESHOLD = 2;
 const PROBATION_MS = 24 * 60 * 60 * 1000;
@@ -180,8 +178,6 @@ const DANGER_ACTIONS = new Set([
 // ===== 内部状態 =====
 const memberJoinLog = new Map();
 const messageHistory = new Map();
-// ★ 新機能: 類似メッセージ追跡用 (データ構造が変更されました)
-// guildId -> { messageHash -> { firstSeen: number, users: Set(userId), count: number } }
 const similarityTracker = new Map();
 const userCmdTime = new Map();
 const userReactTime = new Map();
@@ -559,11 +555,12 @@ async function handleAiJudgement(message) {
     const res = await chat(AI_ANTI_RAID_PROMPT + (message.content || ''), message.author.id);
     if (res && /^不審\b/.test(res)) {
       const reason = (res.split('|')[1] || '').trim() || 'AI判定: 不審';
-      const added = addScore(member.id, 15);
+      // ★ 修正: AI判定のスコアを15→10に引き下げ、即タイムアウトを防止
+      const added = addScore(member.id, 10);
       await sendLogEmbed(message.guild, {
         title: '🤖 AI 不審判定',
         member,
-        description: `理由: ${reason}\n付与: +15\n現在: ${added}/${currentCfg().THRESHOLD}`,
+        description: `理由: ${reason}\n付与: +10\n現在: ${added}/${currentCfg().THRESHOLD}`,
         channelName: message.channel?.name,
         color: 0x6c5ce7,
         content: message.content,
