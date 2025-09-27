@@ -76,27 +76,27 @@ try {
 } catch {}
 
 // ===== 閾値（昼/夜で可変）=====
-const NIGHT_START_HOUR = 22;
-const NIGHT_END_HOUR = 7;
+const NIGHT_START_HOUR = 35;
+const NIGHT_END_HOUR = 35;
 
 const cfg = {
   // ★ 修正: 閾値を緩和
   day: {
-    THRESHOLD: 35,
+    THRESHOLD: 10,
     MASS_JOIN: 10,
     KEYWORD: 10,
     SIMILAR: 10,
-    CMD_ABUSE: 20,
+    CMD_ABUSE: 10,
     REACT_SPAM: 10,
     NEWLINES: 20,
     ZALGO: 20,
     MASS_SPAM: 7,
     WEBHOOK: 25,
-    AUDIT_ABUSE: 30,
+    AUDIT_ABUSE: 10,
     ACCOUNT_AGE: 15,
   },
   night: {
-    THRESHOLD: 35,
+    THRESHOLD: 10,
     MASS_JOIN: 15,
     KEYWORD: 20,
     SIMILAR: 10,
@@ -106,7 +106,7 @@ const cfg = {
     ZALGO: 13,
     MASS_SPAM: 7,
     WEBHOOK: 30,
-    AUDIT_ABUSE: 35,
+    AUDIT_ABUSE: 10,
     ACCOUNT_AGE: 18,
   }
 };
@@ -123,22 +123,35 @@ const RAID_TIME_WINDOW = 60 * 1000;
 // ★ 修正: 連投検知の閾値を緩和
 const MASS_SPAM_THRESHOLD = 3;
 const MASS_SPAM_WINDOW = 3 * 60;
-const SIMILAR_MESSAGE_THRESHOLD = 3;
-const SIMILAR_MESSAGE_LENGTH = 5;
+
+// 改善された類似メッセージ検知の設定
+const SIMILAR_MESSAGE_THRESHOLD = 5; // 個人の連投閾値を3→5に緩和
+const SIMILAR_MESSAGE_LENGTH = 10; // 最小文字数を5→10に増加（短いメッセージは除外）
+
 const TIMEOUT_MS = 10 * 60 * 1000; // Timeout時間を10分に延長
 const MARK_EXPIRE_MS = 48 * 60 * 60 * 1000;
 
-// ★ 新機能: 類似メッセージ検知の設定
-const SIMILARITY_DELETE_THRESHOLD = 4; // 4回で削除
-const SIMILARITY_TIMEOUT_THRESHOLD = 10; // 10回でタイムアウト
-const SIMILARITY_TIMEOUT_DURATION = 5 * 60 * 1000; // 5分
-const SIMILARITY_PERCENT_THRESHOLD = 50; // 50%類似
-// 【ここから追加】ハッシュの有効期限とクリーンアップ間隔
-const SIMILARITY_HASH_EXPIRY_MS = 5 * 60 * 1000; // 5分でハッシュを破棄
-const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5分ごとにクリーンアップ実行
+// ★ 新機能: 類似メッセージ検知の設定（大幅に緩和）
+const SIMILARITY_DELETE_THRESHOLD = 8; // 4→8回で削除
+const SIMILARITY_TIMEOUT_THRESHOLD = 15; // 10→15回でタイムアウト
+const SIMILARITY_TIMEOUT_DURATION = 3 * 60 * 1000; // 5→3分に短縮
+const SIMILARITY_PERCENT_THRESHOLD = 70; // 50→70%に厳格化（より似ているもののみ）
+const SIMILARITY_MIN_USERS = 3; // 最低3人のユーザーが同じメッセージを送った場合のみ処理
+
+// 【追加】ハッシュの有効期限とクリーンアップ間隔
+const SIMILARITY_HASH_EXPIRY_MS = 3 * 60 * 1000; // 5分でハッシュを破棄
+const CLEANUP_INTERVAL_MS = 3 * 60 * 1000; // 5分ごとにクリーンアップ実行
 const MASS_ACTION_WINDOW_MS = 2 * 60 * 1000;
 const MASS_ACTION_THRESHOLD = 2;
 const PROBATION_MS = 24 * 60 * 60 * 1000;
+
+// 【追加】普通の会話を除外するフィルター
+const COMMON_WORDS = new Set([
+  'おはよう', 'こんにちは', 'こんばんは', 'お疲れ様', 'ありがとう', 'おやすみ',
+  'よろしく', 'はい', 'いいえ', 'そうですね', 'わかりました', 'すみません',
+  'hello', 'hi', 'thanks', 'thank you', 'yes', 'no', 'ok', 'okay',
+  'good morning', 'good night', 'welcome', 'sorry', 'please'
+]);
 
 const RAID_KEYWORDS = [
   'raid by',
@@ -264,34 +277,66 @@ function calculateSimilarity(str1, str2) {
   return Math.round((1 - distance / maxLen) * 100);
 }
 
-// ★ 新機能: メッセージハッシュ生成（正規化）
+// 普通の会話パターンを除外する関数
+function isCommonConversation(content) {
+  const normalized = content.toLowerCase().trim();
+
+  // 短すぎるメッセージ（挨拶など）
+  if (normalized.length < 5) return true;
+
+  // 一般的な単語のみで構成
+  const words = normalized.split(/\s+/);
+  if (words.length <= 3 && words.every(word => COMMON_WORDS.has(word))) return true;
+
+  // 感嘆符や疑問符のみ
+  if (/^[!？?！。.]+$/.test(normalized)) return true;
+
+  // 数字のみ、記号のみ
+  if (/^[\d\s]+$/.test(normalized) || /^[^\w\s]+$/.test(normalized)) return true;
+
+  return false;
+}
+
+// URL、メンション、絵文字を除外する正規化関数
 function normalizeMessage(content) {
   return content
     .toLowerCase()
+    // URLを除去
+    .replace(/https?:\/\/[^\s]+/g, '')
+    // メンションを除去
+    .replace(/<@[!&]?\d+>/g, '')
+    // チャンネルメンションを除去
+    .replace(/<#\d+>/g, '')
+    // カスタム絵文字を除去
+    .replace(/<a?:\w+:\d+>/g, '')
+    // Unicode絵文字を除去（基本的なもの）
+    .replace(/[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]/gu, '')
+    // 連続する空白を1つに
     .replace(/\s+/g, ' ')
+    // 句読点を除去
     .replace(/[^\w\s]/g, '')
     .trim();
 }
 
 // 【新規追加】ハッシュトラッカーのクリーンアップ関数
 function cleanupSimilarityTracker(guildTracker, expiryMs) {
-    const now = Date.now();
-    let cleanedCount = 0;
+  const now = Date.now();
+  let cleanedCount = 0;
 
-    // Mapに保存されているメッセージハッシュを全てチェック
-    for (const hash of guildTracker.keys()) {
-        const data = guildTracker.get(hash);
+  // Mapに保存されているメッセージハッシュを全てチェック
+  for (const hash of guildTracker.keys()) {
+    const data = guildTracker.get(hash);
 
-        // 最初の投稿時刻(firstSeen)から有効期限を過ぎているか判定
-        if (data && data.firstSeen && now - data.firstSeen > expiryMs) {
-            guildTracker.delete(hash);
-            cleanedCount++;
-        }
+    // 最初の投稿時刻(firstSeen)から有効期限を過ぎているか判定
+    if (data && data.firstSeen && now - data.firstSeen > expiryMs) {
+      guildTracker.delete(hash);
+      cleanedCount++;
     }
+  }
 
-    if (cleanedCount > 0) {
-        console.log(`[Anti-Raid Cleanup] Cleared ${cleanedCount} expired similarity hashes. (Total Guild Hashes: ${guildTracker.size})`);
-    }
+  if (cleanedCount > 0) {
+    console.log(`[Anti-Raid Cleanup] Cleared ${cleanedCount} expired similarity hashes. (Total Guild Hashes: ${guildTracker.size})`);
+  }
 }
 
 
@@ -580,6 +625,135 @@ async function handleMemberJoin(member) {
   }
 }
 
+// 改善された類似メッセージ検知システム（複数ユーザー）
+async function handleSimilarityDetection(message) {
+  const {
+    member,
+    guild,
+    content,
+    channel
+  } = message;
+  const uid = member.id;
+  const gid = guild.id;
+
+  const normalized = normalizeMessage(content);
+
+  // 普通の会話や短いメッセージはスキップ
+  if (normalized.length < SIMILAR_MESSAGE_LENGTH || isCommonConversation(content)) {
+    return;
+  }
+
+  if (!similarityTracker.has(gid)) {
+    similarityTracker.set(gid, new Map());
+  }
+
+  const guildTracker = similarityTracker.get(gid);
+  let similarMessageFound = false;
+  let matchingHash = null;
+
+  // 既存のメッセージと類似度をチェック
+  for (const [hash, data] of guildTracker.entries()) {
+    const similarity = calculateSimilarity(normalized, hash);
+    if (similarity >= SIMILARITY_PERCENT_THRESHOLD) {
+      similarMessageFound = true;
+      matchingHash = hash;
+
+      // データが存在する場合：更新
+      if (!data.users.has(uid)) {
+        data.users.add(uid);
+      }
+      data.count++;
+      break;
+    }
+  }
+
+  // 類似メッセージが見つからない場合、新しく登録
+  if (!similarMessageFound) {
+    guildTracker.set(normalized, {
+      firstSeen: Date.now(),
+      users: new Set([uid]),
+      count: 1
+    });
+    return;
+  }
+
+  const matchingData = guildTracker.get(matchingHash);
+
+  // ★ 重要な変更: 最低ユーザー数の確認を追加
+  if (matchingData.users.size >= SIMILARITY_MIN_USERS) {
+    if (matchingData.count >= SIMILARITY_TIMEOUT_THRESHOLD) {
+      // 15回以上: タイムアウト（3分）
+      try {
+        await member.timeout(SIMILARITY_TIMEOUT_DURATION, '類似メッセージ大量投稿');
+        await safeDelete(message, '類似メッセージ大量投稿');
+        await sendLogEmbed(guild, {
+          title: '🚨 類似メッセージ大量投稿（タイムアウト）',
+          member,
+          description: `類似度: ${SIMILARITY_PERCENT_THRESHOLD}%以上\n投稿回数: ${matchingData.count}回\n参加ユーザー: ${matchingData.users.size}人\nタイムアウト: ${Math.floor(SIMILARITY_TIMEOUT_DURATION / 60000)}分`,
+          channelName: channel?.name,
+          color: 0xff0000,
+          content: content,
+        });
+
+        // カウントをリセット
+        guildTracker.delete(matchingHash);
+      } catch (e) {
+        console.error('Failed to timeout user for similarity spam:', e);
+      }
+    } else if (matchingData.count >= SIMILARITY_DELETE_THRESHOLD) {
+      // 8回以上: メッセージ削除
+      await safeDelete(message, '類似メッセージ反復投稿');
+      await sendLogEmbed(guild, {
+        title: '⚠️ 類似メッセージ反復投稿（削除）',
+        member,
+        description: `類似度: ${SIMILARITY_PERCENT_THRESHOLD}%以上\n投稿回数: ${matchingData.count}回\n参加ユーザー: ${matchingData.users.size}人`,
+        channelName: channel?.name,
+        color: 0xffa200,
+        content: content,
+      });
+    }
+  }
+}
+
+// 従来の個人単位の類似メッセージ検知（緩和済み）
+async function handlePersonalSimilarityDetection(message) {
+  const {
+    member,
+    guild,
+    content,
+    channel
+  } = message;
+  const uid = member.id;
+  const gid = guild.id;
+
+  const normalized = normalizeMessage(content);
+
+  // 普通の会話はスキップ
+  if (isCommonConversation(content)) {
+    return;
+  }
+
+  if (!messageHistory.has(gid)) messageHistory.set(gid, new Map());
+  const gmap = messageHistory.get(gid);
+  if (!gmap.has(normalized)) gmap.set(normalized, new Map());
+  const senders = gmap.get(normalized);
+  senders.set(uid, (senders.get(uid) || 0) + 1);
+
+  if (senders.get(uid) >= SIMILAR_MESSAGE_THRESHOLD) {
+    const s = addScore(uid, currentCfg().SIMILAR);
+    await safeDelete(message, '類似メッセージ連投');
+    await sendLogEmbed(guild, {
+      title: '🚧 類似メッセージ（個人）',
+      member,
+      description: `+${currentCfg().SIMILAR} / 現在 ${s}/${currentCfg().THRESHOLD}\n内容（抜粋）: ${snippet(content)}`,
+      channelName: channel?.name,
+      color: 0xffa200,
+      content: content,
+    });
+    return punishByScore(member, '類似メッセージ連投', channel?.name);
+  }
+}
+
 // ====== メッセージ監視 ======
 async function handleMessage(message) {
   if (!message?.guild || message.author?.bot) return;
@@ -656,102 +830,9 @@ async function handleMessage(message) {
     return punishByScore(member, 'Zalgo 乱用', message.channel?.name);
   }
 
-  // ★ 修正済み: 類似メッセージ検知システム（firstSeen対応済み）
-  const normalized = normalizeMessage(message.content);
-  if (normalized.length >= SIMILAR_MESSAGE_LENGTH) {
-    if (!similarityTracker.has(gid)) {
-      similarityTracker.set(gid, new Map());
-    }
-
-    const guildTracker = similarityTracker.get(gid);
-    let similarMessageFound = false;
-    let matchingHash = null;
-
-    // 既存のメッセージと類似度をチェック
-    for (const [hash, data] of guildTracker.entries()) {
-      const similarity = calculateSimilarity(normalized, hash);
-      if (similarity >= SIMILARITY_PERCENT_THRESHOLD) {
-        similarMessageFound = true;
-        matchingHash = hash;
-
-        // データが存在する場合：更新
-        if (!data.users.has(uid)) {
-            data.users.add(uid);
-        }
-        data.count++;
-        // firstSeenは更新しない
-        break;
-      }
-    }
-
-    // 類似メッセージが見つからない場合、新しく登録
-    if (!similarMessageFound) {
-      // 【重要】firstSeenプロパティを追加
-      guildTracker.set(normalized, {
-        firstSeen: Date.now(), // 最初の投稿時刻を記録
-        users: new Set([uid]),
-        count: 1
-      });
-      return;
-    }
-
-    const matchingData = guildTracker.get(matchingHash);
-
-    // 2人以上のユーザーが類似メッセージを送信している場合のみ処理
-    if (matchingData.users.size >= 2) {
-      if (matchingData.count >= SIMILARITY_TIMEOUT_THRESHOLD) {
-        // 10回以上: タイムアウト（5分）
-        try {
-          await member.timeout(SIMILARITY_TIMEOUT_DURATION, '類似メッセージ大量投稿');
-          await safeDelete(message, '類似メッセージ大量投稿');
-          await sendLogEmbed(message.guild, {
-            title: '🚨 類似メッセージ大量投稿（タイムアウト）',
-            member,
-            description: `類似度: ${SIMILARITY_PERCENT_THRESHOLD}%以上\n投稿回数: ${matchingData.count}回\n参加ユーザー: ${matchingData.users.size}人\nタイムアウト: 5分`,
-            channelName: message.channel?.name,
-            color: 0xff0000,
-            content: message.content,
-          });
-
-          // カウントをリセット
-          guildTracker.delete(matchingHash);
-        } catch (e) {
-          console.error('Failed to timeout user for similarity spam:', e);
-        }
-      } else if (matchingData.count >= SIMILARITY_DELETE_THRESHOLD) {
-        // 4回以上: メッセージ削除
-        await safeDelete(message, '類似メッセージ反復投稿');
-        await sendLogEmbed(message.guild, {
-          title: '⚠️ 類似メッセージ反復投稿（削除）',
-          member,
-          description: `類似度: ${SIMILARITY_PERCENT_THRESHOLD}%以上\n投稿回数: ${matchingData.count}回\n参加ユーザー: ${matchingData.users.size}人`,
-          channelName: message.channel?.name,
-          color: 0xffa200,
-          content: message.content,
-        });
-      }
-    }
-  }
-
-  // 従来の類似メッセージ検知（個人単位）
-  if (!messageHistory.has(gid)) messageHistory.set(gid, new Map());
-  const gmap = messageHistory.get(gid);
-  if (!gmap.has(normalized)) gmap.set(normalized, new Map());
-  const senders = gmap.get(normalized);
-  senders.set(uid, (senders.get(uid) || 0) + 1);
-  if (senders.get(uid) >= SIMILAR_MESSAGE_THRESHOLD) {
-    const s = addScore(uid, c.SIMILAR);
-    await safeDelete(message, '類似メッセージ連投');
-    await sendLogEmbed(message.guild, {
-      title: '🚧 類似メッセージ',
-      member,
-      description: `+${c.SIMILAR} / 現在 ${s}/${c.THRESHOLD}\n内容（抜粋）: ${snippet(message.content)}`,
-      channelName: message.channel?.name,
-      color: 0xffa200,
-      content: message.content,
-    });
-    return punishByScore(member, '類似メッセージ連投', message.channel?.name);
-  }
+  // ★ 修正済み: 類似メッセージ検知システムを新しい関数で呼び出し
+  await handleSimilarityDetection(message);
+  await handlePersonalSimilarityDetection(message);
 
   if (content.startsWith('!') || content.startsWith('/')) {
     const last = userCmdTime.get(uid) || 0;
@@ -1232,4 +1313,4 @@ module.exports = {
   SIMILARITY_HASH_EXPIRY_MS,
   CLEANUP_INTERVAL_MS,
   cleanupSimilarityTracker,
-}
+};
