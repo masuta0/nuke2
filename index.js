@@ -125,6 +125,9 @@ client.once('ready', async () => {
 
 client.on('messageCreate', async (message) => {
     try {
+        // --- Start of Integrated Face Detection Logic ---
+
+        // 1. Check for attached images
         if (message.attachments.size > 0) {
             for (const attachment of message.attachments.values()) {
                 if (attachment.contentType && attachment.contentType.startsWith('image/')) {
@@ -132,7 +135,7 @@ client.on('messageCreate', async (message) => {
                         const match = await isSimilarFace(attachment.url);
                         if (match) {
                             await message.delete();
-                            console.log('🧹 類似顔画像を削除: ' + message.id);
+                            console.log('🧹 類似顔画像(添付)を削除: ' + message.id);
 
                             const member = message.member;
                             let timeoutResult = '❌ タイムアウト失敗';
@@ -154,7 +157,7 @@ client.on('messageCreate', async (message) => {
                                 if (logChannel && logChannel.isTextBased()) {
                                     await logChannel.send({
                                         content:
-                                            `🧹 類似顔画像を削除しました\n` +
+                                            `🧹 類似顔画像(添付)を削除しました\n` +
                                             `👤 投稿者: ${timeoutTag} (<@${message.author.id}>)\n` +
                                             `📨 メッセージID: ${message.id}\n` +
                                             `⏱️ タイムアウト結果: ${timeoutResult}\n` +
@@ -165,15 +168,69 @@ client.on('messageCreate', async (message) => {
                             } catch (logErr) {
                                 console.error('📛 ログ送信エラー:', logErr);
                             }
-
-                            return;
+                            return; // Stop processing further
                         }
                     } catch (err) {
-                        console.error('Face detection error:', err);
+                        console.error('Face detection error (attachment):', err);
                     }
                 }
             }
         }
+
+        // 2. Check for image URLs in the message content
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urls = message.content.match(urlRegex);
+        if (urls) {
+            for (const url of urls) {
+                // Check if the URL ends with a common image extension
+                if (url.match(/\.(jpg|jpeg|png|webp)$/i)) {
+                    try {
+                        const match = await isSimilarFace(url);
+                        if (match) {
+                            await message.delete();
+                            console.log('🧹 類似顔画像(URL)を削除: ' + message.id);
+
+                            const member = message.member;
+                            let timeoutResult = '❌ タイムアウト失敗';
+                            let timeoutTag = '不明';
+
+                            if (member && member.manageable) {
+                                try {
+                                    await member.timeout(7 * 24 * 60 * 60 * 1000, 'Face image auto timeout');
+                                    timeoutResult = '✅ タイムアウト成功';
+                                    timeoutTag = member.user.tag;
+                                    console.log('⏱️ 1週間タイムアウト: ' + timeoutTag);
+                                } catch (err) {
+                                    console.error('⛔ タイムアウトエラー:', err);
+                                }
+                            }
+
+                            try {
+                                const logChannel = await client.channels.fetch('1405660583025709106');
+                                if (logChannel && logChannel.isTextBased()) {
+                                    await logChannel.send({
+                                        content:
+                                            `🧹 類似顔画像(URL)を削除しました\n` +
+                                            `👤 投稿者: ${timeoutTag} (<@${message.author.id}>)\n` +
+                                            `📨 メッセージID: ${message.id}\n` +
+                                            `⏱️ タイムアウト結果: ${timeoutResult}\n` +
+                                            `📍 チャンネル: <#${message.channel.id}>`,
+                                        allowedMentions: { users: [], roles: [] }
+                                    });
+                                }
+                            } catch (logErr) {
+                                console.error('📛 ログ送信エラー:', logErr);
+                            }
+                            return; // Stop processing further
+                        }
+                    } catch (err) {
+                        console.error('Link image detection error:', err);
+                    }
+                }
+            }
+        }
+
+        // --- End of Integrated Face Detection Logic ---
 
         await antiRaid.handleMessage(message);
         if (message.author.bot) return;
