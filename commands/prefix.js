@@ -56,8 +56,13 @@ const helpMessage = `
 | !restore | サーバー復元 |
 | !addrole [ロール名] | 全ユーザーロール付与 |
 | !clear [数] [@ユーザー] | メッセージ削除 |
-| !ranking | 月間アクティブランキング |
+| !ranking | 月間アクティブユーザーランキング |
 `;
+
+const RANKING_BANNED_CHANNELS = [
+  '雑談', // チャンネル名に"雑談"を含む場合禁止
+  // 追加でチャンネルIDで指定も可能: '123456789012345678'
+];
 
 module.exports = async function handlePrefixMessage(client, msg) {
   if (msg.author.bot) return;
@@ -72,203 +77,111 @@ module.exports = async function handlePrefixMessage(client, msg) {
     const lastUsed = cooldowns.get(msg.author.id);
     const remaining = (lastUsed + COOLDOWN_TIME * 1000) - Date.now();
     if (remaining > 0) {
-      const warnMsg = await msg.reply(`⚠️ コマンドはクールダウン中です。あと${Math.ceil(remaining/1000)}秒`);
-      setTimeout(() => warnMsg.delete().catch(() => {}), 5000);
+      const warn = await msg.reply(`⏳ クールダウン中です。${Math.ceil(remaining/1000)}秒後に再度お試しください。`);
+      setTimeout(()=>warn.delete().catch(()=>{}),5000);
       return;
     }
   }
   cooldowns.set(msg.author.id, Date.now());
 
-  // 月間アクティブカウント
-  addMessage(msg.author.id, msg.guild?.id, msg.content);
-
-  try {
-    switch (cmd) {
-      case "help":
-        await msg.author.send(helpMessage)
-          .then(() => msg.reply("✅ DMでヘルプを送信しました"))
-          .catch(() => msg.reply("❌ DM送信不可"));
-        break;
-
-      case "ping":
-        await msg.reply("Pong!");
-        break;
-
-      case "uptime":
-        await msg.reply("ステータス欄に稼働時間を表示しています");
-        break;
-
-      case "天気": {
-        const maybePref = args.join(" ");
-        if (maybePref) {
-          await saveUserWeatherPref(msg.author.id, maybePref);
-          await msg.reply(`✅ 天気の場所を保存: ${maybePref}`);
-        } else {
-          const pref = await loadUserWeatherPref(msg.author.id);
-          if (!pref) return msg.reply("⚠️ 都道府県/都市を指定してください");
-          const text = await fetchWeather(pref);
-          await msg.reply(text || "⚠️ 天気情報が取得できませんでした");
-        }
-        break;
-      }
-
-        case "クイズ": {
-          if (activeUsers.has(msg.author.id)) {
-            return msg.reply("⚠️ あなたはすでにクイズに参加中です");
-          }
-
-          // クイズ開始
-          const category = args[0] || null; // 引数からカテゴリ指定
-          await quizManager(msg.channel, msg.author, category);
-          break;
-        }
-      case "ai": {
-        const remainingCooldown = checkAiCooldown(msg.author.id);
-        if (remainingCooldown > 0) return msg.reply(`❌ AIはクールタイム中です。あと${remainingCooldown}秒`);
-        setAiCooldown(msg.author.id);
-        const prompt = args.join(" ").trim();
-        if (!prompt) return msg.reply("使い方: `!ai 相談したい内容`");
-        const thinkingMsg = await msg.channel.send("AIが考え中...");
-        const res = await chat(prompt, msg.author.id);
-        if (res) await thinkingMsg.edit(res);
-        else await thinkingMsg.edit("⚠️ 返答に失敗しました");
-        break;
-      }
-
-      case "join": {
-        if (!msg.member?.voice?.channel) return msg.reply('❌ VCに参加してください');
-        const { joinVoiceChannel } = require('@discordjs/voice');
-        try {
-          joinVoiceChannel({
-            channelId: msg.member.voice.channel.id,
-            guildId: msg.guild.id,
-            adapterCreator: msg.guild.voiceAdapterCreator,
-          });
-          await msg.reply('🔊 VCに参加しました');
-        } catch {
-          await msg.reply('❌ VC接続に失敗しました');
-        }
-        break;
-      }
-
-        case "play": {
-          const query = args.join(" ");
-          if (!query) return msg.reply("❌ 曲名またはURLを入力してください");
-
-          const voiceChannel = msg.member?.voice.channel;
-          if (!voiceChannel) return msg.reply("❌ VCに参加してください");
-
-          try {
-            // VCに接続
-            const connection = joinVoiceChannel({
-              channelId: voiceChannel.id,
-              guildId: voiceChannel.guild.id,
-              adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-            });
-
-            // 曲再生
-            const musicTitle = await playUrl(msg.guild.id, query, msg.channel, voiceChannel);
-            await msg.channel.send(`▶️ 再生キューに追加: **${musicTitle}**`);
-          } catch (err) {
-            console.error("!play error:", err);
-            await msg.reply("❌ 再生中にエラーが発生しました");
-          }
-          break;
-        }
-
-      case "stop": {
-        const { stopMusic } = require("../utils/music");
-        msg.channel.send(stopMusic(msg.guild.id) ? "⏹️ 再生停止・キュークリア" : "❌ 再生中の曲なし");
-        break;
-      }
-
-      case "leave":
-        await leaveVoice(msg.guild.id);
-        await msg.reply("👋 VC退出しました");
-        break;
-
-      case "backup":
-        if (!hasManageGuildPermission(msg.member)) return msg.reply("⚠️ 管理者権限が必要です");
-        await backupServer(msg.guild);
-        await msg.reply("✅ サーバー構成をバックアップしました");
-        break;
-
-      case "restore":
-        if (!hasManageGuildPermission(msg.member)) return msg.reply("⚠️ 管理者権限が必要です");
-        const ok = await restoreServer(msg.guild, msg.channel);
-        await msg.reply(ok ? "✅ 復元完了" : "⚠️ バックアップが見つかりません");
-        break;
-
-      case "addrole":
-        if (!hasManageGuildPermission(msg.member)) return msg.reply("⚠️ 管理者権限が必要です");
-        const roleName = args.join(" ");
-        if (!roleName) return msg.reply("使い方: `!addrole <ロール名>`");
-        await msg.reply(`✅ **${roleName}** を全ユーザーに付与中...`);
-        const result = await addRoleToAll(msg.guild, roleName);
-        if (result.success) msg.channel.send(`🎉 全${result.count}ユーザーにロールを付与しました！`);
-        else msg.channel.send(`❌ ロール付与失敗: ${result.error}`);
-        break;
-
-      case "nuke":
-        if (!hasManageGuildPermission(msg.member)) return msg.reply("⚠️ 管理者権限が必要です");
-        await nukeChannel(msg.channel);
-        break;
-
-      case "clear": {
-        if (!hasManageGuildPermission(msg.member)) return msg.reply("⚠️ 管理者権限が必要です");
-        if (!args[0]) return msg.channel.send("使い方: `!clear <数> [@ユーザー]`");
-        let amount = parseInt(args[0],10);
-        if (!amount || amount<1 || amount>1000) return msg.channel.send("⚠️ 1〜1000の範囲で指定してください");
-        let targetUser = msg.mentions.members.first() || null;
-        await msg.delete().catch(()=>{});
-        let totalDeleted = 0;
-        while(amount>0){
-          const fetchAmount = Math.min(amount,100);
-          const fetched = await msg.channel.messages.fetch({limit:fetchAmount});
-          let toDelete = targetUser ? fetched.filter(m=>m.author.id===targetUser.id) : fetched;
-          if(toDelete.size===0) break;
-          const deleted = await msg.channel.bulkDelete(toDelete,true);
-          totalDeleted += deleted.size;
-          amount -= deleted.size;
-          if(deleted.size<fetchAmount) break;
-        }
-        const notice = await msg.channel.send(`🧹 ${totalDeleted}件のメッセージを削除しました。`);
-        setTimeout(()=>notice.delete().catch(()=>{}),5000);
-        break;
-      }
-
-      case "ranking": {
-        if (msg.channel.name.includes("雑談")) {
-          const warn = await msg.delete().then(() => msg.channel.send("⚠️ このチャンネルでは !ranking は使用できません"));
-          setTimeout(()=>warn.delete().catch(()=>{}),5000);
-          return;
-        }
-
-        const ranking = getRanking(msg.guild.id).slice(0,3);
-        if(!ranking.length) return msg.reply("📊 今月のランキングデータはありません");
-
-        let text = "🏆 **月間アクティブユーザーランキング** 🏆\n\n";
-        for(let i=0;i<ranking.length;i++){
-          const [userId,count] = ranking[i];
-          const user = await msg.guild.members.fetch(userId).catch(()=>null);
-          text += `${i+1}位: **${user?user.user.username:"不明ユーザー"}** (${count} メッセージ)\n`;
-        }
-        await msg.channel.send(text);
-        await updateActiveRoles(msg.guild);
-        break;
-      }
-
-      default: {
-        const langMap = { 英語:"en",えいご:"en",日本語:"ja",にほんご:"ja",中国語:"zh-CN",ちゅうごくご:"zh-CN",韓国語:"ko",かんこくご:"ko",フランス語:"fr",スペイン語:"es",ドイツ語:"de" };
-        const to = langMap[cmd];
-        if(!to) return;
-        const text = args.join(" ").trim();
-        if(!text) return;
-        const res = await translate(text,{to});
-        await msg.reply(res.text||"翻訳できませんでした");
-      }
+  switch (cmd) {
+    case "help": {
+      await msg.author.send(helpMessage).catch(() => {});
+      await msg.reply("📩 DMを確認してください！");
+      break;
     }
-  } catch(e){
-    console.error("Prefix command error:",e);
+    case "ping": {
+      await msg.reply("🏓 Pong!");
+      break;
+    }
+    case "uptime": {
+      const uptime = process.uptime();
+      const hours = Math.floor(uptime / 3600);
+      const minutes = Math.floor((uptime % 3600) / 60);
+      const seconds = Math.floor(uptime % 60);
+      await msg.reply(`⏱️ 稼働時間: ${hours}時間${minutes}分${seconds}秒`);
+      break;
+    }
+    case "ranking": {
+      if (RANKING_BANNED_CHANNELS.some(name => msg.channel.name.includes(name) || msg.channel.id === name)) {
+        const warn = await msg.channel.send("⚠️ このチャンネルでは !ranking は使用できません");
+        setTimeout(() => warn.delete().catch(() => {}), 5000);
+        msg.delete().catch(() => {});
+        return;
+      }
+      const ranking = getRanking(msg.guild.id).slice(0,3);
+      if(!ranking.length) return msg.reply("📊 今月のランキングデータはありません");
+
+      let text = "🏆 **月間アクティブユーザーランキング** 🏆\n\n";
+      for(let i=0;i<ranking.length;i++){
+        const [userId,count] = ranking[i];
+        const user = await msg.guild.members.fetch(userId).catch(()=>null);
+        text += `${i+1}位: **${user?user.user.username:"不明ユーザー"}** (${count} メッセージ)\n`;
+      }
+      await msg.channel.send(text);
+      // await updateActiveRoles(msg.guild, /* roleId */); // 必要ならロールID指定
+      break;
+    }
+    case "天気": {
+      const location = args.join(' ') || "Tokyo";
+      const weatherRes = await fetchWeather(location);
+      await msg.reply(weatherRes);
+      break;
+    }
+    case "ai": {
+      const prompt = args.join(' ');
+      if (!prompt) return msg.reply("質問内容を入力してください。");
+      if (await checkAiCooldown(msg.author.id)) {
+        return msg.reply("⏳ AIのクールダウン中です。少し待ってから再度お試しください。");
+      }
+      setAiCooldown(msg.author.id);
+      const aiRes = await chat(prompt);
+      await msg.reply(aiRes);
+      break;
+    }
+    case "クイズ": {
+      const quiz = quizManager.getQuiz();
+      if (!quiz) return msg.reply("現在クイズがありません。");
+      await msg.reply(`問題: ${quiz.question}`);
+      // ...解答受付処理等
+      break;
+    }
+    case "addrole": {
+      if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
+      const roleName = args.join(' ');
+      if (!roleName) return msg.reply("ロール名を指定してください。");
+      await addRoleToAll(msg.guild, roleName);
+      await msg.reply(`ロール: ${roleName} を全員に付与しました。`);
+      break;
+    }
+    case "clear": {
+      if (!msg.member.permissions.has("MANAGE_MESSAGES")) return msg.reply("権限がありません。");
+      const amount = parseInt(args[0]);
+      if (isNaN(amount) || amount < 1) return msg.reply("削除数を指定してください。");
+      const user = msg.mentions.users.first();
+      await clearMessages(msg.channel, amount, user);
+      break;
+    }
+    case "nuke": {
+      if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
+      await nukeChannel(msg.channel);
+      break;
+    }
+    case "backup": {
+      if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
+      await backupServer(msg.guild);
+      await msg.reply("サーバーバックアップが完了しました。");
+      break;
+    }
+    case "restore": {
+      if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
+      await restoreServer(msg.guild);
+      await msg.reply("サーバー復元が完了しました。");
+      break;
+    }
+    default: {
+      // 存在しないコマンドの場合の処理
+      break;
+    }
   }
 };

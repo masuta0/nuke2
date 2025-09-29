@@ -58,15 +58,14 @@ async function saveActivity() {
 }
 
 // -------------------- メッセージ追加 --------------------
-async function addMessage(userId) {
+async function addMessage(guildId, userId) {
   if (EXCLUDED_USERS.includes(userId)) return;
 
-  // サーバー全体でカウント
-  if (!monthlyActivity['global']) monthlyActivity['global'] = {};
-  monthlyActivity['global'][userId] = (monthlyActivity['global'][userId] || 0) + 1;
+  if (!monthlyActivity[guildId]) monthlyActivity[guildId] = {};
+  monthlyActivity[guildId][userId] = (monthlyActivity[guildId][userId] || 0) + 1;
 
-  if (!weeklyActivity['global']) weeklyActivity['global'] = {};
-  weeklyActivity['global'][userId] = (weeklyActivity['global'][userId] || 0) + 1;
+  if (!weeklyActivity[guildId]) weeklyActivity[guildId] = {};
+  weeklyActivity[guildId][userId] = (weeklyActivity[guildId][userId] || 0) + 1;
 
   await saveActivity();
 }
@@ -76,20 +75,25 @@ async function resetMonthlyActivity() { monthlyActivity = {}; await saveActivity
 async function resetWeeklyActivity() { weeklyActivity = {}; await saveActivity(); console.log('✅ 週間アクティビティリセット完了'); }
 
 // -------------------- ランキング取得 --------------------
-function getTopMonthly(limit = 10) {
-  const data = monthlyActivity['global'] || {};
+function getTopMonthly(guildId, limit = 10) {
+  const data = monthlyActivity[guildId] || {};
   return Object.entries(data)
     .filter(([userId]) => !EXCLUDED_USERS.includes(userId))
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit);
 }
 
-function getTopWeekly(limit = 10) {
-  const data = weeklyActivity['global'] || {};
+function getTopWeekly(guildId, limit = 10) {
+  const data = weeklyActivity[guildId] || {};
   return Object.entries(data)
     .filter(([userId]) => !EXCLUDED_USERS.includes(userId))
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit);
+}
+
+function getRanking(guildId, type='monthly', limit=10){
+  if(type==='weekly') return getTopWeekly(guildId, limit);
+  return getTopMonthly(guildId, limit);
 }
 
 // -------------------- ロール付与用ユーティリティ --------------------
@@ -97,7 +101,7 @@ async function updateActiveRoles(client, guildId, roleId, topCount = 3) {
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
 
-  const topUsers = getTopMonthly(topCount).map(([userId]) => userId);
+  const topUsers = getTopMonthly(guildId, topCount).map(([userId]) => userId);
 
   const role = guild.roles.cache.get(roleId);
   if (!role) return;
@@ -110,17 +114,6 @@ async function updateActiveRoles(client, guildId, roleId, topCount = 3) {
     }
   });
 }
-// activity.js の最後に追加
-/**
- * ランキング取得
- * @param {string} guildId
- * @param {'weekly'|'monthly'} type
- * @param {number} limit
- */
-function getRanking(guildId, type='monthly', limit=10){
-  if(type==='weekly') return getTopWeekly(guildId, limit);
-  return getTopMonthly(guildId, limit);
-}
 
 module.exports = {
   loadActivity,
@@ -130,5 +123,6 @@ module.exports = {
   resetWeeklyActivity,
   getTopMonthly,
   getTopWeekly,
-  getRanking
+  getRanking,
+  updateActiveRoles
 };
