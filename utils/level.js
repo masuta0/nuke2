@@ -16,19 +16,24 @@ const levelLogChannels = {
   "1404236535733158018": "1411721928120598739",
 };
 
+// データロード
 async function loadData() {
+  // Dropbox優先でロード
   try {
     await ensureDropboxInit();
     const data = await downloadFromDropbox(DROPBOX_LEVEL_DATA_PATH);
-    if (data) {
+    if (data && data.trim() !== "") {
       const parsed = JSON.parse(data);
       userLevels = { ...userLevels, ...parsed }; 
       console.log('✅ Dropboxユーザーレベルデータをロードしました');
+    } else {
+      console.warn('⚠️ Dropboxのユーザーレベルデータが空、初期化せずスキップ');
     }
   } catch (err) {
     console.warn('⚠️ Dropboxロード失敗、ローカルを確認します:', err.message);
   }
 
+  // ローカルファイルもあればマージ
   try {
     if (fs.existsSync(LOCAL_LEVEL_DATA_PATH)) {
       const localData = JSON.parse(fs.readFileSync(LOCAL_LEVEL_DATA_PATH, 'utf-8'));
@@ -37,6 +42,7 @@ async function loadData() {
     }
   } catch (err) {
     console.error('❌ ローカルロード失敗:', err);
+    // userLevels = {}; ← ここで初期化しない
   }
 
   // レベル設定ロード
@@ -55,12 +61,16 @@ async function loadData() {
     }
   } catch (err) {
     console.error('❌ レベル設定ロード失敗:', err);
-    levelSettings = {};
+    // levelSettings = {}; ← 初期化不要
   }
 }
 
-// -------------------- データ保存 --------------------
+// データ保存
 async function saveData() {
+  if (!userLevels || Object.keys(userLevels).length === 0) {
+    console.warn("⚠️ userLevelsが空のため保存をスキップします");
+    return;
+  }
   try {
     fs.writeFileSync(LOCAL_LEVEL_DATA_PATH, JSON.stringify(userLevels, null, 2));
   } catch (err) {
@@ -75,7 +85,7 @@ async function saveData() {
   }
 }
 
-// -------------------- XP付与 --------------------
+// XP付与
 async function addXp(member) {
   if (!member?.id || !member.guild) return;
   if (xpCooldown.has(member.id)) return;
@@ -84,7 +94,10 @@ async function addXp(member) {
   const userId = member.id;
 
   if (!userLevels[guildId]) userLevels[guildId] = {};
-  if (!userLevels[guildId][userId]) userLevels[guildId][userId] = { level: 0, xp: 0 };
+  if (!userLevels[guildId][userId]) {
+    // 既存データなければ初期化
+    userLevels[guildId][userId] = { level: 0, xp: 0 };
+  }
 
   const userData = userLevels[guildId][userId];
   const oldLevel = userData.level;
@@ -105,7 +118,7 @@ async function addXp(member) {
   setTimeout(() => xpCooldown.delete(member.id), COOLDOWN_TIME);
 }
 
-// -------------------- レベルアップ処理 --------------------
+// レベルアップ処理
 async function handleLevelUp(member, newLevel) {
   const data = levelSettings[newLevel];
   if (!data) return;
@@ -126,7 +139,7 @@ async function handleLevelUp(member, newLevel) {
   }
 }
 
-// -------------------- ユーティリティ --------------------
+// ユーティリティ
 function getLevelData(guildId, userId) {
   return (userLevels[guildId]?.[userId]) || { level: 0, xp: 0 };
 }
