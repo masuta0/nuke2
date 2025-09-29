@@ -289,13 +289,6 @@ client.on('messageCreate', async (message) => {
         console.error('messageCreate processing error:', err);
         }
         });
-
-
-    } catch (err) {
-        console.error('messageCreate processing error:', err);
-    }
-});
-}
 // 毎月1日にアクティビティをリセット
 cron.schedule('0 0 1 * *', async () => {
     try {
