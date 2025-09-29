@@ -18,8 +18,11 @@ const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
 const antiRaid = require('./utils/anti-raid');
 const { handleMemberJoin, handleReactionAdd, handleRoleUpdate, handleAuditLogEntry, handleMessageUpdate, onGuildMemberUpdate, onGuildBanAdd, onGuildMemberRemove } = antiRaid;
 
-const { addMessage, loadActivity, resetMonthlyActivity } = require('./utils/activity');
+const { addMessage, loadActivity, resetMonthlyActivity, updateActiveRoles } = require('./utils/activity');
 const verify = require('./utils/verify');
+
+// === ここでアクティブロールIDを指定 ===
+const ACTIVE_ROLE_ID = '1419894684263911505'; // 例: '123456789012345678'
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT;
@@ -123,7 +126,7 @@ client.once('ready', async () => {
     }, 5000);
 });
 
-// 共通処理: 類似顔検出時
+// 類似顔検出時
 async function handleFaceMatch(message) {
     await message.delete();
     console.log('🧹 類似顔画像を削除: ' + message.id);
@@ -203,8 +206,9 @@ client.on('messageCreate', async (message) => {
         await antiRaid.handleMessage(message);
         if (message.author.bot) return;
 
+        // --- ここでアクティブロールの自動切り替え ---
         if (message.guild && message.author.id && !message.author.bot) {
-            await addMessage(message.guild.id, message.author.id, message.content);
+            await addMessage(message.guild.id, message.author.id, client, ACTIVE_ROLE_ID);
         }
 
         if (message.member) await addXp(message.member);
@@ -285,10 +289,11 @@ client.on('messageCreate', async (message) => {
                 break;
         }
 
-        } catch (err) {
+    } catch (err) {
         console.error('messageCreate processing error:', err);
-        }
-        });
+    }
+});
+
 // 毎月1日にアクティビティをリセット
 cron.schedule('0 0 1 * *', async () => {
     try {

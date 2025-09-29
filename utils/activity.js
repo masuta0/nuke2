@@ -58,7 +58,7 @@ async function saveActivity() {
 }
 
 // -------------------- メッセージ追加 --------------------
-async function addMessage(guildId, userId) {
+async function addMessage(guildId, userId, client, activeRoleId) {
   if (EXCLUDED_USERS.includes(userId)) return;
 
   if (!monthlyActivity[guildId]) monthlyActivity[guildId] = {};
@@ -68,6 +68,11 @@ async function addMessage(guildId, userId) {
   weeklyActivity[guildId][userId] = (weeklyActivity[guildId][userId] || 0) + 1;
 
   await saveActivity();
+
+  // ここでリアルタイムにロール切り替え
+  if (client && activeRoleId) {
+    await updateActiveRoles(client, guildId, activeRoleId, 3);
+  }
 }
 
 // -------------------- リセット --------------------
