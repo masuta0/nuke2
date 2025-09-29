@@ -12,7 +12,6 @@ const DROPBOX_WEEKLY_PATH  = '/app-data/userWeeklyMessages.json';
 const EXCLUDED_USERS = [
   '1366740571707801610',
   '1399725671357354014',
-  '1413007022042906675'
 ];
 
 let monthlyActivity = {};
@@ -97,23 +96,36 @@ function getRanking(guildId, type='monthly', limit=10){
   return getTopMonthly(guildId, limit);
 }
 
-// -------------------- ロール付与用ユーティリティ --------------------
+// -------------------- アクティブロール付与/剥奪 --------------------
 async function updateActiveRoles(client, guildId, roleId, topCount = 3) {
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return;
 
-  const topUsers = getTopMonthly(guildId, topCount).map(([userId]) => userId);
+  // 必ず全メンバーをfetchしてキャッシュを最新化
+  await guild.members.fetch();
 
+  const topUsers = getTopMonthly(guildId, topCount).map(([userId]) => userId);
   const role = guild.roles.cache.get(roleId);
   if (!role) return;
 
   guild.members.cache.forEach(member => {
-    if (topUsers.includes(member.id)) {
-      if (!member.roles.cache.has(role.id)) member.roles.add(role).catch(console.error);
-    } else {
-      if (member.roles.cache.has(role.id)) member.roles.remove(role).catch(console.error);
+    const hasRole = member.roles.cache.has(role.id);
+    const isTop = topUsers.includes(member.id);
+
+    // トップ3にいる人はロールを付与
+    if (isTop && !hasRole) {
+      member.roles.add(role).catch(console.error);
+    }
+    // トップ3から外れた人は即時ロール削除
+    if (!isTop && hasRole) {
+      member.roles.remove(role).catch(console.error);
     }
   });
+}
+
+// -------------------- トップ3ユーザーIDを返すヘルパー --------------------
+function getCurrentTopUserIds(guildId, topCount = 3) {
+  return getTopMonthly(guildId, topCount).map(([userId]) => userId);
 }
 
 module.exports = {
@@ -125,5 +137,6 @@ module.exports = {
   getTopMonthly,
   getTopWeekly,
   getRanking,
-  updateActiveRoles
+  updateActiveRoles,
+  getCurrentTopUserIds
 };
