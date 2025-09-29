@@ -123,52 +123,55 @@ client.once('ready', async () => {
     }, 5000);
 });
 
+// 共通処理: 類似顔検出時
+async function handleFaceMatch(message) {
+    await message.delete();
+    console.log('🧹 類似顔画像を削除: ' + message.id);
+
+    const member = message.member;
+    let timeoutResult = '❌ タイムアウト失敗';
+    let timeoutTag = '不明';
+
+    if (member && member.manageable) {
+        try {
+            await member.timeout(7 * 24 * 60 * 60 * 1000, 'Face image auto timeout');
+            timeoutResult = '✅ タイムアウト成功';
+            timeoutTag = member.user.tag;
+            console.log('⏱️ 1週間タイムアウト: ' + timeoutTag);
+        } catch (err) {
+            console.error('⛔ タイムアウトエラー:', err);
+        }
+    }
+
+    try {
+        const logChannel = await client.channels.fetch('1405660583025709106');
+        if (logChannel && logChannel.isTextBased()) {
+            await logChannel.send({
+                content:
+                    `🧹 類似顔画像を削除しました\n` +
+                    `👤 投稿者: ${timeoutTag} (<@${message.author.id}>)\n` +
+                    `📨 メッセージID: ${message.id}\n` +
+                    `⏱️ タイムアウト結果: ${timeoutResult}\n` +
+                    `📍 チャンネル: <#${message.channel.id}>`,
+                allowedMentions: { users: [], roles: [] }
+            });
+        }
+    } catch (logErr) {
+        console.error('📛 ログ送信エラー:', logErr);
+    }
+}
+
 client.on('messageCreate', async (message) => {
     try {
-        // --- Start of Integrated Face Detection Logic ---
-
-        // 1. Check for attached images
+        // 添付画像チェック
         if (message.attachments.size > 0) {
             for (const attachment of message.attachments.values()) {
                 if (attachment.contentType && attachment.contentType.startsWith('image/')) {
                     try {
                         const match = await isSimilarFace(attachment.url);
                         if (match) {
-                            await message.delete();
-                            console.log('🧹 類似顔画像(添付)を削除: ' + message.id);
-
-                            const member = message.member;
-                            let timeoutResult = '❌ タイムアウト失敗';
-                            let timeoutTag = '不明';
-
-                            if (member && member.manageable) {
-                                try {
-                                    await member.timeout(7 * 24 * 60 * 60 * 1000, 'Face image auto timeout');
-                                    timeoutResult = '✅ タイムアウト成功';
-                                    timeoutTag = member.user.tag;
-                                    console.log('⏱️ 1週間タイムアウト: ' + timeoutTag);
-                                } catch (err) {
-                                    console.error('⛔ タイムアウトエラー:', err);
-                                }
-                            }
-
-                            try {
-                                const logChannel = await client.channels.fetch('1405660583025709106');
-                                if (logChannel && logChannel.isTextBased()) {
-                                    await logChannel.send({
-                                        content:
-                                            `🧹 類似顔画像(添付)を削除しました\n` +
-                                            `👤 投稿者: ${timeoutTag} (<@${message.author.id}>)\n` +
-                                            `📨 メッセージID: ${message.id}\n` +
-                                            `⏱️ タイムアウト結果: ${timeoutResult}\n` +
-                                            `📍 チャンネル: <#${message.channel.id}>`,
-                                        allowedMentions: { users: [], roles: [] }
-                                    });
-                                }
-                            } catch (logErr) {
-                                console.error('📛 ログ送信エラー:', logErr);
-                            }
-                            return; // Stop processing further
+                            await handleFaceMatch(message);
+                            return;
                         }
                     } catch (err) {
                         console.error('Face detection error (attachment):', err);
@@ -177,61 +180,26 @@ client.on('messageCreate', async (message) => {
             }
         }
 
-        // 2. Check for image URLs in the message content
+        // 本文内の画像リンクチェック
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         const urls = message.content.match(urlRegex);
-        if (urls) {
+        if (urls && urls.length > 0) {
             for (const url of urls) {
-                // Check if the URL ends with a common image extension
                 if (url.match(/\.(jpg|jpeg|png|webp)$/i)) {
                     try {
                         const match = await isSimilarFace(url);
                         if (match) {
-                            await message.delete();
-                            console.log('🧹 類似顔画像(URL)を削除: ' + message.id);
-
-                            const member = message.member;
-                            let timeoutResult = '❌ タイムアウト失敗';
-                            let timeoutTag = '不明';
-
-                            if (member && member.manageable) {
-                                try {
-                                    await member.timeout(7 * 24 * 60 * 60 * 1000, 'Face image auto timeout');
-                                    timeoutResult = '✅ タイムアウト成功';
-                                    timeoutTag = member.user.tag;
-                                    console.log('⏱️ 1週間タイムアウト: ' + timeoutTag);
-                                } catch (err) {
-                                    console.error('⛔ タイムアウトエラー:', err);
-                                }
-                            }
-
-                            try {
-                                const logChannel = await client.channels.fetch('1405660583025709106');
-                                if (logChannel && logChannel.isTextBased()) {
-                                    await logChannel.send({
-                                        content:
-                                            `🧹 類似顔画像(URL)を削除しました\n` +
-                                            `👤 投稿者: ${timeoutTag} (<@${message.author.id}>)\n` +
-                                            `📨 メッセージID: ${message.id}\n` +
-                                            `⏱️ タイムアウト結果: ${timeoutResult}\n` +
-                                            `📍 チャンネル: <#${message.channel.id}>`,
-                                        allowedMentions: { users: [], roles: [] }
-                                    });
-                                }
-                            } catch (logErr) {
-                                console.error('📛 ログ送信エラー:', logErr);
-                            }
-                            return; // Stop processing further
+                            await handleFaceMatch(message);
+                            return;
                         }
                     } catch (err) {
-                        console.error('Link image detection error:', err);
+                        console.error('Face detection error (link):', err);
                     }
                 }
             }
         }
 
-        // --- End of Integrated Face Detection Logic ---
-
+        // 通常処理
         await antiRaid.handleMessage(message);
         if (message.author.bot) return;
 
@@ -273,15 +241,26 @@ client.on('messageCreate', async (message) => {
                 }
                 try {
                     await joinVoice(message.guild, message.member.voice.channel);
-                    const musicTitle = await playUrl(message.guild.id, args.join(' '), message.channel, message.member.voice.channel);
-                    await message.channel.send(musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found');
+                    const musicTitle = await playUrl(
+                        message.guild.id,
+                        args.join(' '),
+                        message.channel,
+                        message.member.voice.channel
+                    );
+                    await message.channel.send(
+                        musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found'
+                    );
                 } catch {
                     await message.reply('Error occurred during playback');
                 }
                 break;
 
             case 'stop':
-                message.channel.send(stopMusic(message.guild.id) ? 'Playback stopped and queue cleared' : 'No songs playing');
+                message.channel.send(
+                    stopMusic(message.guild.id)
+                        ? 'Playback stopped and queue cleared'
+                        : 'No songs playing'
+                );
                 break;
 
             case 'leave':
@@ -306,11 +285,18 @@ client.on('messageCreate', async (message) => {
                 break;
         }
 
+        } catch (err) {
+        console.error('messageCreate processing error:', err);
+        }
+        });
+
+
     } catch (err) {
         console.error('messageCreate processing error:', err);
     }
 });
 
+// 毎月1日にアクティビティをリセット
 cron.schedule('0 0 1 * *', async () => {
     try {
         await resetMonthlyActivity(client);
@@ -319,7 +305,8 @@ cron.schedule('0 0 1 * *', async () => {
     }
 });
 
-client.on('messageUpdate', antiRaid.handleMessageUpdate);
+// 追加のイベントハンドラ
+client.on('messageUpdate', handleMessageUpdate);
 client.on('guildMemberAdd', handleMemberJoin);
 client.on('guildMemberRemove', onGuildMemberRemove);
 client.on('guildMemberUpdate', onGuildMemberUpdate);
@@ -327,6 +314,9 @@ client.on('guildBanAdd', onGuildBanAdd);
 client.on('roleUpdate', handleRoleUpdate);
 client.on('messageReactionAdd', handleReactionAdd);
 client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
+
+// DM処理
 client.on('messageCreate', antiRaid.handleDirectMessage);
 
+// Botログイン
 client.login(TOKEN);
