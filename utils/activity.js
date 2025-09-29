@@ -12,6 +12,7 @@ const DROPBOX_WEEKLY_PATH  = '/app-data/userWeeklyMessages.json';
 const EXCLUDED_USERS = [
   '1366740571707801610',
   '1399725671357354014',
+  '1413007022042906675'
 ];
 
 let monthlyActivity = {};
