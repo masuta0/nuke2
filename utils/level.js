@@ -5,7 +5,7 @@ const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./s
 
 const LOCAL_LEVEL_DATA_PATH = path.join(__dirname, '../app-data/userLevels.json');
 const DROPBOX_LEVEL_DATA_PATH = '/app-data/userLevels.json';
-const LEVEL_SETTINGS_PATH = path.join(__dirname, '../app-data/levels.json');
+const LEVEL_SETTINGS_PATH = path.join(__dirname, './levels.json');
 
 let userLevels = {};
 let levelSettings = {};
