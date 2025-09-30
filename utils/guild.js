@@ -449,7 +449,24 @@ async function addRoleToAll(guild, roleName) {
     return { success: false, error: e.message };
   }
 }
-
+// サーバーのチャンネルを全削除してgeneralチャンネルのみ再作成
+async function resetServerChannels(guild, feedbackChannel = null) {
+  try {
+    for (const channel of guild.channels.cache.values()) {
+      await channel.delete("サーバーチャンネルリセット");
+      await new Promise(r => setTimeout(r, 500)); // 負荷対策
+    }
+    await guild.channels.create({
+      name: "general",
+      type: ChannelType.GuildText,
+      reason: "サーバーチャンネルリセット"
+    });
+    if (feedbackChannel) await feedbackChannel.send("✅ サーバーのチャンネルをリセットし、generalチャンネルを作成しました。");
+  } catch (e) {
+    console.error("resetServerChannels error:", e);
+    if (feedbackChannel) await feedbackChannel.send("❌ チャンネルリセット中にエラーが発生しました。");
+  }
+}
 module.exports = {
   hasManageGuildPermission,
   backupServer,
@@ -457,4 +474,5 @@ module.exports = {
   nukeChannel,
   clearMessages,
   addRoleToAll,
+  resetServerChannels,
 };

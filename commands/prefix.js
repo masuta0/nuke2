@@ -5,6 +5,7 @@ const {
   nukeChannel,
   clearMessages,
   addRoleToAll,
+  resetServerChannels, // 追加
 } = require("../utils/guild");
 const {
   addMessage,
@@ -57,6 +58,7 @@ const helpMessage = `
 | !addrole [ロール名] | 全ユーザーロール付与 |
 | !clear [数] [@ユーザー] | メッセージ削除 |
 | !ranking | 月間アクティブユーザーランキング |
+| !reset | サーバーのチャンネルをリセット（管理者限定） |
 `;
 
 const RANKING_BANNED_CHANNELS = [
@@ -107,7 +109,6 @@ module.exports = async function handlePrefixMessage(client, msg) {
     case "クイズ": {
       const question = await quizManager.getQuestion();
       await msg.reply(`クイズ: ${question.text}`);
-      // 回答受付などは quizManager に依存
       break;
     }
     case "ai": {
@@ -182,6 +183,12 @@ module.exports = async function handlePrefixMessage(client, msg) {
       if (!ranking.length) return msg.reply("今月のランキングデータはありません。");
       const rankingStr = ranking.map((u, i) => `${i + 1}位 <@${u.userId}>: ${u.count}回`).join("\n");
       await msg.reply(`**月間アクティブユーザーランキング**\n${rankingStr}`);
+      break;
+    }
+    case "reset": {
+      if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
+      await resetServerChannels(msg.guild, msg.channel);
+      await msg.reply("サーバーのチャンネルをリセットしました。");
       break;
     }
     default: {
