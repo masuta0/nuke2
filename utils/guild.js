@@ -93,31 +93,47 @@ async function collectBackup(guild) {
 }
 
 async function backupServer(guild) {
-    try {
-        const data = await collectBackup(guild);
-        const BACKUP_DIR_DROPBOX = '/bot_backups';
+  try {
+    const data = await collectBackup(guild);
+    const BACKUP_DIR_DROPBOX = '/bot_backups';
 
-        await ensureFolder(BACKUP_DIR_DROPBOX);
+    await ensureFolder(BACKUP_DIR_DROPBOX);
 
-        const success = await uploadToDropbox(
-            `${BACKUP_DIR_DROPBOX}/${guild.id}.json`,
-            JSON.stringify(data, null, 2)
-        );
+    const success = await uploadToDropbox(
+      `${BACKUP_DIR_DROPBOX}/${guild.id}.json`,
+      JSON.stringify(data, null, 2)
+    );
 
-        if (success) {
-            console.log(`✅ バックアップをDropboxにアップロードしました: ${guild.id}.json`);
-        } else {
-            console.error(`❌ バックアップのDropboxアップロードに失敗しました。`);
-        }
-    } catch (e) {
-        console.error(`❌ backupServer関数でエラーが発生しました:`, e);
+    if (success) {
+      console.log(`✅ バックアップをDropboxにアップロードしました: ${guild.id}.json`);
+    } else {
+      console.error(`❌ バックアップのDropboxアップロードに失敗しました。`);
     }
+    // ローカルにも保存
+    fs.writeFileSync(path.join(BACKUP_DIR, `${guild.id}.json`), JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error(`❌ backupServer関数でエラーが発生しました:`, e);
+  }
 }
 
-async function restoreServer(guild, feedbackChannel) {
-  const backup = await downloadFromDropbox(`/bot_backups/${guild.id}.json`);
-  if (!backup) return false;
-
+// 修正版: ファイル名指定で復元できるように
+async function restoreServer(guild, feedbackChannel, filename) {
+  let backup;
+  if (filename) {
+    const backupPath = path.join(BACKUP_DIR, filename);
+    if (!fs.existsSync(backupPath)) {
+      if (feedbackChannel) feedbackChannel.send(`❌ バックアップファイルが見つかりません: ${filename}`);
+      return false;
+    }
+    backup = fs.readFileSync(backupPath, "utf8");
+  } else {
+    // 従来通りDropboxまたはデフォルト
+    backup = await downloadFromDropbox(`/bot_backups/${guild.id}.json`);
+    if (!backup) {
+      if (feedbackChannel) feedbackChannel.send(`❌ バックアップが見つかりません`);
+      return false;
+    }
+  }
   const backupData = JSON.parse(backup);
   const existingRoles = guild.roles.cache;
   const existingChannels = guild.channels.cache;
@@ -258,17 +274,17 @@ async function restoreServer(guild, feedbackChannel) {
     await guild.setExplicitContentFilter(backupData.meta.explicitContentFilter, 'Restore: explicit content filter');
     await guild.setDefaultMessageNotifications(backupData.meta.defaultMessageNotifications, 'Restore: default notifications');
     if (backupData.meta.systemChannelId) {
-        await guild.setSystemChannel(guild.channels.cache.get(backupData.meta.systemChannelId), 'Restore: system channel');
+      await guild.setSystemChannel(guild.channels.cache.get(backupData.meta.systemChannelId), 'Restore: system channel');
     }
     if (backupData.meta.afkChannelId) {
-        await guild.setAFKChannel(guild.channels.cache.get(backupData.meta.afkChannelId), 'Restore: AFK channel');
-        await guild.setAFKTimeout(backupData.meta.afkTimeout, 'Restore: AFK timeout');
+      await guild.setAFKChannel(guild.channels.cache.get(backupData.meta.afkChannelId), 'Restore: AFK channel');
+      await guild.setAFKTimeout(backupData.meta.afkTimeout, 'Restore: AFK timeout');
     }
     if (backupData.meta.bannerURL) {
-        await guild.setBanner(backupData.meta.bannerURL, 'Restore: banner');
+      await guild.setBanner(backupData.meta.bannerURL, 'Restore: banner');
     }
     if (backupData.meta.splashURL) {
-        await guild.setSplash(backupData.meta.splashURL, 'Restore: splash');
+      await guild.setSplash(backupData.meta.splashURL, 'Restore: splash');
     }
   } catch (e) {
     console.error('サーバーメタデータの復元に失敗しました:', e);
@@ -277,32 +293,31 @@ async function restoreServer(guild, feedbackChannel) {
   const emojiIdMap = new Map();
   const stickersIdMap = new Map();
   for (const emoji of backupData.meta.emojis) {
-      if (!guild.emojis.cache.has(emoji.id)) {
-          try {
-              const fetchedEmoji = await guild.emojis.create({
-                  attachment: `https://cdn.discordapp.com/emojis/${emoji.id}.png`,
-                  name: emoji.name,
-              });
-              emojiIdMap.set(emoji.id, fetchedEmoji.id);
-              console.log(`✅ 絵文字 ${fetchedEmoji.name} を復元しました。`);
-          } catch (e) {
-              console.error(`❌ 絵文字 ${emoji.name} の復元に失敗しました:`, e);
-          }
-      } else {
-        emojiIdMap.set(emoji.id, emoji.id);
+    if (!guild.emojis.cache.has(emoji.id)) {
+      try {
+        const fetchedEmoji = await guild.emojis.create({
+          attachment: `https://cdn.discordapp.com/emojis/${emoji.id}.png`,
+          name: emoji.name,
+        });
+        emojiIdMap.set(emoji.id, fetchedEmoji.id);
+        console.log(`✅ 絵文字 ${fetchedEmoji.name} を復元しました。`);
+      } catch (e) {
+        console.error(`❌ 絵文字 ${emoji.name} の復元に失敗しました:`, e);
       }
+    } else {
+      emojiIdMap.set(emoji.id, emoji.id);
+    }
   }
 
   const stickers = backupData.meta.stickers;
   for (const sticker of stickers) {
-      if (!guild.stickers.cache.has(sticker.id)) {
-          // スタンプの復元は複雑で、直接URLから作成できない場合があるため、注意が必要です。
-          console.warn(`⚠️ スタンプ ${sticker.name} は自動復元に対応していません。手動で復元してください。`);
-      } else {
-        stickersIdMap.set(sticker.id, sticker.id);
-      }
+    if (!guild.stickers.cache.has(sticker.id)) {
+      // スタンプの復元は複雑で、直接URLから作成できない場合があるため、注意が必要です。
+      console.warn(`⚠️ スタンプ ${sticker.name} は自動復元に対応していません。手動で復元してください。`);
+    } else {
+      stickersIdMap.set(sticker.id, sticker.id);
+    }
   }
-
 
   try {
     const textChannels = guild.channels.cache.filter(c => c.isTextBased());
@@ -413,6 +428,7 @@ async function clearMessages(channel, amount, feedbackChannel = null, targetUser
 
   return deletedCount;
 }
+
 async function addRoleToAll(guild, roleName) {
   const role = guild.roles.cache.find(r => r.name === roleName || r.id === roleName);
   if (!role) {
