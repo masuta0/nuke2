@@ -116,24 +116,23 @@ async function backupServer(guild) {
   }
 }
 
-// 修正版: ファイル名指定で復元できるように
+// Dropboxから指定ファイル名で復元できるよう改修
 async function restoreServer(guild, feedbackChannel, filename) {
   let backup;
   if (filename) {
-    const backupPath = path.join(BACKUP_DIR, filename);
-    if (!fs.existsSync(backupPath)) {
-      if (feedbackChannel) feedbackChannel.send(`❌ バックアップファイルが見つかりません: ${filename}`);
+    backup = await downloadFromDropbox(`/bot_backups/${filename}`);
+    if (!backup) {
+      if (feedbackChannel) feedbackChannel.send(`❌ Dropbox上にバックアップファイルが見つかりません: ${filename}`);
       return false;
     }
-    backup = fs.readFileSync(backupPath, "utf8");
   } else {
-    // 従来通りDropboxまたはデフォルト
     backup = await downloadFromDropbox(`/bot_backups/${guild.id}.json`);
     if (!backup) {
-      if (feedbackChannel) feedbackChannel.send(`❌ バックアップが見つかりません`);
+      if (feedbackChannel) feedbackChannel.send(`❌ Dropbox上にバックアップが見つかりません`);
       return false;
     }
   }
+
   const backupData = JSON.parse(backup);
   const existingRoles = guild.roles.cache;
   const existingChannels = guild.channels.cache;
