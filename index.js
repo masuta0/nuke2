@@ -22,7 +22,7 @@ const { addMessage, loadActivity, resetMonthlyActivity, updateActiveRoles } = re
 const verify = require('./utils/verify');
 
 // === ここでアクティブロールIDを指定 ===
-const ACTIVE_ROLE_ID = '1419894684263911505'; // 例: '123456789012345678'
+const ACTIVE_ROLE_ID = '1422418430958501982'; // 例: '123456789012345678'
 
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT;
@@ -147,7 +147,7 @@ async function handleFaceMatch(message) {
     }
 
     try {
-        const logChannel = await client.channels.fetch('1405660583025709106');
+        const logChannel = await client.channels.fetch('1422418574730989638');
         if (logChannel && logChannel.isTextBased()) {
             await logChannel.send({
                 content:
