@@ -293,7 +293,6 @@ client.on('messageCreate', async (message) => {
         console.error('messageCreate processing error:', err);
     }
 });
-
 // 毎月1日にアクティビティをリセット
 cron.schedule('0 0 1 * *', async () => {
     try {
@@ -302,7 +301,6 @@ cron.schedule('0 0 1 * *', async () => {
         console.error('Monthly reset failed:', err);
     }
 });
-
 // 追加のイベントハンドラ
 client.on('messageUpdate', handleMessageUpdate);
 client.on('guildMemberAdd', handleMemberJoin);
@@ -312,9 +310,6 @@ client.on('guildBanAdd', onGuildBanAdd);
 client.on('roleUpdate', handleRoleUpdate);
 client.on('messageReactionAdd', handleReactionAdd);
 client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
-
 // DM処理
 client.on('messageCreate', antiRaid.handleDirectMessage);
-
-// Botログイン
 client.login(TOKEN);
