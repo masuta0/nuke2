@@ -8,6 +8,7 @@ const {
 
 const { chat } = require("../utils/ai");
 const { fetchWeather, loadUserWeatherPref } = require("../utils/weather");
+const verifySetup = require("../commands/verifysetup");
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require("../utils/level");
 const { quizManager } = require("../utils/quiz");
 const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("../utils/music");
@@ -188,7 +189,6 @@ async function handleSlashCommand(interaction) {
       await addRoleToAll(interaction, role);
     } else if (commandName === "lock") await lockChannels(interaction);
       else if (commandName === "verifysetup") {
-        const verifySetup = require("../commands/verifysetup");
         await verifySetup.execute(interaction);
         await interaction.followUp({ content: "✅ 認証パネルを設置しました。", ephemeral: true });
       }
