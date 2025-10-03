@@ -439,31 +439,6 @@ async function createOneTimeInvite(guild) {
     return null;
   }
 }
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
-
-    const userId = message.author.id;
-    const content = message.content;
-
-    // 前回のメッセージ取得
-    const prev = spamCounts.get(userId);
-
-    if (prev && prev.lastContent === content) {
-        // 同じ内容ならカウント増
-        prev.count += 1;
-    } else {
-        // 新しい内容ならリセット
-        spamCounts.set(userId, { count: 1, lastContent: content });
-    }
-
-    const userSpam = spamCounts.get(userId);
-
-    // 3回までは削除せず、4回目以降に削除
-    if (userSpam.count > 3) {
-        await message.delete();
-        // 削除後はカウントリセット
-        userSpam.count = 0;
-    }
 async function isReasonAppropriate(entry, reason) {
   if (!chat) return reason.length > 10;
   const prompt = `以下のDiscordサーバーの操作に対するユーザーの理由が適切かを判断してください。\n\n[操作]: ${AuditLogEvent[entry.action]}\n[理由]: ${reason}\n\n「適切」または「不適切」で回答してください。`;
