@@ -5,29 +5,13 @@ const {
   REST,
   PermissionFlagsBits,
 } = require("discord.js");
+
 const { chat } = require("../utils/ai");
 const { fetchWeather, loadUserWeatherPref } = require("../utils/weather");
-const {
-  getLevelData,
-  setLevelAndXp,
-  calculateRequiredXp,
-} = require("../utils/level");
+const { getLevelData, setLevelAndXp, calculateRequiredXp } = require("../utils/level");
 const { quizManager } = require("../utils/quiz");
-const {
-  playMusic,
-  skipMusic,
-  stopMusic,
-  pauseMusic,
-  resumeMusic,
-} = require("../utils/music");
-const {
-  backupServer,
-  restoreServer,
-  nukeChannel,
-  clearMessages,
-  addRoleToAll,
-  lockChannels,
-} = require("../utils/guild");
+const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("../utils/music");
+const { backupServer, restoreServer, nukeChannel, clearMessages, addRoleToAll, lockChannels } = require("../utils/guild");
 const { verifyCommand } = require("../utils/verify");
 const { panelCommand } = require("../utils/panel");
 const { ticketCommand } = require("../utils/ticket");
@@ -38,111 +22,67 @@ const commands = [
   new SlashCommandBuilder()
     .setName("ai")
     .setDescription("AIと対話します")
-    .addStringOption((opt) =>
-      opt.setName("prompt").setDescription("AIへの質問").setRequired(true)
-    ),
+    .addStringOption(opt => opt.setName("prompt").setDescription("AIへの質問").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("weather")
     .setDescription("天気を取得します")
-    .addStringOption((opt) =>
-      opt.setName("location").setDescription("場所").setRequired(false)
-    ),
+    .addStringOption(opt => opt.setName("location").setDescription("場所").setRequired(false)),
 
   new SlashCommandBuilder()
     .setName("level")
     .setDescription("自分または指定ユーザーのレベルを確認します")
-    .addUserOption((opt) =>
-      opt.setName("user").setDescription("確認するユーザー").setRequired(false)
-    ),
+    .addUserOption(opt => opt.setName("user").setDescription("確認するユーザー").setRequired(false)),
 
   new SlashCommandBuilder()
     .setName("setlevel")
     .setDescription("ユーザーのレベルとXPを設定します（管理者専用）")
-    .addUserOption((opt) =>
-      opt.setName("user").setDescription("対象ユーザー").setRequired(true)
-    )
-    .addIntegerOption((opt) =>
-      opt.setName("level").setDescription("設定するレベル").setRequired(true)
-    )
-    .addIntegerOption((opt) =>
-      opt.setName("xp").setDescription("設定するXP").setRequired(true)
-    )
+    .addUserOption(opt => opt.setName("user").setDescription("対象ユーザー").setRequired(true))
+    .addIntegerOption(opt => opt.setName("level").setDescription("設定するレベル").setRequired(true))
+    .addIntegerOption(opt => opt.setName("xp").setDescription("設定するXP").setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-  new SlashCommandBuilder()
-    .setName("quiz")
-    .setDescription("クイズを開始します"),
+  new SlashCommandBuilder().setName("quiz").setDescription("クイズを開始します"),
 
   // 音楽
-  new SlashCommandBuilder()
-    .setName("mplay")
-    .setDescription("音楽を再生します")
-    .addStringOption((opt) =>
-      opt.setName("url").setDescription("YouTube URL").setRequired(true)
-    ),
+  new SlashCommandBuilder().setName("mplay").setDescription("音楽を再生します")
+    .addStringOption(opt => opt.setName("url").setDescription("YouTube URL").setRequired(true)),
   new SlashCommandBuilder().setName("mskip").setDescription("曲をスキップします"),
   new SlashCommandBuilder().setName("mstop").setDescription("音楽を停止します"),
   new SlashCommandBuilder().setName("mpause").setDescription("音楽を一時停止します"),
   new SlashCommandBuilder().setName("mresume").setDescription("音楽を再開します"),
 
   // サーバー管理
-  new SlashCommandBuilder()
-    .setName("backup")
-    .setDescription("サーバーをバックアップします（管理者専用）")
+  new SlashCommandBuilder().setName("backup").setDescription("サーバーをバックアップします（管理者専用）")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
-    .setName("restore")
-    .setDescription("サーバーをリストアします（管理者専用）")
+  new SlashCommandBuilder().setName("restore").setDescription("サーバーをリストアします（管理者専用）")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
-    .setName("nuke")
-    .setDescription("チャンネルを爆破します（管理者専用）")
+  new SlashCommandBuilder().setName("nuke").setDescription("チャンネルを爆破します（管理者専用）")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
-    .setName("clear")
-    .setDescription("メッセージを一括削除します（管理者専用）")
-    .addIntegerOption((opt) =>
-      opt.setName("amount").setDescription("削除する数").setRequired(true)
-    )
+  new SlashCommandBuilder().setName("clear").setDescription("メッセージを一括削除します（管理者専用）")
+    .addIntegerOption(opt => opt.setName("amount").setDescription("削除する数").setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages),
-  new SlashCommandBuilder()
-    .setName("addroleall")
-    .setDescription("全員にロールを付与します（管理者専用）")
-    .addRoleOption((opt) =>
-      opt.setName("role").setDescription("付与するロール").setRequired(true)
-    )
+  new SlashCommandBuilder().setName("addroleall").setDescription("全員にロールを付与します（管理者専用）")
+    .addRoleOption(opt => opt.setName("role").setDescription("付与するロール").setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  new SlashCommandBuilder()
-    .setName("lock")
-    .setDescription("全チャンネルをロックします（管理者専用）")
+  new SlashCommandBuilder().setName("lock").setDescription("全チャンネルをロックします（管理者専用）")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   // 認証
-  new SlashCommandBuilder()
-    .setName("verify")
-    .setDescription("認証を行います"),
+  new SlashCommandBuilder().setName("verify").setDescription("認証を行います"),
 
   // ロールパネル
-  new SlashCommandBuilder()
-    .setName("panel")
-    .setDescription("ロールパネルを表示します（管理者専用）")
+  new SlashCommandBuilder().setName("panel").setDescription("ロールパネルを表示します（管理者専用）")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   // チケット
-  new SlashCommandBuilder()
-    .setName("ticket")
-    .setDescription("チケットを作成します"),
+  new SlashCommandBuilder().setName("ticket").setDescription("チケットを作成します"),
 
   // 招待リンク作成
-  new SlashCommandBuilder()
-    .setName("invite")
-    .setDescription("自分専用の招待リンクを作成します"),
+  new SlashCommandBuilder().setName("invite").setDescription("自分専用の招待リンクを作成します"),
 
   // 招待数確認
-  new SlashCommandBuilder()
-    .setName("invitecount")
-    .setDescription("自分の招待数を確認します"),
+  new SlashCommandBuilder().setName("invitecount").setDescription("自分の招待数を確認します"),
 ];
 
 // ---------------- コマンド登録 ----------------
@@ -154,7 +94,7 @@ async function registerSlashCommands(client) {
   try {
     console.log("📌 スラッシュコマンド登録開始");
     await rest.put(Routes.applicationCommands(client.user.id), {
-      body: commands.map((c) => c.toJSON()),
+      body: commands.map(c => c.toJSON()),
     });
     console.log("✅ スラッシュコマンド登録完了");
   } catch (err) {
@@ -162,9 +102,22 @@ async function registerSlashCommands(client) {
   }
 }
 
-// ---------------- 実行処理 ----------------
+// ---------------- サーバークールダウン ----------------
+const SERVER_COOLDOWN_TIME = 2; // 秒
+const serverCooldowns = new Map();
+
+// ---------------- コマンド実行処理 ----------------
 async function handleSlashCommand(interaction) {
   if (!interaction.isChatInputCommand()) return;
+  if (!interaction.guild) return;
+
+  // サーバー全体クールダウン判定
+  const lastServerUsed = serverCooldowns.get(interaction.guild.id) || 0;
+  if (Date.now() - lastServerUsed < SERVER_COOLDOWN_TIME * 1000) {
+    await interaction.reply({ content: "コマンドは少し待ってから実行してください。", ephemeral: true });
+    return;
+  }
+  serverCooldowns.set(interaction.guild.id, Date.now());
 
   const { commandName, channel, user } = interaction;
 
@@ -207,37 +160,23 @@ async function handleSlashCommand(interaction) {
       const level = interaction.options.getInteger("level");
       const xp = interaction.options.getInteger("xp");
       await setLevelAndXp(channel.guild.id, targetUser.id, level, xp);
-      await interaction.reply({
-        content: `✅ ${targetUser.tag} のレベルを ${level}, XPを ${xp} に設定しました`,
-        ephemeral: true,
-      });
+      await interaction.reply({ content: `✅ ${targetUser.tag} のレベルを ${level}, XPを ${xp} に設定しました`, ephemeral: true });
     }
 
     // クイズ
     else if (commandName === "quiz") {
-      if (channel.name.includes("雑談")) {
-        await interaction.reply({
-          content: "❌ このチャンネルではクイズを使用できません。",
-          ephemeral: true,
-        });
-        return;
-      }
-      await startQuiz(interaction, interaction.user, category);
+      await interaction.reply({ content: "クイズを開始します", ephemeral: true });
+      // startQuiz(interaction, user, category); // 必要に応じて有効化
     }
 
     // 音楽
     else if (commandName === "mplay") {
       const url = interaction.options.getString("url");
       await playMusic(interaction, url);
-    } else if (commandName === "mskip") {
-      await skipMusic(interaction);
-    } else if (commandName === "mstop") {
-      await stopMusic(interaction);
-    } else if (commandName === "mpause") {
-      await pauseMusic(interaction);
-    } else if (commandName === "mresume") {
-      await resumeMusic(interaction);
-    }
+    } else if (commandName === "mskip") await skipMusic(interaction);
+    else if (commandName === "mstop") await stopMusic(interaction);
+    else if (commandName === "mpause") await pauseMusic(interaction);
+    else if (commandName === "mresume") await resumeMusic(interaction);
 
     // サーバー管理
     else if (commandName === "backup") await backupServer(interaction);

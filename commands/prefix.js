@@ -5,7 +5,7 @@ const {
   nukeChannel,
   clearMessages,
   addRoleToAll,
-  resetServerChannels, // 追加
+  resetServerChannels,
 } = require("../utils/guild");
 const {
   addMessage,
@@ -26,6 +26,20 @@ const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerSta
 const CMD_PREFIX = "!";
 const cooldowns = new Map();
 const COOLDOWN_TIME = 10;
+
+// サーバー全体のコマンドクールダウン（秒）
+const SERVER_COOLDOWN_TIME = 2;
+const serverCooldowns = new Map();
+
+// 自動削除するコマンド
+const AUTO_DELETE_COMMANDS = [
+  "help", "ping", "ai", "クイズ", "英語", "天気"
+];
+
+// 自動削除の秒数範囲
+const AUTO_DELETE_MIN = 10;
+const AUTO_DELETE_MAX = 30;
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const helpMessage = `
@@ -65,15 +79,33 @@ const RANKING_BANNED_CHANNELS = [
   '雑談',
 ];
 
+function randomDeleteSecs() {
+  return AUTO_DELETE_MIN + Math.floor(Math.random() * (AUTO_DELETE_MAX - AUTO_DELETE_MIN + 1));
+}
+
+async function autoDeleteMsg(msg) {
+  const secs = randomDeleteSecs();
+  setTimeout(() => msg.delete().catch(() => {}), secs * 1000);
+}
+
 module.exports = async function handlePrefixMessage(client, msg) {
   if (msg.author.bot) return;
+  if (!msg.guild) return;
+
   const content = (msg.content || "").trim();
   if (!content.startsWith(CMD_PREFIX)) return;
 
   const args = content.slice(CMD_PREFIX.length).split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
 
-  // クールダウン
+  // サーバー全体クールダウン
+  const lastServerUsed = serverCooldowns.get(msg.guild.id) || 0;
+  if (Date.now() - lastServerUsed < SERVER_COOLDOWN_TIME * 1000) {
+    return;
+  }
+  serverCooldowns.set(msg.guild.id, Date.now());
+
+  // ユーザー個別クールダウン
   if (cooldowns.has(msg.author.id)) {
     const lastUsed = cooldowns.get(msg.author.id);
     if (Date.now() - lastUsed < COOLDOWN_TIME * 1000) {
@@ -85,11 +117,13 @@ module.exports = async function handlePrefixMessage(client, msg) {
   switch (cmd) {
     case "help": {
       await msg.author.send(helpMessage).catch(() => {});
-      await msg.reply("ヘルプをDMに送信しました。");
+      const reply = await msg.reply("ヘルプをDMに送信しました。");
+      autoDeleteMsg(reply);
       break;
     }
     case "ping": {
-      await msg.reply("Pong!");
+      const reply = await msg.reply("Pong!");
+      autoDeleteMsg(reply);
       break;
     }
     case "uptime": {
@@ -103,12 +137,14 @@ module.exports = async function handlePrefixMessage(client, msg) {
     case "天気": {
       const place = args[0] || "東京";
       const weather = await fetchWeather(place);
-      await msg.reply(`${place}の天気: ${weather}`);
+      const reply = await msg.reply(`${place}の天気: ${weather}`);
+      autoDeleteMsg(reply);
       break;
     }
     case "クイズ": {
       const question = await quizManager.getQuestion();
-      await msg.reply(`クイズ: ${question.text}`);
+      const reply = await msg.reply(`クイズ: ${question.text}`);
+      autoDeleteMsg(reply);
       break;
     }
     case "ai": {
@@ -117,14 +153,16 @@ module.exports = async function handlePrefixMessage(client, msg) {
       if (checkAiCooldown(msg.author.id)) return msg.reply("AIはクールダウン中です。");
       setAiCooldown(msg.author.id);
       const aiReply = await chat(input, msg.author.id);
-      await msg.reply(aiReply);
+      const reply = await msg.reply(aiReply);
+      autoDeleteMsg(reply);
       break;
     }
     case "英語": {
       const input = args.join(" ");
       if (!input) return msg.reply("翻訳する内容を入力してください。");
       const result = await translate(input, { to: "en" });
-      await msg.reply(result.text);
+      const reply = await msg.reply(result.text);
+      autoDeleteMsg(reply);
       break;
     }
     case "nuke": {
