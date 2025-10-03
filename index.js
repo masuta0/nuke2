@@ -33,7 +33,7 @@ const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
-const { restoreVerifyMessage } = require('./utils/verify'); // verifysetup用
+const { restoreVerifyMessage: verifySetup } = require('./utils/verify'); // verifysetup用
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
 
 const antiRaid = require('./utils/anti-raid');
@@ -55,8 +55,6 @@ const {
     updateActiveRoles
 } = require('./utils/activity');
 
-// === Verify & Ticket ===
-const verifySetup = require('./commands/verifysetup'); // verifyパネル
 const ticket = require('./utils/ticket'); // チケットパネル
 
 // === 設定 ===
