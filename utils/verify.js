@@ -137,7 +137,6 @@ module.exports = {
         flags: MessageFlags.Ephemeral 
       });
       await interaction.reply({ content: '❌ ロール付与に失敗しました', ephemeral: true });
-    }
   },
 
   // ===== 自動再設置 ready 用 =====
