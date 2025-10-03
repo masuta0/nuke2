@@ -1,3 +1,4 @@
+// index.js
 require('dotenv').config();
 const cron = require('node-cron');
 const express = require('express');
@@ -11,7 +12,6 @@ const {
     ChannelType
 } = require('discord.js');
 
-// === Utils ===
 const {
     joinVoice,
     playUrl,
@@ -25,17 +25,15 @@ const {
 } = require('./utils/face');
 const {
     registerSlashCommands,
-    handleSlashCommand,
-    commands
+    handleSlashCommand
 } = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
-const verify = require('./utils/verify'); // verifysetup用
+const verify = require('./utils/verify'); // ここで verify を統一
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
-
 const antiRaid = require('./utils/anti-raid');
 const {
     handleMemberJoin,
@@ -47,7 +45,6 @@ const {
     onGuildBanAdd,
     onGuildMemberRemove
 } = antiRaid;
-
 const {
     addMessage,
     loadActivity,
@@ -55,14 +52,11 @@ const {
     updateActiveRoles
 } = require('./utils/activity');
 
-const ticket = require('./utils/ticket'); // チケットパネル
-
 // === 設定 ===
 const ACTIVE_ROLE_ID = '1422418430958501982';
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID || null;
-const CLIENT_ID = process.env.CLIENT_ID;
 
 const APP_DATA_DIR = path.join(__dirname, 'app-data');
 if (!fs.existsSync(APP_DATA_DIR)) fs.mkdirSync(APP_DATA_DIR, { recursive: true });
@@ -92,21 +86,12 @@ app.listen(PORT, () => console.log('Server listening on port ' + PORT));
 // === Interaction処理 ===
 client.on('interactionCreate', async (interaction) => {
     try {
-        // --- Slash Command ---
         if (interaction.isChatInputCommand()) {
             await handleSlashCommand(interaction);
-        }
-
-        // --- Button ---
-        else if (interaction.isButton()) {
-            if (verifySetup.buttonHandler) await verifySetup.buttonHandler(interaction);
-            if (ticket.buttonHandler) await ticket.buttonHandler(interaction);
-        }
-
-        // --- Modal Submit ---
-        else if (interaction.isModalSubmit()) {
-            if (verifySetup.modalHandler) await verifySetup.modalHandler(interaction);
-            if (ticket.modalHandler) await ticket.modalHandler(interaction);
+        } else if (interaction.isButton()) {
+            await verify.buttonHandler(interaction);
+        } else if (interaction.isModalSubmit()) {
+            await verify.modalHandler(interaction);
         }
     } catch (err) {
         console.error('interactionCreate error:', err);
@@ -122,7 +107,7 @@ client.once('ready', async () => {
         await initFaceRecognition();
         console.log('Face recognition initialized');
 
-        // デフォルト顔登録（失敗時にログのみ）
+        // デフォルト顔登録（失敗時はログのみ）
         try {
             await registerFace('https://i.imgur.com/DkoHDM9.jpg');
             console.log('Face registered successfully');
@@ -138,8 +123,11 @@ client.once('ready', async () => {
         await loadActivity();
         await loadLevelData();
         preloadQuizzes();
-await verify.restoreVerifyMessage(client);
         await loadWeeklyData();
+
+        // 認証パネル自動再設置
+        await verify.restoreVerifyMessage(client);
+        console.log('✅ 認証パネル自動再設置完了');
 
         // 週次処理セットアップ
         setupWeekly(client, WEEKLY_CHANNEL_ID);
@@ -147,11 +135,12 @@ await verify.restoreVerifyMessage(client);
         // スラッシュコマンド登録
         await registerSlashCommands(client);
         console.log('Slash commands registered');
+
     } catch (err) {
         console.error('Ready event initialization error:', err);
     }
 
-    // --- 定期処理: アンチレイド類似顔ハッシュクリーン ---
+    // 定期処理: アンチレイド類似顔ハッシュクリア
     setInterval(() => {
         for (const guildTracker of antiRaid.similarityTracker.values()) {
             antiRaid.cleanupSimilarityTracker(guildTracker, antiRaid.SIMILARITY_HASH_EXPIRY_MS);
@@ -159,7 +148,7 @@ await verify.restoreVerifyMessage(client);
     }, antiRaid.CLEANUP_INTERVAL_MS);
     console.log('[Anti-Raid] Hash cleanup started.');
 
-    // --- 定期処理: Botステータス更新 ---
+    // 定期処理: Botステータス更新
     const start = Date.now();
     setInterval(() => {
         const elapsed = Date.now() - start;
