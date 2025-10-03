@@ -11,6 +11,7 @@ const {
   PermissionFlagsBits 
 } = require('discord.js');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('../utils/storage');
+
 const userCodes = new Map();
 const DROPBOX_VERIFY_DATA_PATH = '/bot_data/verifyData.json';
 
@@ -66,7 +67,7 @@ async function createVerifyMessageEmbedAndComponents(roleName) {
   return { embeds: [embed], components: [row] };
 }
 
-// ===== Slash コマンド定義 =====
+// ===== モジュールエクスポート =====
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('verifysetup')
@@ -119,27 +120,25 @@ module.exports = {
     const correctCode = userCodes.get(interaction.user.id);
 
     if (inputCode !== correctCode) {
-      return interaction.reply({ content: '❌ 認証コードが間違っています', ephemeral: true });
+      return interaction.reply({ content: '❌ 認証コードが間違っています', flags: MessageFlags.Ephemeral });
     }
 
     const verifyData = await loadVerifyData();
     if (!verifyData.roleId) {
-      return interaction.reply({ content: '❌ 認証ロールが設定されていません', ephemeral: true });
+      return interaction.reply({ content: '❌ 認証ロールが設定されていません', flags: MessageFlags.Ephemeral });
     }
 
     try {
       const member = await interaction.guild.members.fetch(interaction.user.id);
       await member.roles.add(verifyData.roleId);
       userCodes.delete(interaction.user.id);
+      await interaction.reply({ content: '✅ 認証完了', flags: MessageFlags.Ephemeral });
+    } catch (err) {
+      console.error('❌ ロール付与失敗:', err);
+      await interaction.reply({ content: '❌ ロール付与に失敗しました', flags: MessageFlags.Ephemeral });
+    }
+  },
 
-      await interaction.reply({ 
-        content: '✅ 認証完了', 
-        flags: MessageFlags.Ephemeral 
-      });
-      await interaction.reply({ content: '❌ ロール付与に失敗しました', ephemeral: true });
-  }
-
-  // ===== 自動再設置 ready 用 =====
   async restoreVerifyMessage(client) {
     const verifyData = await loadVerifyData();
     if (!verifyData.guildId || !verifyData.channelId || !verifyData.roleId) return;
