@@ -33,7 +33,7 @@ const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
-const { restoreVerifyMessage: verifySetup } = require('./utils/verify'); // verifysetup用
+const verify = require('./utils/verify'); // verifysetup用
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
 
 const antiRaid = require('./utils/anti-raid');
@@ -138,7 +138,7 @@ client.once('ready', async () => {
         await loadActivity();
         await loadLevelData();
         preloadQuizzes();
-        await restoreVerifyMessage(client); // verify パネル自動再設置
+await verify.restoreVerifyMessage(client);
         await loadWeeklyData();
 
         // 週次処理セットアップ
