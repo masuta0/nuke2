@@ -1,4 +1,3 @@
-// index.js
 require('dotenv').config();
 const cron = require('node-cron');
 const express = require('express');
@@ -12,6 +11,7 @@ const {
     ChannelType
 } = require('discord.js');
 
+// === Utils ===
 const {
     joinVoice,
     playUrl,
@@ -33,7 +33,7 @@ const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
-const { restoreVerifyMessage, verify } = require('./utils/verify');
+const { restoreVerifyMessage } = require('./utils/verify'); // verifysetup用
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
 
 const antiRaid = require('./utils/anti-raid');
@@ -54,6 +54,10 @@ const {
     resetMonthlyActivity,
     updateActiveRoles
 } = require('./utils/activity');
+
+// === Verify & Ticket ===
+const verifySetup = require('./commands/verifysetup'); // verifyパネル
+const ticket = require('./utils/ticket'); // チケットパネル
 
 // === 設定 ===
 const ACTIVE_ROLE_ID = '1422418430958501982';
@@ -90,12 +94,21 @@ app.listen(PORT, () => console.log('Server listening on port ' + PORT));
 // === Interaction処理 ===
 client.on('interactionCreate', async (interaction) => {
     try {
+        // --- Slash Command ---
         if (interaction.isChatInputCommand()) {
             await handleSlashCommand(interaction);
-        } else if (interaction.isButton()) {
-            await verify.buttonHandler(interaction);
-        } else if (interaction.isModalSubmit()) {
-            await verify.modalHandler(interaction);
+        }
+
+        // --- Button ---
+        else if (interaction.isButton()) {
+            if (verifySetup.buttonHandler) await verifySetup.buttonHandler(interaction);
+            if (ticket.buttonHandler) await ticket.buttonHandler(interaction);
+        }
+
+        // --- Modal Submit ---
+        else if (interaction.isModalSubmit()) {
+            if (verifySetup.modalHandler) await verifySetup.modalHandler(interaction);
+            if (ticket.modalHandler) await ticket.modalHandler(interaction);
         }
     } catch (err) {
         console.error('interactionCreate error:', err);
@@ -127,21 +140,20 @@ client.once('ready', async () => {
         await loadActivity();
         await loadLevelData();
         preloadQuizzes();
-        await restoreVerifyMessage(client);
+        await restoreVerifyMessage(client); // verify パネル自動再設置
         await loadWeeklyData();
 
         // 週次処理セットアップ
         setupWeekly(client, WEEKLY_CHANNEL_ID);
 
-        // --- スラッシュコマンド登録 ---
+        // スラッシュコマンド登録
         await registerSlashCommands(client);
         console.log('Slash commands registered');
-
     } catch (err) {
         console.error('Ready event initialization error:', err);
     }
 
-    // 定期処理: アンチレイド類似顔ハッシュクリーン
+    // --- 定期処理: アンチレイド類似顔ハッシュクリーン ---
     setInterval(() => {
         for (const guildTracker of antiRaid.similarityTracker.values()) {
             antiRaid.cleanupSimilarityTracker(guildTracker, antiRaid.SIMILARITY_HASH_EXPIRY_MS);
@@ -149,7 +161,7 @@ client.once('ready', async () => {
     }, antiRaid.CLEANUP_INTERVAL_MS);
     console.log('[Anti-Raid] Hash cleanup started.');
 
-    // 定期処理: Botステータス更新
+    // --- 定期処理: Botステータス更新 ---
     const start = Date.now();
     setInterval(() => {
         const elapsed = Date.now() - start;
