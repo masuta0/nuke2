@@ -21,7 +21,6 @@ const {
 const { quizManager, activeUsers } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require('@discordjs/voice');
 
 const CMD_PREFIX = "!";
 const cooldowns = new Map();
@@ -95,6 +94,9 @@ module.exports = async function handlePrefixMessage(client, msg) {
   const content = (msg.content || "").trim();
   if (!content.startsWith(CMD_PREFIX)) return;
 
+  // --- 実行メッセージも自動削除 ---
+  autoDeleteMsg(msg);
+
   const args = content.slice(CMD_PREFIX.length).split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
 
@@ -108,9 +110,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
   // ユーザー個別クールダウン
   if (cooldowns.has(msg.author.id)) {
     const lastUsed = cooldowns.get(msg.author.id);
-    if (Date.now() - lastUsed < COOLDOWN_TIME * 1000) {
-      return;
-    }
+    if (Date.now() - lastUsed < COOLDOWN_TIME * 1000) return;
   }
   cooldowns.set(msg.author.id, Date.now());
 
@@ -131,7 +131,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
       const h = Math.floor(uptime / 3600);
       const m = Math.floor((uptime % 3600) / 60);
       const s = Math.floor(uptime % 60);
-      await msg.reply(`稼働時間: ${h}時間${m}分${s}秒`);
+      const reply = await msg.reply(`稼働時間: ${h}時間${m}分${s}秒`);
+      autoDeleteMsg(reply);
       break;
     }
     case "天気": {
@@ -171,10 +172,12 @@ module.exports = async function handlePrefixMessage(client, msg) {
       break;
     }
     case "join": {
+      if (!msg.member?.voice?.channel) return msg.reply("VCに参加してください。");
       await joinVoice(msg.member.voice.channel);
       break;
     }
     case "play": {
+      if (!msg.member?.voice?.channel) return msg.reply("VCに参加してください。");
       const url = args.join(" ");
       await playUrl(msg.member.voice.channel, url);
       break;
@@ -184,20 +187,23 @@ module.exports = async function handlePrefixMessage(client, msg) {
       break;
     }
     case "leave": {
+      if (!msg.member?.voice?.channel) return msg.reply("VCに参加してください。");
       await leaveVoice(msg.member.voice.channel);
       break;
     }
     case "backup": {
       if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
       await backupServer(msg.guild);
-      await msg.reply("サーバーバックアップが完了しました。");
+      const reply = await msg.reply("サーバーバックアップが完了しました。");
+      autoDeleteMsg(reply);
       break;
     }
     case "restore": {
       if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
       const filename = args[0];
       await restoreServer(msg.guild, msg.channel, filename);
-      await msg.reply("サーバー復元が完了しました。");
+      const reply = await msg.reply("サーバー復元が完了しました。");
+      autoDeleteMsg(reply);
       break;
     }
     case "addrole": {
@@ -205,7 +211,8 @@ module.exports = async function handlePrefixMessage(client, msg) {
       const roleName = args.join(" ");
       if (!roleName) return msg.reply("ロール名を指定してください。");
       await addRoleToAll(msg.guild, roleName);
-      await msg.reply(`全ユーザーにロール「${roleName}」を付与しました。`);
+      const reply = await msg.reply(`全ユーザーにロール「${roleName}」を付与しました。`);
+      autoDeleteMsg(reply);
       break;
     }
     case "clear": {
@@ -220,18 +227,19 @@ module.exports = async function handlePrefixMessage(client, msg) {
       const ranking = await getRanking(msg.guild);
       if (!ranking.length) return msg.reply("今月のランキングデータはありません。");
       const rankingStr = ranking.map((u, i) => `${i + 1}位 <@${u.userId}>: ${u.count}回`).join("\n");
-      await msg.reply(`**月間アクティブユーザーランキング**\n${rankingStr}`);
+      const reply = await msg.reply(`**月間アクティブユーザーランキング**\n${rankingStr}`);
+      autoDeleteMsg(reply);
       break;
     }
     case "reset": {
       if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
       await resetServerChannels(msg.guild, msg.channel);
-      await msg.reply("サーバーのチャンネルをリセットしました。");
+      const reply = await msg.reply("サーバーのチャンネルをリセットしました。");
+      autoDeleteMsg(reply);
       break;
     }
-    default: {
-      // 未定義コマンド
+    default:
+      // 未定義コマンドは無視
       break;
-    }
   }
 };
