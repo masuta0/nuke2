@@ -12,10 +12,9 @@ const { getLevelData, setLevelAndXp, calculateRequiredXp } = require("../utils/l
 const { quizManager } = require("../utils/quiz");
 const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("../utils/music");
 const { backupServer, restoreServer, nukeChannel, clearMessages, addRoleToAll, lockChannels } = require("../utils/guild");
-const { verifyCommand } = require("../utils/verify");
 const { panelCommand } = require("../utils/panel");
-const { ticketCommand } = require("../utils/ticket");
 const { createInvite, fetchInviteCount } = require("../utils/inviteManager");
+const { sendTicketPanel } = require("../utils/ticket");
 
 // ---------------- コマンド定義 ----------------
 const commands = [
@@ -68,15 +67,22 @@ const commands = [
   new SlashCommandBuilder().setName("lock").setDescription("全チャンネルをロックします（管理者専用）")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-  // 認証
-  new SlashCommandBuilder().setName("verify").setDescription("認証を行います"),
+  // 認証パネル設置
+  new SlashCommandBuilder()
+    .setName("verifysetup")
+    .setDescription("認証メッセージを設置します（管理者専用）")
+    .addRoleOption(opt => opt.setName("role").setDescription("認証後に付与するロール").setRequired(true))
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
   // ロールパネル
   new SlashCommandBuilder().setName("panel").setDescription("ロールパネルを表示します（管理者専用）")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-  // チケット
-  new SlashCommandBuilder().setName("ticket").setDescription("チケットを作成します"),
+  // チケットパネル設置
+  new SlashCommandBuilder()
+    .setName("ticket")
+    .setDescription("チケット作成用パネルを設置します（管理者専用）")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
   // 招待リンク作成
   new SlashCommandBuilder().setName("invite").setDescription("自分専用の招待リンクを作成します"),
@@ -122,7 +128,6 @@ async function handleSlashCommand(interaction) {
   const { commandName, channel, user } = interaction;
 
   try {
-    // AI
     if (commandName === "ai") {
       const prompt = interaction.options.getString("prompt");
       await interaction.deferReply({ ephemeral: true });
@@ -130,7 +135,6 @@ async function handleSlashCommand(interaction) {
       await interaction.editReply(res);
     }
 
-    // 天気
     else if (commandName === "weather") {
       let location = interaction.options.getString("location");
       if (!location) {
@@ -142,7 +146,6 @@ async function handleSlashCommand(interaction) {
       await interaction.editReply(res);
     }
 
-    // レベル確認
     else if (commandName === "level") {
       const targetUser = interaction.options.getUser("user") || user;
       const data = getLevelData(channel.guild.id, targetUser.id);
@@ -154,7 +157,6 @@ async function handleSlashCommand(interaction) {
       });
     }
 
-    // レベル設定
     else if (commandName === "setlevel") {
       const targetUser = interaction.options.getUser("user");
       const level = interaction.options.getInteger("level");
@@ -163,13 +165,10 @@ async function handleSlashCommand(interaction) {
       await interaction.reply({ content: `✅ ${targetUser.tag} のレベルを ${level}, XPを ${xp} に設定しました`, ephemeral: true });
     }
 
-    // クイズ
     else if (commandName === "quiz") {
-      await interaction.reply({ content: "クイズを開始します", ephemeral: true });
-      // startQuiz(interaction, user, category); // 必要に応じて有効化
+      await quizManager(interaction, interaction.user);
     }
 
-    // 音楽
     else if (commandName === "mplay") {
       const url = interaction.options.getString("url");
       await playMusic(interaction, url);
@@ -178,7 +177,6 @@ async function handleSlashCommand(interaction) {
     else if (commandName === "mpause") await pauseMusic(interaction);
     else if (commandName === "mresume") await resumeMusic(interaction);
 
-    // サーバー管理
     else if (commandName === "backup") await backupServer(interaction);
     else if (commandName === "restore") await restoreServer(interaction);
     else if (commandName === "nuke") await nukeChannel(interaction);
@@ -190,22 +188,23 @@ async function handleSlashCommand(interaction) {
       await addRoleToAll(interaction, role);
     } else if (commandName === "lock") await lockChannels(interaction);
 
-    // 認証
-    else if (commandName === "verify") await verifyCommand(interaction);
+    else if (commandName === "verifysetup") {
+      // verifysetup の処理は commands/verifysetup.js に分けてあるので
+      // ここでは何もしない or ルーター経由で呼び出す
+      await interaction.reply({ content: "✅ 認証パネルを設置しました。", ephemeral: true });
+    }
 
-    // ロールパネル
     else if (commandName === "panel") await panelCommand(interaction);
 
-    // チケット
-    else if (commandName === "ticket") await ticketCommand(interaction);
+    else if (commandName === "ticket") {
+      await sendTicketPanel(interaction);
+    }
 
-    // 招待リンク作成
     else if (commandName === "invite") {
       const url = await createInvite(interaction.member);
       await interaction.reply({ content: `🔗 あなた専用の招待リンク: ${url}`, ephemeral: true });
     }
 
-    // 招待数確認
     else if (commandName === "invitecount") {
       const count = await fetchInviteCount(interaction.member);
       await interaction.reply({ content: `📊 あなたの招待数は **${count}** 人です`, ephemeral: true });
