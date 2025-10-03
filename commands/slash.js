@@ -8,7 +8,7 @@ const {
 
 const { chat } = require("../utils/ai");
 const { fetchWeather, loadUserWeatherPref } = require("../utils/weather");
-const verifySetup = require("../commands/verifysetup");
+const verifySetup = require("../utils/verify");
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require("../utils/level");
 const { quizManager } = require("../utils/quiz");
 const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("../utils/music");
