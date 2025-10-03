@@ -10,9 +10,9 @@ const {
   PermissionFlagsBits,
 } = require("discord.js");
 
-const TICKET_CATEGORY_ID = "1419438659433795673";
-const LOG_CHANNEL_ID = "1419418871986917446";
-const STAFF_ROLE_ID = "1419417500579528958";
+const TICKET_CATEGORY_ID = "1422418557635133522";
+const LOG_CHANNEL_ID = "1422418581995651082";
+const STAFF_ROLE_ID = "1422418421978501152";
 
 module.exports = {
   async sendTicketPanel(interaction) {

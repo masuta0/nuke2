@@ -8,7 +8,7 @@ function handleStopCommand(interaction) {
 
     if (!voiceConnection) {
         return interaction.reply({ 
-            content: '現在、ボイスチャンネルに接続していません。',
+            content: 'ボイスチャンネルに接続していません。',
             ephemeral: true 
         });
     }

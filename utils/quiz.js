@@ -6,10 +6,10 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
 let quizzes = {};
 const activeUsers = new Set(); // 参加中ユーザー管理
 const blockedChannelIds = [
-  "1415189080861315112",
-  "1416773830537642115",
-  "1409520151749070880",
-  "1410891781846994956"
+  "1422418627704914002",
+  "1422418631563804673",
+  "1422418642078928916",
+  "1422418645945946122"
 ]; // クイズ禁止チャンネル
 
 // クイズデータロード

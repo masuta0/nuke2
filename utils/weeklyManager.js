@@ -3,16 +3,13 @@ require('dotenv').config();
 const { PermissionsBitField } = require('discord.js');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('./storage');
 
-const REQUIRED_MESSAGES = 500;
+const REQUIRED_MESSAGES = 300;
 const COOLDOWN_TIME = 10 * 1000; // 10秒クールダウン
 const DROPBOX_WEEKLY_PATH = '/app-data/userWeeklyMessages.json';
 
 let messageCounts = {}; // { 'guildId_userId': count }
 let cooldowns = new Set();
 
-/**
- * Dropboxからデータロード
- */
 async function loadWeeklyData() {
   try {
     await ensureDropboxInit();
@@ -57,7 +54,7 @@ async function handleMessage(message, weeklyChannelId) {
     if (channel?.isTextBased()) {
       await channel.permissionOverwrites.edit(message.member, { SendMessages: true });
       await channel.send(
-        `🎉 ${message.member} が週間メッセージ500達成！\n宣伝チャンネルが開放されました！`
+        `🎉 ${message.member} が週間メッセージ300達成！\n宣伝チャンネルが開放されました！`
       );
     }
   }
