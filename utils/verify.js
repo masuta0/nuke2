@@ -1,6 +1,7 @@
 const { 
   SlashCommandBuilder, 
   EmbedBuilder, 
+  MessageFlags,
   ActionRowBuilder, 
   ButtonBuilder, 
   ButtonStyle, 
@@ -10,7 +11,6 @@ const {
   PermissionFlagsBits 
 } = require('discord.js');
 const { uploadToDropbox, downloadFromDropbox, ensureDropboxInit } = require('../utils/storage');
-
 const userCodes = new Map();
 const DROPBOX_VERIFY_DATA_PATH = '/bot_data/verifyData.json';
 
@@ -131,9 +131,11 @@ module.exports = {
       const member = await interaction.guild.members.fetch(interaction.user.id);
       await member.roles.add(verifyData.roleId);
       userCodes.delete(interaction.user.id);
-      await interaction.reply({ content: '✅ 認証に成功しました！ロールを付与しました', ephemeral: true });
-    } catch (err) {
-      console.error('❌ ロール付与失敗:', err);
+
+      await interaction.reply({ 
+        content: '✅ 認証完了', 
+        flags: MessageFlags.Ephemeral 
+      });
       await interaction.reply({ content: '❌ ロール付与に失敗しました', ephemeral: true });
     }
   },
