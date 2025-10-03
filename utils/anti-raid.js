@@ -1,6 +1,4 @@
 // utils/anti-raid.js
-// Discord.js v14 完全統合版 + 自動復元 + バックアップ機能
-
 const fs = require('fs');
 const path = require('path');
 const {
@@ -128,7 +126,7 @@ const MASS_SPAM_WINDOW = 5 * 1000; // 180ms(バグ)→5秒に修正
 const SIMILAR_MESSAGE_THRESHOLD = 5;
 const SIMILAR_MESSAGE_LENGTH = 10;
 
-const TIMEOUT_MS = 10 * 60 * 1000;
+const TIMEOUT_MS = 3 * 60 * 1000;
 const MARK_EXPIRE_MS = 48 * 60 * 60 * 1000;
 
 const SIMILARITY_DELETE_THRESHOLD = 8;
@@ -188,6 +186,7 @@ const executorActionLog = new Map();
 const probationAdmins = new Map();
 const massBanLog = new Map();
 const massNukeLog = new Map();
+const spamCounts = new Map();
 
 // ===== ユーティリティ =====
 function hasDangerousPerms(permBits) {
@@ -440,7 +439,31 @@ async function createOneTimeInvite(guild) {
     return null;
   }
 }
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
 
+    const userId = message.author.id;
+    const content = message.content;
+
+    // 前回のメッセージ取得
+    const prev = spamCounts.get(userId);
+
+    if (prev && prev.lastContent === content) {
+        // 同じ内容ならカウント増
+        prev.count += 1;
+    } else {
+        // 新しい内容ならリセット
+        spamCounts.set(userId, { count: 1, lastContent: content });
+    }
+
+    const userSpam = spamCounts.get(userId);
+
+    // 3回までは削除せず、4回目以降に削除
+    if (userSpam.count > 3) {
+        await message.delete();
+        // 削除後はカウントリセット
+        userSpam.count = 0;
+    }
 async function isReasonAppropriate(entry, reason) {
   if (!chat) return reason.length > 10;
   const prompt = `以下のDiscordサーバーの操作に対するユーザーの理由が適切かを判断してください。\n\n[操作]: ${AuditLogEvent[entry.action]}\n[理由]: ${reason}\n\n「適切」または「不適切」で回答してください。`;
