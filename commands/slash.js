@@ -187,13 +187,11 @@ async function handleSlashCommand(interaction) {
       const role = interaction.options.getRole("role");
       await addRoleToAll(interaction, role);
     } else if (commandName === "lock") await lockChannels(interaction);
-
-    else if (commandName === "verifysetup") {
-      // verifysetup の処理は commands/verifysetup.js に分けてあるので
-      // ここでは何もしない or ルーター経由で呼び出す
-      await interaction.reply({ content: "✅ 認証パネルを設置しました。", ephemeral: true });
-    }
-
+      else if (commandName === "verifysetup") {
+        const verifySetup = require("../commands/verifysetup");
+        await verifySetup.execute(interaction);
+        await interaction.followUp({ content: "✅ 認証パネルを設置しました。", ephemeral: true });
+      }
     else if (commandName === "panel") await panelCommand(interaction);
 
     else if (commandName === "ticket") {
