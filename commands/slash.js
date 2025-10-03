@@ -15,7 +15,7 @@ const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("..
 const { backupServer, restoreServer, nukeChannel, clearMessages, addRoleToAll, lockChannels } = require("../utils/guild");
 const { panelCommand } = require("../utils/panel");
 const { createInvite, fetchInviteCount } = require("../utils/inviteManager");
-const { sendTicketPanel } = require("../utils/ticket");
+const ticket = require("../utils/ticket"); // ★ 変更点: ticket.jsモジュールをインポート
 
 // ---------------- コマンド定義 ----------------
 const commands = [
@@ -190,12 +190,13 @@ async function handleSlashCommand(interaction) {
     } else if (commandName === "lock") await lockChannels(interaction);
       else if (commandName === "verifysetup") {
         await verifySetup.execute(interaction);
-        await interaction.followUp({ content: "✅ 認証パネルを設置しました。", ephemeral: true });
+        // interaction.followUp は verifysetup.js 内で行われるため、ここでは不要な場合が多い
+        // await interaction.followUp({ content: "✅ 認証パネルを設置しました。", ephemeral: true });
       }
     else if (commandName === "panel") await panelCommand(interaction);
 
     else if (commandName === "ticket") {
-      await sendTicketPanel(interaction);
+      await ticket.sendTicketPanel(interaction); // ★ 変更点: ticketオブジェクトの関数を呼び出す
     }
 
     else if (commandName === "invite") {
@@ -210,9 +211,9 @@ async function handleSlashCommand(interaction) {
   } catch (err) {
     console.error("❌ SlashCommand Error:", err);
     if (interaction.replied || interaction.deferred) {
-      await interaction.editReply("❌ コマンド実行中にエラーが発生しました");
+      await interaction.editReply({ content: "❌ コマンド実行中にエラーが発生しました", ephemeral: true });
     } else {
-      await interaction.reply("❌ コマンド実行中にエラーが発生しました");
+      await interaction.reply({ content: "❌ コマンド実行中にエラーが発生しました", ephemeral: true });
     }
   }
 }

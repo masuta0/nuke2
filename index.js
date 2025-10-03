@@ -32,7 +32,8 @@ const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
-const verify = require('./utils/verify'); // ここで verify を統一
+const verify = require('./utils/verify'); // 既存の認証システム
+const ticket = require('./utils/ticket'); // ★ 新しいチケットシステムをインポート
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
 const antiRaid = require('./utils/anti-raid');
 const {
@@ -83,20 +84,41 @@ const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log('Server listening on port ' + PORT));
 
-// === Interaction処理 ===
+
+// === Interaction処理 (★ 修正箇所) ===
 client.on('interactionCreate', async (interaction) => {
     try {
         if (interaction.isChatInputCommand()) {
             await handleSlashCommand(interaction);
+
         } else if (interaction.isButton()) {
-            await verify.buttonHandler(interaction);
+            // customIdの接頭辞でどの機能のボタンかを判断する
+            if (interaction.customId.startsWith('ticket_')) {
+                await ticket.buttonHandler(interaction);
+            } else {
+                // 接頭辞がなければ（あるいは 'verify_' などであれば）認証処理へ
+                await verify.buttonHandler(interaction);
+            }
+
         } else if (interaction.isModalSubmit()) {
-            await verify.modalHandler(interaction);
+            // customIdの接頭辞でどの機能のモーダルかを判断する
+            if (interaction.customId.startsWith('ticket_')) {
+                await ticket.modalHandler(interaction);
+            } else {
+                 // 接頭辞がなければ（あるいは 'verify_' などであれば）認証処理へ
+                await verify.modalHandler(interaction);
+            }
         }
     } catch (err) {
         console.error('interactionCreate error:', err);
+        if (interaction.deferred || interaction.replied) {
+            await interaction.followUp({ content: 'エラーが発生しました。', ephemeral: true }).catch(() => {});
+        } else {
+            await interaction.reply({ content: 'エラーが発生しました。', ephemeral: true }).catch(() => {});
+        }
     }
 });
+
 
 // === Readyイベント ===
 client.once('ready', async () => {
