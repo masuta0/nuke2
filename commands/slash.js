@@ -18,8 +18,8 @@ const { createInvite, fetchInviteCount } = require("../utils/inviteManager");
 const ticket = require("../utils/ticket"); // ★ 変更点: ticket.jsモジュールをインポート
 const rolePanel = require("../utils/rolepanel"); 
 // ---------------- コマンド定義 ----------------
-...rolePanel.data,
 const commands = [
+  ...rolePanel.data,
   new SlashCommandBuilder()
     .setName("ai")
     .setDescription("AIと対話します")
