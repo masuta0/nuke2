@@ -64,9 +64,9 @@ async function isSimilarFace(imgUrl) {
   }
 
   const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
-  console.log(`🔍 顔の距離: ${distance.toFixed(3)} (閾値: 0.6)`);
+  console.log(`🔍 顔の距離: ${distance.toFixed(3)} (閾値: 0.2)`);
 
-  return distance < 0.6;
+  return distance < 0.2;
 }
 
 module.exports = {
