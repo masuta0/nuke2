@@ -16,7 +16,7 @@ const { backupServer, restoreServer, nukeChannel, clearMessages, addRoleToAll, l
 const { panelCommand } = require("../utils/panel");
 const { createInvite, fetchInviteCount } = require("../utils/inviteManager");
 const ticket = require("../utils/ticket"); // ★ 変更点: ticket.jsモジュールをインポート
-const rolePanel = require("./rolepanel"); 
+const rolePanel = require("../utils/rolepanel"); 
 // ---------------- コマンド定義 ----------------
 ...rolePanel.data,
 const commands = [
