@@ -11,7 +11,7 @@ const {
     ActivityType,
     ChannelType
 } = require('discord.js');
-const rolePanel = require('./commands/rolepanel');
+const rolePanel = require('./utils/rolepanel');
 const {
     joinVoice,
     playUrl,
