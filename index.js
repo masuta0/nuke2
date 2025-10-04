@@ -11,7 +11,7 @@ const {
     ActivityType,
     ChannelType
 } = require('discord.js');
-
+const rolePanel = require('./commands/rolepanel');
 const {
     joinVoice,
     playUrl,
@@ -85,40 +85,52 @@ app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log('Server listening on port ' + PORT));
 
 
-// === Interaction処理 (★ 修正箇所) ===
+// === Interaction処理 (★ 修正版) ===
 client.on('interactionCreate', async (interaction) => {
-    try {
-        if (interaction.isChatInputCommand()) {
-            await handleSlashCommand(interaction);
+  try {
+    if (interaction.isChatInputCommand()) {
+      // スラッシュコマンド処理
+      await handleSlashCommand(interaction);
 
-        } else if (interaction.isButton()) {
-            // customIdの接頭辞でどの機能のボタンかを判断する
-            if (interaction.customId.startsWith('ticket_')) {
-                await ticket.buttonHandler(interaction);
-            } else {
-                // 接頭辞がなければ（あるいは 'verify_' などであれば）認証処理へ
-                await verify.buttonHandler(interaction);
-            }
+    } else if (interaction.isButton()) {
+      // ボタン処理
+      if (interaction.customId.startsWith('ticket_')) {
+        await ticket.buttonHandler(interaction);
+      } else if (interaction.customId.startsWith('role_button_')) {
+        await rolePanel.buttonHandler(interaction);
+      } else {
+        await verify.buttonHandler(interaction);
+      }
 
-        } else if (interaction.isModalSubmit()) {
-            // customIdの接頭辞でどの機能のモーダルかを判断する
-            if (interaction.customId.startsWith('ticket_')) {
-                await ticket.modalHandler(interaction);
-            } else {
-                 // 接頭辞がなければ（あるいは 'verify_' などであれば）認証処理へ
-                await verify.modalHandler(interaction);
-            }
-        }
-    } catch (err) {
-        console.error('interactionCreate error:', err);
-        if (interaction.deferred || interaction.replied) {
-            await interaction.followUp({ content: 'エラーが発生しました。', ephemeral: true }).catch(() => {});
-        } else {
-            await interaction.reply({ content: 'エラーが発生しました。', ephemeral: true }).catch(() => {});
-        }
+    } else if (interaction.isModalSubmit()) {
+      // モーダル送信処理
+      if (interaction.customId.startsWith('ticket_')) {
+        await ticket.modalHandler(interaction);
+      } else if (interaction.customId.startsWith('verify_')) {
+        await verify.modalHandler(interaction);
+      } else {
+        console.warn('未処理のモーダルID:', interaction.customId);
+      }
     }
+  } catch (err) {
+    console.error('interactionCreate error:', err);
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({
+          content: '⚠️ エラーが発生しました。',
+          ephemeral: true,
+        });
+      } else {
+        await interaction.reply({
+          content: '⚠️ エラーが発生しました。',
+          ephemeral: true,
+        });
+      }
+    } catch (e) {
+      console.error('followUp/reply error:', e);
+    }
+  }
 });
-
 
 // === Readyイベント ===
 client.once('ready', async () => {
