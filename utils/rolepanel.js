@@ -6,6 +6,7 @@ const {
   ButtonBuilder,
   ButtonStyle,
   PermissionFlagsBits,
+  MessageFlags, // ★ 追加
 } = require('discord.js');
 
 // ロール検索処理（メンション・ID・名前対応）
@@ -88,7 +89,7 @@ module.exports = {
         .filter(r => r);
 
       if (!roles.length) {
-        return interaction.reply({ content: '❌ 有効なロールが見つかりませんでした。', ephemeral: true });
+        return interaction.reply({ content: '❌ 有効なロールが見つかりませんでした。', flags: MessageFlags.Ephemeral });
       }
 
       const embed = new EmbedBuilder()
@@ -110,13 +111,13 @@ module.exports = {
 
       return interaction.reply({
         content: `✅ ロールパネルを作成しました！（メッセージID: \`${panelMessage.id}\`）`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 
     // === /rolepaneladd ===
     if (name === 'rolepaneladd') {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
       const messageId = interaction.options.getString('message_id');
       const rolesInput = interaction.options.getString('roles');
@@ -179,15 +180,15 @@ module.exports = {
     const role = interaction.guild.roles.cache.get(roleId);
 
     if (!role) {
-      return interaction.reply({ content: '❌ 指定されたロールが見つかりません。', ephemeral: true });
+      return interaction.reply({ content: '❌ 指定されたロールが見つかりません。', flags: MessageFlags.Ephemeral });
     }
 
     if (member.roles.cache.has(roleId)) {
       await member.roles.remove(roleId);
-      return interaction.reply({ content: `✅ ロール **${role.name}** を外しました。`, ephemeral: true });
+      return interaction.reply({ content: `✅ ロール **${role.name}** を外しました。`, flags: MessageFlags.Ephemeral });
     } else {
       await member.roles.add(roleId);
-      return interaction.reply({ content: `✅ ロール **${role.name}** を付与しました。`, ephemeral: true });
+      return interaction.reply({ content: `✅ ロール **${role.name}** を付与しました。`, flags: MessageFlags.Ephemeral });
     }
   },
 };
