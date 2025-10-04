@@ -13,13 +13,15 @@ const { getLevelData, setLevelAndXp, calculateRequiredXp } = require("../utils/l
 const { quizManager } = require("../utils/quiz");
 const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("../utils/music");
 const { backupServer, restoreServer, nukeChannel, clearMessages, addRoleToAll, lockChannels } = require("../utils/guild");
-const { panelCommand } = require("../utils/panel");
-const { createInvite, fetchInviteCount } = require("../utils/inviteManager");
-const ticket = require("../utils/ticket"); // ★ 変更点: ticket.jsモジュールをインポート
-const rolePanel = require("../utils/rolepanel"); 
+// const { panelCommand } = require("../utils/panel"); // ★ 削除: 既存の /panel コマンドのインポート
+const ticket = require("../utils/ticket"); 
+// const rolePanel = require("../utils/panel"); // ★ 削除: 既存のロールパネル関連のインポート
+
+// ★ 新しいロールパネルコマンドをインポート
+const rolePanelCommands = require("./rolepanel"); 
+
 // ---------------- コマンド定義 ----------------
 const commands = [
-  ...rolePanel.data,
   new SlashCommandBuilder()
     .setName("ai")
     .setDescription("AIと対話します")
@@ -76,9 +78,8 @@ const commands = [
     .addRoleOption(opt => opt.setName("role").setDescription("認証後に付与するロール").setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
-  // ロールパネル
-  new SlashCommandBuilder().setName("panel").setDescription("ロールパネルを表示します（管理者専用）")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  // ★ ロールパネル: 新しい rolepanel.js からコマンド定義を展開
+  ...rolePanelCommands.data,
 
   // チケットパネル設置
   new SlashCommandBuilder()
@@ -101,6 +102,7 @@ async function registerSlashCommands(client) {
 
   try {
     console.log("📌 スラッシュコマンド登録開始");
+    // 新しいコマンドを登録するために、Bot起動時に実行してください
     await rest.put(Routes.applicationCommands(client.user.id), {
       body: commands.map(c => c.toJSON()),
     });
@@ -189,15 +191,20 @@ async function handleSlashCommand(interaction) {
       const role = interaction.options.getRole("role");
       await addRoleToAll(interaction, role);
     } else if (commandName === "lock") await lockChannels(interaction);
-      else if (commandName === "verifysetup") {
-        await verifySetup.execute(interaction);
-        // interaction.followUp は verifysetup.js 内で行われるため、ここでは不要な場合が多い
-        // await interaction.followUp({ content: "✅ 認証パネルを設置しました。", ephemeral: true });
-      }
-    else if (commandName === "panel") await panelCommand(interaction);
+
+    else if (commandName === "verifysetup") {
+      await verifySetup.execute(interaction);
+    }
+
+    // else if (commandName === "panel") await panelCommand(interaction); // ★ 削除: 既存の /panel コマンドの実行処理
+
+    // ★ 新しいロールパネルコマンドの実行処理
+    else if (commandName === "rolepanel" || commandName === "rolepaneladd") {
+      await rolePanelCommands.execute(interaction);
+    }
 
     else if (commandName === "ticket") {
-      await ticket.sendTicketPanel(interaction); // ★ 変更点: ticketオブジェクトの関数を呼び出す
+      await ticket.sendTicketPanel(interaction);
     }
 
     else if (commandName === "invite") {
@@ -219,7 +226,18 @@ async function handleSlashCommand(interaction) {
   }
 }
 
+// ---------------- ボタン実行処理 ----------------
+// メインファイルで role_button_XXX のボタンが押されたときに呼び出されることを想定
+async function handleButtonInteraction(interaction) {
+  if (!interaction.isButton()) return;
+  if (interaction.customId.startsWith("role_button_")) {
+    await rolePanelCommands.buttonHandler(interaction);
+  }
+  // 他のカスタムIDのボタン処理はここに続く
+}
+
 module.exports = {
   registerSlashCommands,
   handleSlashCommand,
+  handleButtonInteraction, // メインファイルで interactionCreate イベントから呼び出す
 };

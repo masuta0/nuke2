@@ -6,18 +6,20 @@ const {
   ButtonBuilder,
   ButtonStyle,
   PermissionFlagsBits,
-  MessageFlags, // ★ 追加
 } = require('discord.js');
 
 // ロール検索処理（メンション・ID・名前対応）
 function parseRole(query, guild) {
   let role = null;
 
+  // メンション <@&123456789>
   const mentionMatch = query.match(/^<@&(\d+)>$/);
   if (mentionMatch) role = guild.roles.cache.get(mentionMatch[1]);
 
+  // ID
   if (!role && /^\d+$/.test(query)) role = guild.roles.cache.get(query);
 
+  // 名前
   if (!role) {
     role =
       guild.roles.cache.find(r => r.name.toLowerCase() === query.toLowerCase()) ||
@@ -27,7 +29,7 @@ function parseRole(query, guild) {
   return role;
 }
 
-// ボタンを行ごとに分割（1行5個まで）
+// ボタンを行ごとに分割する（1行5個まで）
 function chunkButtons(buttons) {
   const rows = [];
   for (let i = 0; i < buttons.length; i += 5) {
@@ -37,7 +39,7 @@ function chunkButtons(buttons) {
 }
 
 module.exports = {
-  // --- コマンド定義 ---
+  // スラッシュコマンド定義
   data: [
     new SlashCommandBuilder()
       .setName('rolepanel')
@@ -74,7 +76,7 @@ module.exports = {
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
   ],
 
-  // --- 実行処理 ---
+  // スラッシュコマンド実行処理
   async execute(interaction) {
     const name = interaction.commandName;
 
@@ -89,14 +91,14 @@ module.exports = {
         .filter(r => r);
 
       if (!roles.length) {
-        return interaction.reply({ content: '❌ 有効なロールが見つかりませんでした。', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: '❌ 有効なロールが見つかりませんでした。', ephemeral: true });
       }
 
       const embed = new EmbedBuilder()
         .setColor('Purple')
         .setTitle('ロール選択パネル')
         .setDescription(message)
-        .addFields(roles.map(role => ({ name: role.name, value: 'ボタンを押すと付与/解除できます。' })));
+        .addFields(roles.map(role => ({ name: role.name, value: 'ボタンを押すと付与/解除できます。', inline: true }))); // inline: true を追加して見やすく
 
       const buttons = roles.map(role =>
         new ButtonBuilder()
@@ -111,13 +113,13 @@ module.exports = {
 
       return interaction.reply({
         content: `✅ ロールパネルを作成しました！（メッセージID: \`${panelMessage.id}\`）`,
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
       });
     }
 
     // === /rolepaneladd ===
     if (name === 'rolepaneladd') {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await interaction.deferReply({ ephemeral: true });
 
       const messageId = interaction.options.getString('message_id');
       const rolesInput = interaction.options.getString('roles');
@@ -131,9 +133,10 @@ module.exports = {
         return interaction.editReply({ content: '❌ メッセージが見つかりませんでした。' });
       }
 
+      // 既存のEmbedを取得
       const embed = panelMessage.embeds[0];
-      if (!embed) {
-        return interaction.editReply({ content: '❌ このメッセージにはEmbedがありません。' });
+      if (!embed || embed.title !== 'ロール選択パネル') {
+        return interaction.editReply({ content: '❌ これはロールパネルのメッセージではありません。' });
       }
 
       const oldRows = panelMessage.components;
@@ -144,21 +147,21 @@ module.exports = {
         .filter(r => r && !existingButtons.some(b => b.customId === `role_button_${r.id}`));
 
       if (!newRoles.length) {
-        return interaction.editReply({ content: '⚠️ 新しく追加できるロールが見つかりませんでした。' });
+        return interaction.editReply({ content: '⚠️ 新しく追加できる有効なロールが見つかりませんでした。（既存のロールはスキップされます）' });
       }
 
+      // 新しいEmbedフィールドを生成
       const newFields = newRoles.map(role => ({
         name: role.name,
-        value: 'ボタンを押すと付与/解除できます。'
+        value: 'ボタンを押すと付与/解除できます。',
+        inline: true
       }));
 
+      // 既存のフィールドと新しいフィールドを結合してEmbedを更新
       const updatedEmbed = EmbedBuilder.from(embed).addFields(newFields);
 
       const newButtons = newRoles.map(role =>
-        new ButtonBuilder()
-          .setCustomId(`role_button_${role.id}`)
-          .setLabel(role.name)
-          .setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId(`role_button_${role.id}`).setLabel(role.name).setStyle(ButtonStyle.Primary)
       );
 
       const rows = chunkButtons([...existingButtons, ...newButtons]);
@@ -168,27 +171,41 @@ module.exports = {
         await interaction.editReply({ content: `✅ ${newRoles.length}個のロールを追加しました！` });
       } catch (err) {
         console.error(err);
-        await interaction.editReply({ content: '❌ メッセージの編集に失敗しました。' });
+        await interaction.editReply({ content: '❌ メッセージの編集に失敗しました。ボタンやロールが多すぎる可能性があります。' });
       }
     }
   },
 
-  // --- ボタン処理 ---
+  // === ボタン処理 ===
   async buttonHandler(interaction) {
+    if (!interaction.isButton()) return;
+
+    await interaction.deferReply({ ephemeral: true });
+
     const [_, __, roleId] = interaction.customId.split('_');
     const member = interaction.member;
     const role = interaction.guild.roles.cache.get(roleId);
 
     if (!role) {
-      return interaction.reply({ content: '❌ 指定されたロールが見つかりません。', flags: MessageFlags.Ephemeral });
+      return interaction.editReply({ content: '❌ 指定されたロールが見つかりません。' });
     }
 
-    if (member.roles.cache.has(roleId)) {
-      await member.roles.remove(roleId);
-      return interaction.reply({ content: `✅ ロール **${role.name}** を外しました。`, flags: MessageFlags.Ephemeral });
-    } else {
-      await member.roles.add(roleId);
-      return interaction.reply({ content: `✅ ロール **${role.name}** を付与しました。`, flags: MessageFlags.Ephemeral });
+    // Botのロールが対象ロールより上にあるか確認
+    if (interaction.guild.members.me.roles.highest.position <= role.position) {
+        return interaction.editReply({ content: `❌ ロール **${role.name}** の付与/解除に失敗しました。Botのロールがこのロールより下にあります。` });
+    }
+
+    try {
+      if (member.roles.cache.has(roleId)) {
+        await member.roles.remove(roleId);
+        return interaction.editReply({ content: `✅ ロール **${role.name}** を外しました。` });
+      } else {
+        await member.roles.add(roleId);
+        return interaction.editReply({ content: `✅ ロール **${role.name}** を付与しました。` });
+      }
+    } catch (error) {
+        console.error(`ロール処理エラー: ${error.message}`);
+        return interaction.editReply({ content: '❌ ロールの付与/解除中に予期せぬエラーが発生しました。' });
     }
   },
 };

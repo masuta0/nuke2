@@ -11,7 +11,7 @@ const {
     ActivityType,
     ChannelType
 } = require('discord.js');
-const rolePanel = require('./utils/rolepanel');
+// const rolePanel = require('./utils/rolepanel'); // ★ utils/rolepanel は削除し、commands/slash からのインポートに頼る
 const {
     joinVoice,
     playUrl,
@@ -25,7 +25,8 @@ const {
 } = require('./utils/face');
 const {
     registerSlashCommands,
-    handleSlashCommand
+    handleSlashCommand,
+    handleButtonInteraction // ★ 変更点: ボタンハンドラをインポート
 } = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
@@ -97,7 +98,8 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.customId.startsWith('ticket_')) {
         await ticket.buttonHandler(interaction);
       } else if (interaction.customId.startsWith('role_button_')) {
-        await rolePanel.buttonHandler(interaction);
+        // await rolePanel.buttonHandler(interaction); // ★ 既存の処理を削除
+        await handleButtonInteraction(interaction); // ★ 変更点: slash.jsの統合ボタンハンドラを呼び出す
       } else {
         await verify.buttonHandler(interaction);
       }
