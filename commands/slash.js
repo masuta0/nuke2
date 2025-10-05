@@ -13,9 +13,9 @@ const { getLevelData, setLevelAndXp, calculateRequiredXp } = require("../utils/l
 const { quizManager } = require("../utils/quiz");
 const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("../utils/music");
 const { backupServer, restoreServer, nukeChannel, clearMessages, addRoleToAll, lockChannels } = require("../utils/guild");
-// const { panelCommand } = require("../utils/panel"); // ★ 削除: 既存の /panel コマンドのインポート
+// const { panelCommand } = require("../utils/panel"); // ★ 削除
 const ticket = require("../utils/ticket"); 
-// const rolePanel = require("../utils/panel"); // ★ 削除: 既存のロールパネル関連のインポート
+// const rolePanel = require("../utils/panel"); // ★ 削除
 
 // ★ 新しいロールパネルコマンドをインポート
 const rolePanelCommands = require("./rolepanel"); 
@@ -187,16 +187,21 @@ async function handleSlashCommand(interaction) {
     else if (commandName === "clear") {
       const amount = interaction.options.getInteger("amount");
       await clearMessages(interaction, amount);
-    } else if (commandName === "addroleall") {
+    } 
+
+    // ★ /addroleall 実行ロジック (変更なし、問題はユーティリティ側にある可能性が高い)
+    else if (commandName === "addroleall") {
       const role = interaction.options.getRole("role");
       await addRoleToAll(interaction, role);
-    } else if (commandName === "lock") await lockChannels(interaction);
+    } 
+
+    else if (commandName === "lock") await lockChannels(interaction);
 
     else if (commandName === "verifysetup") {
       await verifySetup.execute(interaction);
     }
 
-    // else if (commandName === "panel") await panelCommand(interaction); // ★ 削除: 既存の /panel コマンドの実行処理
+    // else if (commandName === "panel") await panelCommand(interaction); // ★ 削除
 
     // ★ 新しいロールパネルコマンドの実行処理
     else if (commandName === "rolepanel" || commandName === "rolepaneladd") {
@@ -230,6 +235,7 @@ async function handleSlashCommand(interaction) {
 // メインファイルで role_button_XXX のボタンが押されたときに呼び出されることを想定
 async function handleButtonInteraction(interaction) {
   if (!interaction.isButton()) return;
+  // role_button_XXX のカスタムIDを持つボタンを rolepanel.js のハンドラに渡す
   if (interaction.customId.startsWith("role_button_")) {
     await rolePanelCommands.buttonHandler(interaction);
   }
