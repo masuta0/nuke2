@@ -55,7 +55,7 @@ const {
 } = require('./utils/activity');
 
 // === 設定 ===
-const ACTIVE_ROLE_ID = '1422418430958501982';
+const ACTIVE_ROLE_ID = '1425643672900472964';
 const TOKEN = process.env.TOKEN;
 const PORT = process.env.PORT || 3000;
 const WEEKLY_CHANNEL_ID = process.env.WEEKLY_CHANNEL_ID || null;
