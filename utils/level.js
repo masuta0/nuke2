@@ -13,7 +13,7 @@ const xpCooldown = new Set();
 const COOLDOWN_TIME = 30 * 1000; 
 
 const levelLogChannels = {
-  "1420924251824848988": "1425643771206570117",
+  "1420924251824848988": "1425643757902106704",
 };
 
 // データロード
