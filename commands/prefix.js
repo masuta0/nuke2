@@ -215,14 +215,15 @@ module.exports = async function handlePrefixMessage(client, msg) {
       autoDeleteMsg(reply);
       break;
     }
-    case "clear": {
-      if (!msg.member.permissions.has("MANAGE_MESSAGES")) return msg.reply("権限がありません。");
-      const amount = parseInt(args[0]);
-      if (isNaN(amount) || amount < 1) return msg.reply("削除数を指定してください。");
-      const user = msg.mentions.users.first();
-      await clearMessages(msg.channel, amount, user);
-      break;
-    }
+      case "clear": {
+        if (!msg.member.permissions.has("MANAGE_MESSAGES")) return msg.reply("権限がありません。");
+        const amount = parseInt(args[0]);
+        if (isNaN(amount) || amount < 1) return msg.reply("削除数を指定してください。");
+        const targetMember = msg.mentions.members.first() || null;
+        await msg.delete().catch(() => {});
+        await clearMessages(msg.channel, amount, msg.channel, targetMember);
+        break;
+      }
     case "ranking": {
       const ranking = await getRanking(msg.guild);
       if (!ranking.length) return msg.reply("今月のランキングデータはありません。");
