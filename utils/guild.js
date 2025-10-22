@@ -329,39 +329,144 @@ async function restoreServer(guild, feedbackChannel, filename) {
 }
 
 async function nukeChannel(channel) {
-  const overwrites = channel.permissionOverwrites?.cache?.map(ow => ({
-    id: ow.id,
-    allow: ow.allow.bitfield.toString(),
-    deny: ow.deny.bitfield.toString(),
-    type: ow.type
-  })) || [];
-  const payload = {
-    name: channel.name,
-    type: channel.type,
-    parent: channel.parentId ?? null,
-    position: channel.rawPosition,
-    rateLimitPerUser: channel.rateLimitPerUser ?? 0,
-    nsfw: !!channel.nsfw,
-    topic: channel.topic || null,
-    bitrate: channel.bitrate || null,
-    userLimit: channel.userLimit || null,
-    reason: 'Nuke: recreate channel'
-  };
-  const newCh = await channel.guild.channels.create(payload);
-  if (overwrites.length) {
-    await newCh.permissionOverwrites.set(
-      overwrites.map(ow => ({
-        id: ow.id,
-        allow: BigInt(ow.allow),
-        deny: BigInt(ow.deny),
-        type: ow.type
-      })),
-      'Nuke: set overwrites'
-    );
+  // ロギング対象チャンネルID（保存先チャンネル）
+  const NUKE_LOG_CHANNEL_ID = '1425643752982319227';
+
+  // 1) 削除前にチャンネル内のメッセージを可能な限り取得してログ化
+  let allMessages = [];
+  try {
+    if (channel.isTextBased && channel.isTextBased()) {
+      let lastId = null;
+      while (true) {
+        const options = { limit: 100 };
+        if (lastId) options.before = lastId;
+        const fetched = await channel.messages.fetch(options);
+        if (!fetched || fetched.size === 0) break;
+        // fetched は降順（新しい順）なのでそのまま追加していく
+        allMessages.push(...Array.from(fetched.values()));
+        if (fetched.size < 100) break;
+        lastId = fetched.last().id;
+        // 少し待つことでレートリミットの影響を低減
+        await delay(200);
+      }
+    } else {
+      console.warn('nukeChannel: channel is not text-based, skipping message fetch.');
+    }
+  } catch (e) {
+    console.error('nukeChannel: failed to fetch messages for logging:', e);
   }
-  try { await channel.delete('Nuke: delete old'); } catch {}
-  try { await newCh.send('✅ チャンネルをNukeしました'); } catch {}
-  return newCh;
+
+  // 2) ログテキストの整形（古い順 → 新しい順で出力する）
+  let logText = '';
+  try {
+    const guild = channel.guild;
+    const header = [
+      `Guild: ${guild?.name || 'unknown'} (${guild?.id || 'unknown'})`,
+      `Channel: ${channel?.name || 'unknown'} (${channel?.id || 'unknown'})`,
+      `NukeTime: ${new Date().toISOString()}`,
+      `CollectedMessages: ${allMessages.length}`,
+      '---',
+      ''
+    ].join('\n');
+    // ソート：古い順
+    allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+    const lines = allMessages.map(msg => {
+      const ts = new Date(msg.createdTimestamp).toISOString();
+      // 表示名を試しに取得（msg.member がない場合は guild.members.cache を参照、最後は username）
+      const displayName = (msg.member && msg.member.displayName)
+        || (guild?.members?.cache?.get(msg.author?.id)?.displayName)
+        || msg.author?.username || 'unknown';
+      const authorTag = msg.author?.tag || (msg.author?.username ? `${msg.author.username}` : 'unknown');
+      const content = msg.content?.replace(/\r?\n/g, ' ') || '';
+      const attachments = msg.attachments && msg.attachments.size ? ` [attachments: ${msg.attachments.map(a => a.url).join(', ')}]` : '';
+      return `[${ts}] ${displayName} (${authorTag}, ${msg.author?.id}): ${content}${attachments}`;
+    });
+    logText = header + lines.join('\n') + '\n';
+  } catch (e) {
+    console.error('nukeChannel: failed to format log text:', e);
+    logText = `Failed to format log: ${String(e)}`;
+  }
+
+  // 3) ローカルに .txt ファイルで保存
+  let filename;
+  try {
+    filename = `${channel.guild?.id || 'guild'}_${channel.id}_nuke_log_${Date.now()}.txt`;
+    const filePath = path.join(BACKUP_DIR, filename);
+    fs.writeFileSync(filePath, logText, 'utf8');
+    console.log(`nukeChannel: saved nuke log locally: ${filePath}`);
+  } catch (e) {
+    console.error('nukeChannel: failed to write local log file:', e);
+  }
+
+  // 4) 指定チャンネルへログファイルを送信（存在すれば）
+  try {
+    const guild = channel.guild;
+    let logCh = null;
+    try {
+      logCh = await guild.channels.fetch(NUKE_LOG_CHANNEL_ID);
+    } catch (e) {
+      // fetch 失敗時は null のまま
+      logCh = null;
+    }
+    if (logCh && logCh.isTextBased && logCh.isTextBased()) {
+      // Buffer を使ってメモリ上から送信（ローカルに書いたファイルも既にある）
+      await logCh.send({
+        content: `🧾 Nuke log for #${channel.name} (${channel.id}) in guild ${guild?.name || guild?.id}`,
+        files: [
+          {
+            attachment: Buffer.from(logText, 'utf8'),
+            name: filename || `nuke_log_${channel.id}.txt`
+          }
+        ]
+      }).catch(e => {
+        console.error('nukeChannel: failed to send log file to log channel:', e);
+      });
+    } else {
+      console.warn(`nukeChannel: log channel ${NUKE_LOG_CHANNEL_ID} not found or not text-based in guild ${guild.id}`);
+    }
+  } catch (e) {
+    console.error('nukeChannel: unexpected error when sending log file:', e);
+  }
+
+  // 5) 元の nuke 処理（チャンネル再作成・権限復元・削除）
+  try {
+    const overwrites = channel.permissionOverwrites?.cache?.map(ow => ({
+      id: ow.id,
+      allow: ow.allow.bitfield.toString(),
+      deny: ow.deny.bitfield.toString(),
+      type: ow.type
+    })) || [];
+    const payload = {
+      name: channel.name,
+      type: channel.type,
+      parent: channel.parentId ?? null,
+      position: channel.rawPosition,
+      rateLimitPerUser: channel.rateLimitPerUser ?? 0,
+      nsfw: !!channel.nsfw,
+      topic: channel.topic || null,
+      bitrate: channel.bitrate || null,
+      userLimit: channel.userLimit || null,
+      reason: 'Nuke: recreate channel'
+    };
+    const newCh = await channel.guild.channels.create(payload);
+    if (overwrites.length) {
+      await newCh.permissionOverwrites.set(
+        overwrites.map(ow => ({
+          id: ow.id,
+          allow: BigInt(ow.allow),
+          deny: BigInt(ow.deny),
+          type: ow.type
+        })),
+        'Nuke: set overwrites'
+      );
+    }
+    try { await channel.delete('Nuke: delete old'); } catch (e) { console.error('nukeChannel: failed to delete old channel:', e); }
+    try { await newCh.send('✅ チャンネルをNukeしました'); } catch (e) { console.error('nukeChannel: failed to send confirmation message:', e); }
+    return newCh;
+  } catch (e) {
+    console.error('nukeChannel: error during recreate/delete:', e);
+    throw e;
+  }
 }
 
 /**
