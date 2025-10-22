@@ -428,27 +428,61 @@ async function clearMessages(channel, amount, feedbackChannel = null, targetUser
   return deletedCount;
 }
 
-async function addRoleToAll(guild, roleName) {
-  const role = guild.roles.cache.find(r => r.name === roleName || r.id === roleName);
+/**
+ * 指定したギルドの全メンバーにロールを付与する
+ * - roleOrName は Role オブジェクト / ロールID / ロール名 のいずれかを受け取ります
+ * - ボットアカウントはスキップされます
+ * @param {Guild} guild 
+ * @param {Role|string|object} roleOrName
+ * @returns {Promise<{success: boolean, count?: number, error?: string}>}
+ */
+async function addRoleToAll(guild, roleOrName) {
+  if (!guild) return { success: false, error: 'Guild が指定されていません。' };
+
+  // roleOrName が Role オブジェクトならそのまま、それ以外は検索
+  let role = null;
+  if (roleOrName && typeof roleOrName === 'object' && roleOrName.id) {
+    role = roleOrName;
+  } else if (roleOrName != null) {
+    const q = String(roleOrName).trim();
+    role = guild.roles.cache.find(r => r.id === q || r.name === q || r.name.toLowerCase() === q.toLowerCase());
+  }
+
   if (!role) {
     return { success: false, error: '指定されたロールが見つかりません。' };
   }
+
   let count = 0;
   try {
     const members = await guild.members.fetch();
     for (const member of members.values()) {
-      if (!member.roles.cache.has(role.id)) {
-        await member.roles.add(role);
+      try {
+        // ボットは対象外
+        if (member.user?.bot) continue;
+
+        // 既にロールを持っている場合はスキップ
+        if (member.roles.cache.has(role.id)) continue;
+
+        // member にロールを付与（失敗しても処理は継続）
+        await member.roles.add(role).catch(e => {
+          console.error(`Failed to add role to ${member.user?.tag || member.id}:`, e);
+        });
+
         count++;
+        // 連続操作を抑制
         await delay(500);
+      } catch (e) {
+        // 個別メンバーで予期しないエラーが出ても続行
+        console.error(`Error processing member ${member.user?.tag || member.id}:`, e);
       }
     }
     return { success: true, count: count };
   } catch (e) {
     console.error(`Error adding role to all members: ${e}`);
-    return { success: false, error: e.message };
+    return { success: false, error: e.message || String(e) };
   }
 }
+
 // サーバーのチャンネルを全削除してgeneralチャンネルのみ再作成
 async function resetServerChannels(guild, feedbackChannel = null) {
   try {
@@ -464,9 +498,10 @@ async function resetServerChannels(guild, feedbackChannel = null) {
     if (feedbackChannel) await feedbackChannel.send("✅ サーバーのチャンネルをリセットし、generalチャンネルを作成しました。");
   } catch (e) {
     console.error("resetServerChannels error:", e);
-    if (feedbackChannel) await feedbackChannel.send("❌ チャンネルリセット中にエラーが発生しました。");
+    if (feedbackChannel) feedbackChannel.send("❌ チャンネルリセット中にエラーが発生しました。").catch(()=>{});
   }
 }
+
 module.exports = {
   hasManageGuildPermission,
   backupServer,

@@ -188,17 +188,19 @@ async function handleSlashCommand(interaction) {
       const amount = interaction.options.getInteger("amount");
       await clearMessages(interaction, amount);
     } 
-      else if (commandName === "addroleall") {
-        const role = interaction.options.getRole("role");
-        if (!role) {
-          return interaction.reply({ content: '❌ ロールが指定されていません。', ephemeral: true });
+        else if (commandName === "addroleall") {
+          const role = interaction.options.getRole("role");
+          if (!role) {
+            return interaction.reply({ content: '❌ ロールが指定されていません。', ephemeral: true });
+          }
+          const result = await addRoleToAll(interaction.guild, role);
+
+          if (!result || !result.success) {
+            return interaction.reply({ content: `❌ 付与に失敗しました: ${result?.error || '不明なエラー'}`, ephemeral: true });
+          }
+
+          return interaction.reply({ content: `✅ 全ユーザーにロール「${role.name}」を付与しました。（付与数: ${result.count}）`, ephemeral: true });
         }
-        const result = await addRoleToAll(interaction.guild, role.id);
-        if (!result || !result.success) {
-          return interaction.reply({ content: `❌ 付与に失敗しました: ${result?.error || '不明なエラー'}`, ephemeral: true });
-        }
-        return interaction.reply({ content: `✅ 全ユーザーにロール「${role.name}」を付与しました。（付与数: ${result.count}）`, ephemeral: true });
-      }
     else if (commandName === "lock") await lockChannels(interaction);
 
     else if (commandName === "verifysetup") {
