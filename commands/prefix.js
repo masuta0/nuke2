@@ -1,3 +1,6 @@
+// commands/prefix.js
+// 変更点：AUTO_DELETE を固定 20 秒にし、共通ユーティリティを利用するように変更しました。
+
 const {
   hasManageGuildPermission,
   backupServer,
@@ -22,6 +25,8 @@ const { quizManager, activeUsers } = require("../utils/quiz");
 const { joinVoice, playUrl, leaveVoice } = require("../utils/music");
 const translate = require('@iamtraction/google-translate');
 
+const { autoDeleteMessage } = require('../utils/messaging');
+
 const CMD_PREFIX = "!";
 const cooldowns = new Map();
 const COOLDOWN_TIME = 10;
@@ -30,14 +35,13 @@ const COOLDOWN_TIME = 10;
 const SERVER_COOLDOWN_TIME = 2;
 const serverCooldowns = new Map();
 
-// 自動削除するコマンド
+// 自動削除するコマンド（prefixコマンドの返信を自動削除対象に）
 const AUTO_DELETE_COMMANDS = [
   "help", "ping", "ai", "クイズ", "英語", "天気"
 ];
 
-// 自動削除の秒数範囲
-const AUTO_DELETE_MIN = 10;
-const AUTO_DELETE_MAX = 30;
+// 自動削除までの固定秒数（要件: 20秒）
+const AUTO_DELETE_SECONDS = 20;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -78,15 +82,6 @@ const RANKING_BANNED_CHANNELS = [
   '雑談',
 ];
 
-function randomDeleteSecs() {
-  return AUTO_DELETE_MIN + Math.floor(Math.random() * (AUTO_DELETE_MAX - AUTO_DELETE_MIN + 1));
-}
-
-async function autoDeleteMsg(msg) {
-  const secs = randomDeleteSecs();
-  setTimeout(() => msg.delete().catch(() => {}), secs * 1000);
-}
-
 module.exports = async function handlePrefixMessage(client, msg) {
   if (msg.author.bot) return;
   if (!msg.guild) return;
@@ -95,7 +90,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
   if (!content.startsWith(CMD_PREFIX)) return;
 
   // --- 実行メッセージも自動削除 ---
-  autoDeleteMsg(msg);
+  autoDeleteMessage(msg, AUTO_DELETE_SECONDS);
 
   const args = content.slice(CMD_PREFIX.length).split(/\s+/);
   const cmd = args.shift()?.toLowerCase();
@@ -118,12 +113,12 @@ module.exports = async function handlePrefixMessage(client, msg) {
     case "help": {
       await msg.author.send(helpMessage).catch(() => {});
       const reply = await msg.reply("ヘルプをDMに送信しました。");
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "ping": {
       const reply = await msg.reply("Pong!");
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "uptime": {
@@ -132,20 +127,20 @@ module.exports = async function handlePrefixMessage(client, msg) {
       const m = Math.floor((uptime % 3600) / 60);
       const s = Math.floor(uptime % 60);
       const reply = await msg.reply(`稼働時間: ${h}時間${m}分${s}秒`);
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "天気": {
       const place = args[0] || "東京";
       const weather = await fetchWeather(place);
       const reply = await msg.reply(`${place}の天気: ${weather}`);
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "クイズ": {
       const question = await quizManager.getQuestion();
       const reply = await msg.reply(`クイズ: ${question.text}`);
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "ai": {
@@ -155,7 +150,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
       setAiCooldown(msg.author.id);
       const aiReply = await chat(input, msg.author.id);
       const reply = await msg.reply(aiReply);
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "英語": {
@@ -163,7 +158,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
       if (!input) return msg.reply("翻訳する内容を入力してください。");
       const result = await translate(input, { to: "en" });
       const reply = await msg.reply(result.text);
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "nuke": {
@@ -195,7 +190,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
       if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
       await backupServer(msg.guild);
       const reply = await msg.reply("サーバーバックアップが完了しました。");
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "restore": {
@@ -203,7 +198,7 @@ module.exports = async function handlePrefixMessage(client, msg) {
       const filename = args[0];
       await restoreServer(msg.guild, msg.channel, filename);
       const reply = await msg.reply("サーバー復元が完了しました。");
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "addrole": {
@@ -212,31 +207,31 @@ module.exports = async function handlePrefixMessage(client, msg) {
       if (!roleName) return msg.reply("ロール名を指定してください。");
       await addRoleToAll(msg.guild, roleName);
       const reply = await msg.reply(`全ユーザーにロール「${roleName}」を付与しました。`);
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
-      case "clear": {
-        if (!msg.member.permissions.has("MANAGE_MESSAGES")) return msg.reply("権限がありません。");
-        const amount = parseInt(args[0]);
-        if (isNaN(amount) || amount < 1) return msg.reply("削除数を指定してください。");
-        const targetMember = msg.mentions.members.first() || null;
-        await msg.delete().catch(() => {});
-        await clearMessages(msg.channel, amount, msg.channel, targetMember);
-        break;
-      }
+    case "clear": {
+      if (!msg.member.permissions.has("MANAGE_MESSAGES")) return msg.reply("権限がありません。");
+      const amount = parseInt(args[0]);
+      if (isNaN(amount) || amount < 1) return msg.reply("削除数を指定してください。");
+      const targetMember = msg.mentions.members.first() || null;
+      await msg.delete().catch(() => {});
+      await clearMessages(msg.channel, amount, msg.channel, targetMember);
+      break;
+    }
     case "ranking": {
       const ranking = await getRanking(msg.guild);
       if (!ranking.length) return msg.reply("今月のランキングデータはありません。");
       const rankingStr = ranking.map((u, i) => `${i + 1}位 <@${u.userId}>: ${u.count}回`).join("\n");
       const reply = await msg.reply(`**月間アクティブユーザーランキング**\n${rankingStr}`);
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     case "reset": {
       if (!hasManageGuildPermission(msg.member)) return msg.reply("権限がありません。");
       await resetServerChannels(msg.guild, msg.channel);
       const reply = await msg.reply("サーバーのチャンネルをリセットしました。");
-      autoDeleteMsg(reply);
+      autoDeleteMessage(reply, AUTO_DELETE_SECONDS);
       break;
     }
     default:

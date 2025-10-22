@@ -169,16 +169,20 @@ async function handleSlashCommand(interaction) {
     }
 
     else if (commandName === "quiz") {
-      // quizManager の実装に合わせて呼び出してください
+      // クイズは「自分のみ表示（ephemeral）」に変更
       if (quizManager && typeof quizManager.getQuestion === 'function') {
         const q = await quizManager.getQuestion();
-        await interaction.reply({ content: `クイズ: ${q.text}`, ephemeral: false });
+        await interaction.reply({ content: `クイズ: ${q.text}`, ephemeral: true });
       } else if (typeof quizManager === 'function') {
+        // 古い実装が関数の場合は、その実装内でレスポンス方法を制御している可能性があるため
+        // 一旦 defer してから実行（関数が interaction を扱えるなら内部で返信するはず）
+        await interaction.deferReply({ ephemeral: true });
         await quizManager(interaction, interaction.user);
       } else {
         await interaction.reply({ content: '⚠️ クイズ機能が未設定です。', ephemeral: true });
       }
     }
+
 
     else if (commandName === "mplay") {
       const url = interaction.options.getString("url");

@@ -1,9 +1,15 @@
 // utils/guild.js
+// 変更点（要約）:
+// - 一時的なフィードバック用メッセージ（clearMessages の進捗通知、nuke 実行後の確認メッセージ等）を
+//   共通 autoDeleteMessage を使って 20 秒後に自動削除するようにしました。
+// - ログ送信（ログチャンネルへのファイル送信など）はそのまま保持します（削除しない）。
+
 const fs = require('fs');
 const path = require('path');
 const { ChannelType, PermissionsBitField } = require('discord.js');
 const { LOG_CHANNEL_ID } = require('./anti-raid');
 const { uploadToDropbox, ensureFolder, downloadFromDropbox } = require('./storage');
+const { autoDeleteMessage } = require('./messaging');
 
 const BACKUP_DIR = process.env.BACKUP_PATH || './backups';
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -122,13 +128,19 @@ async function restoreServer(guild, feedbackChannel, filename) {
   if (filename) {
     backup = await downloadFromDropbox(`/bot_backups/${filename}`);
     if (!backup) {
-      if (feedbackChannel) feedbackChannel.send(`❌ Dropbox上にバックアップファイルが見つかりません: ${filename}`);
+      if (feedbackChannel) {
+        const m = await feedbackChannel.send(`❌ Dropbox上にバックアップファイルが見つかりません: ${filename}`);
+        autoDeleteMessage(m, 20);
+      }
       return false;
     }
   } else {
     backup = await downloadFromDropbox(`/bot_backups/${guild.id}.json`);
     if (!backup) {
-      if (feedbackChannel) feedbackChannel.send(`❌ Dropbox上にバックアップが見つかりません`);
+      if (feedbackChannel) {
+        const m = await feedbackChannel.send(`❌ Dropbox上にバックアップが見つかりません`);
+        autoDeleteMessage(m, 20);
+      }
       return false;
     }
   }
@@ -342,11 +354,9 @@ async function nukeChannel(channel) {
         if (lastId) options.before = lastId;
         const fetched = await channel.messages.fetch(options);
         if (!fetched || fetched.size === 0) break;
-        // fetched は降順（新しい順）なのでそのまま追加していく
         allMessages.push(...Array.from(fetched.values()));
         if (fetched.size < 100) break;
         lastId = fetched.last().id;
-        // 少し待つことでレートリミットの影響を低減
         await delay(200);
       }
     } else {
@@ -368,11 +378,9 @@ async function nukeChannel(channel) {
       '---',
       ''
     ].join('\n');
-    // ソート：古い順
     allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
     const lines = allMessages.map(msg => {
       const ts = new Date(msg.createdTimestamp).toISOString();
-      // 表示名を試しに取得（msg.member がない場合は guild.members.cache を参照、最後は username）
       const displayName = (msg.member && msg.member.displayName)
         || (guild?.members?.cache?.get(msg.author?.id)?.displayName)
         || msg.author?.username || 'unknown';
@@ -405,11 +413,9 @@ async function nukeChannel(channel) {
     try {
       logCh = await guild.channels.fetch(NUKE_LOG_CHANNEL_ID);
     } catch (e) {
-      // fetch 失敗時は null のまま
       logCh = null;
     }
     if (logCh && logCh.isTextBased && logCh.isTextBased()) {
-      // Buffer を使ってメモリ上から送信（ローカルに書いたファイルも既にある）
       await logCh.send({
         content: `🧾 Nuke log for #${channel.name} (${channel.id}) in guild ${guild?.name || guild?.id}`,
         files: [
@@ -461,7 +467,11 @@ async function nukeChannel(channel) {
       );
     }
     try { await channel.delete('Nuke: delete old'); } catch (e) { console.error('nukeChannel: failed to delete old channel:', e); }
-    try { await newCh.send('✅ チャンネルをNukeしました'); } catch (e) { console.error('nukeChannel: failed to send confirmation message:', e); }
+    try {
+      const sent = await newCh.send('✅ チャンネルをNukeしました');
+      // ユーザー向けの確認メッセージは自動削除（20秒）
+      autoDeleteMessage(sent, 20);
+    } catch (e) { console.error('nukeChannel: failed to send confirmation message:', e); }
     return newCh;
   } catch (e) {
     console.error('nukeChannel: error during recreate/delete:', e);
@@ -494,9 +504,12 @@ async function clearMessages(channel, amount, feedbackChannel = null, targetUser
     if (targetUser) recentMessages = recentMessages.filter(msg => msg.author.id === targetUser.id);
 
     if (recentMessages.size > 0) {
-      await channel.bulkDelete(recentMessages, true).catch(e => {
+      await channel.bulkDelete(recentMessages, true).catch(async e => {
         console.error(`Bulk delete failed: ${e}`);
-        if(feedbackChannel) feedbackChannel.send(`⚠️ メッセージの一括削除に失敗しました。`).catch(()=>{});
+        if (feedbackChannel) {
+          const m = await feedbackChannel.send(`⚠️ メッセージの一括削除に失敗しました。`);
+          autoDeleteMessage(m, 20);
+        }
       });
       deletedCount += recentMessages.size;
     }
@@ -528,23 +541,16 @@ async function clearMessages(channel, amount, feedbackChannel = null, targetUser
       lastMessageId = fetched.last().id;
       if (slowDeleteMsg) slowDeleteMsg.edit(`🧹 ${deletedCount}件のメッセージを削除しました。`).catch(()=>{});
     }
+    // 進捗メッセージは処理完了後に自動削除（20秒）
+    if (slowDeleteMsg) autoDeleteMessage(slowDeleteMsg, 20);
   }
 
   return deletedCount;
 }
 
-/**
- * 指定したギルドの全メンバーにロールを付与する
- * - roleOrName は Role オブジェクト / ロールID / ロール名 のいずれかを受け取ります
- * - ボットアカウントはスキップされます
- * @param {Guild} guild 
- * @param {Role|string|object} roleOrName
- * @returns {Promise<{success: boolean, count?: number, error?: string}>}
- */
 async function addRoleToAll(guild, roleOrName) {
   if (!guild) return { success: false, error: 'Guild が指定されていません。' };
 
-  // roleOrName が Role オブジェクトならそのまま、それ以外は検索
   let role = null;
   if (roleOrName && typeof roleOrName === 'object' && roleOrName.id) {
     role = roleOrName;
@@ -562,22 +568,14 @@ async function addRoleToAll(guild, roleOrName) {
     const members = await guild.members.fetch();
     for (const member of members.values()) {
       try {
-        // ボットは対象外
         if (member.user?.bot) continue;
-
-        // 既にロールを持っている場合はスキップ
         if (member.roles.cache.has(role.id)) continue;
-
-        // member にロールを付与（失敗しても処理は継続）
         await member.roles.add(role).catch(e => {
           console.error(`Failed to add role to ${member.user?.tag || member.id}:`, e);
         });
-
         count++;
-        // 連続操作を抑制
         await delay(500);
       } catch (e) {
-        // 個別メンバーで予期しないエラーが出ても続行
         console.error(`Error processing member ${member.user?.tag || member.id}:`, e);
       }
     }
@@ -600,13 +598,18 @@ async function resetServerChannels(guild, feedbackChannel = null) {
       type: ChannelType.GuildText,
       reason: "サーバーチャンネルリセット"
     });
-    if (feedbackChannel) await feedbackChannel.send("✅ サーバーのチャンネルをリセットし、generalチャンネルを作成しました。");
+    if (feedbackChannel) {
+      const m = await feedbackChannel.send("✅ サーバーのチャンネルをリセットし、generalチャンネルを作成しました。");
+      autoDeleteMessage(m, 20);
+    }
   } catch (e) {
     console.error("resetServerChannels error:", e);
-    if (feedbackChannel) feedbackChannel.send("❌ チャンネルリセット中にエラーが発生しました。").catch(()=>{});
+    if (feedbackChannel) {
+      const m = await feedbackChannel.send("❌ チャンネルリセット中にエラーが発生しました。");
+      autoDeleteMessage(m, 20);
+    }
   }
 }
-
 module.exports = {
   hasManageGuildPermission,
   backupServer,
