@@ -114,18 +114,53 @@ async function playNext(guildId, textChannel, voiceChannel) {
         resource = createAudioResource(ffout, { inputType: StreamType.Raw });
       } else if (ytdl) {
         // 2) fallback to ytdl-core + ffmpeg
-        const ytdlStream = ytdl(url, { filter: 'audioonly', highWaterMark: 1 << 25 });
-        const ffout = spawnFfmpegForStream(ytdlStream);
-        if (!ffout) throw new Error('ffmpeg failed for ytdl-core stream');
-        resource = createAudioResource(ffout, { inputType: StreamType.Raw });
+        try {
+          const ytdlStream = ytdl(url, { filter: 'audioonly', highWaterMark: 1 << 25 });
+
+          ytdlStream.on('error', (err) => {
+            console.error('ytdl stream error:', err);
+            const statusCode = err?.statusCode || err?.status || null;
+            if (statusCode === 410) {
+              if (textChannel && typeof textChannel.send === 'function') {
+                textChannel.send('❌ 再生対象の動画は利用できません（削除または利用不可）').catch(()=>{});
+              }
+            } else {
+              if (textChannel && typeof textChannel.send === 'function') {
+                textChannel.send(`❌ 再生エラーが発生しました: ${err?.message || String(err)}`).catch(()=>{});
+              }
+            }
+            setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
+          });
+
+          // optional: attempt to get info to improve title
+          try {
+            const info = await ytdl.getInfo(url);
+            if (info && info.videoDetails && info.videoDetails.title) {
+              // update title if needed; queue item already popped
+            }
+          } catch (infoErr) {
+            // ignore
+          }
+
+          const ffout = spawnFfmpegForStream(ytdlStream);
+          if (!ffout) throw new Error('ffmpeg failed for ytdl-core stream');
+          resource = createAudioResource(ffout, { inputType: StreamType.Raw });
+        } catch (yerr) {
+          console.error('ytdl fallback failed:', yerr);
+          if (textChannel && typeof textChannel.send === 'function') {
+            textChannel.send(`❌ 再生に失敗しました（ytdl）。次の曲に移ります`).catch(()=>{});
+          }
+          setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
+          return;
+        }
       } else {
         throw new Error('再生に必要な yt-dlp または ytdl-core が見つかりません。');
       }
     } else if (isAttachment) {
       // attachment URL -> use ffmpeg directly (ffmpeg reads URL)
-      const ffout = spawn(ffmpegPath, ['-i', url, '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'], { stdio: ['ignore', 'pipe', 'ignore'] });
-      ffout.on('error', e => console.error('ffmpeg spawn error:', e));
-      resource = createAudioResource(ffout.stdout, { inputType: StreamType.Raw });
+      const ff = spawn(ffmpegPath, ['-i', url, '-f', 's16le', '-ar', '48000', '-ac', '2', 'pipe:1'], { stdio: ['ignore', 'pipe', 'ignore'] });
+      ff.on('error', e => console.error('ffmpeg spawn error:', e));
+      resource = createAudioResource(ff.stdout, { inputType: StreamType.Raw });
     } else {
       resource = createAudioResource(url);
     }
@@ -165,12 +200,11 @@ async function playYouTube(channel, url, textChannel) {
       const p = spawnSync('yt-dlp', ['--get-title', '--no-warnings', url], { encoding: 'utf8', timeout: 5000 });
       if (p.status === 0 && p.stdout) title = p.stdout.trim();
     } else if (ytdl) {
-      // optional: try ytdl-core get info
       const info = await ytdl.getInfo(url).catch(()=>null);
       if (info && info.videoDetails && info.videoDetails.title) title = info.videoDetails.title;
     }
   } catch (e) {
-    // ignore title extraction errors
+    // ignore
   }
 
   if (!queues.has(guildId)) queues.set(guildId, []);
