@@ -25,8 +25,12 @@ async function initFaceRecognition() {
   console.log('⚡ 顔認識モデル読み込み完了');
 }
 
-// 顔登録（基準画像を読み込む）
+// 顔登録（基準画像を読み込む、localPath はローカルファイルパス）
 async function registerFace(localPath) {
+  if (!fs.existsSync(localPath)) {
+    throw new Error(`ファイルが見つかりません: ${localPath}`);
+  }
+
   const img = await canvas.loadImage(localPath);
   const detection = await faceapi
     .detectSingleFace(img)
@@ -42,15 +46,31 @@ async function registerFace(localPath) {
   return true;
 }
 
-// 類似顔判定
-async function isSimilarFace(imgUrl) {
+// 類似顔判定：引数は URL またはローカルファイルパスのいずれかを受け付けます
+async function isSimilarFace(imgPathOrUrl, threshold = 0.2) {
   if (!referenceDescriptor) {
     console.log('⚠️ 参照顔が登録されていません');
     return false;
   }
 
-  const res = await fetch(imgUrl);
-  const buffer = await res.buffer();
+  let buffer;
+  // URL の可能性を判定（単純判定）
+  if (typeof imgPathOrUrl === 'string' && (imgPathOrUrl.startsWith('http://') || imgPathOrUrl.startsWith('https://'))) {
+    const res = await fetch(imgPathOrUrl);
+    if (!res.ok) {
+      console.log('⚠️ 画像の取得に失敗しました:', res.status);
+      return false;
+    }
+    buffer = await res.buffer();
+  } else {
+    // ローカルファイルパスとして扱う
+    if (!fs.existsSync(imgPathOrUrl)) {
+      console.log('⚠️ 指定されたローカルファイルが見つかりません:', imgPathOrUrl);
+      return false;
+    }
+    buffer = fs.readFileSync(imgPathOrUrl);
+  }
+
   const img = await canvas.loadImage(buffer);
 
   const detection = await faceapi
@@ -64,9 +84,9 @@ async function isSimilarFace(imgUrl) {
   }
 
   const distance = faceapi.euclideanDistance(referenceDescriptor, detection.descriptor);
-  console.log(`🔍 顔の距離: ${distance.toFixed(3)} (閾値: 0.2)`);
+  console.log(`🔍 顔の距離: ${distance.toFixed(3)} (閾値: ${threshold})`);
 
-  return distance < 0.2;
+  return distance < threshold;
 }
 
 module.exports = {
