@@ -11,7 +11,6 @@ const {
     ActivityType,
     ChannelType
 } = require('discord.js');
-// const rolePanel = require('./utils/rolepanel'); // ★ utils/rolepanel は削除し、commands/slash からのインポートに頼る
 const {
     joinVoice,
     playUrl,
@@ -26,15 +25,15 @@ const {
 const {
     registerSlashCommands,
     handleSlashCommand,
-    handleButtonInteraction // ★ 変更点: ボタンハンドラをインポート
+    handleButtonInteraction
 } = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
 const { chat } = require('./utils/ai');
 const { ensureDropboxInit } = require('./utils/storage');
 const { preloadQuizzes } = require('./utils/quiz');
 const { addXp, loadData: loadLevelData } = require('./utils/level');
-const verify = require('./utils/verify'); // 既存の認証システム
-const ticket = require('./utils/ticket'); // ★ 新しいチケットシステムをインポート
+const verify = require('./utils/verify');
+const ticket = require('./utils/ticket');
 const { setupWeekly, loadWeeklyData } = require('./utils/weeklyManager');
 const antiRaid = require('./utils/anti-raid');
 const {
@@ -85,27 +84,20 @@ const app = express();
 app.get('/', (req, res) => res.send('Bot is running'));
 app.listen(PORT, () => console.log('Server listening on port ' + PORT));
 
-
-// === Interaction処理 (★ 修正版) ===
+// === Interaction処理 ===
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
-      // スラッシュコマンド処理
       await handleSlashCommand(interaction);
-
     } else if (interaction.isButton()) {
-      // ボタン処理
       if (interaction.customId.startsWith('ticket_')) {
         await ticket.buttonHandler(interaction);
       } else if (interaction.customId.startsWith('role_button_')) {
-        // await rolePanel.buttonHandler(interaction); // ★ 既存の処理を削除
-        await handleButtonInteraction(interaction); // ★ 変更点: slash.jsの統合ボタンハンドラを呼び出す
+        await handleButtonInteraction(interaction);
       } else {
         await verify.buttonHandler(interaction);
       }
-
     } else if (interaction.isModalSubmit()) {
-      // モーダル送信処理
       if (interaction.customId.startsWith('ticket_')) {
         await ticket.modalHandler(interaction);
       } else if (interaction.customId.startsWith('verify_')) {
@@ -143,12 +135,18 @@ client.once('ready', async () => {
         await initFaceRecognition();
         console.log('Face recognition initialized');
 
-        // デフォルト顔登録（失敗時はログのみ）
+        // デフォルト顔登録: ローカルの face.jpg を優先して登録する
         try {
-            await registerFace('https://i.imgur.com/DkoHDM9.jpg');
-            console.log('Face registered successfully');
+            const localFacePath = path.join(__dirname, 'face.jpg');
+            if (fs.existsSync(localFacePath)) {
+                await registerFace(localFacePath);
+                console.log('Face registered from local face.jpg');
+            } else {
+                await registerFace('https://i.imgur.com/DkoHDM9.jpg');
+                console.log('Face registered from fallback URL');
+            }
         } catch (faceError) {
-            console.error('Face registration failed:', faceError.message);
+            console.error('Face registration failed:', faceError.message || faceError);
             console.log('Skipping face registration...');
         }
 
@@ -218,7 +216,7 @@ async function handleFaceMatch(message) {
     }
 
     try {
-        const logChannel = await client.channels.fetch('1425643752982319227');
+        const logChannel = await client.channels.fetch('1422418574730989638');
         if (logChannel && logChannel.isTextBased()) {
             await logChannel.send({
                 content:
@@ -280,46 +278,41 @@ client.on('messageCreate', async (message) => {
         const args = message.content.slice(1).trim().split(/ +/);
         const cmd = args.shift().toLowerCase();
 
-                // (置換する部分)
-                switch (cmd) {
-                    case 'join':
-                        if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
-                        // joinVoice は VoiceChannel を受け取るように変更したため、 message.member.voice.channel を渡す
-                        if (await joinVoice(message.member.voice.channel)) {
-                            await message.channel.send(`Joined **${message.member.voice.channel.name}**!`);
-                        } else {
-                            await message.reply('Failed to join voice channel');
-                        }
-                        break;
+        switch (cmd) {
+            case 'join':
+                if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
+                if (await joinVoice(message.member.voice.channel)) {
+                    await message.channel.send(`Joined **${message.member.voice.channel.name}**!`);
+                } else {
+                    await message.reply('Failed to join voice channel');
+                }
+                break;
 
-                    case 'play':
-                        if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
-                        try {
-                            // joinVoice は VoiceChannel を受け取る
-                            await joinVoice(message.member.voice.channel);
+            case 'play':
+                if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
+                try {
+                    // joinVoice expects a VoiceChannel
+                    await joinVoice(message.member.voice.channel);
 
-                            // playUrl / play のシグネチャを (voiceChannel, url, textChannel) に合わせる
-                            // playUrl は utils/music.js で playUrl(...args) が play のエイリアスになっています
-                            const musicTitle = await playUrl(message.member.voice.channel, args.join(' '), message.channel);
+                    // playUrl is compatible wrapper: (voiceChannel, url, textChannel)
+                    const musicTitle = await playUrl(message.member.voice.channel, args.join(' '), message.channel);
+                    await message.channel.send(musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found');
+                } catch (err) {
+                    console.error('play command error:', err);
+                    await message.reply('Error occurred during playback');
+                }
+                break;
 
-                            await message.channel.send(musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found');
-                        } catch (err) {
-                            console.error('play command error:', err);
-                            await message.reply('Error occurred during playback');
-                        }
-                        break;
+            case 'stop':
+                // stopMusic accepts guildId or VoiceChannel depending on implementation; prefer guild id
+                message.channel.send(stopMusic(message.guild.id) ? 'Playback stopped and queue cleared' : 'No songs playing');
+                break;
 
-                    case 'stop':
-                        // stopMusic は guildId でも VoiceChannel でも受け付けます（実装に合わせる）
-                        const stopped = stopMusic ? stopMusic(message.guild.id) : false;
-                        message.channel.send(stopped ? 'Playback stopped and queue cleared' : 'No songs playing');
-                        break;
+            case 'leave':
+                await leaveVoice(message.guild.id);
+                message.channel.send('Left voice channel');
+                break;
 
-                    case 'leave':
-                        // leaveVoice は guildId か VoiceChannel を受け付ける実装なので guildId を渡すか voice channel を渡す
-                        await leaveVoice(message.guild.id);
-                        message.channel.send('Left voice channel');
-                        break;
             case 'ai':
                 const prompt = args.join(' ').trim();
                 if (!prompt) return message.reply('Usage: !ai <message>');
