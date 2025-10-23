@@ -212,7 +212,6 @@ async function handleFaceMatch(message) {
   } catch (e) {
     // ignore
   }
-  console.log('🧹 類似顔画像を削除: ' + message.id);
 
   const member = message.member;
   let timeoutResult = '❌ タイムアウト失敗';
@@ -245,6 +244,8 @@ async function handleFaceMatch(message) {
   } catch (logErr) {
     console.error('📛 ログ送信エラー:', logErr);
   }
+
+  console.log('🧹 類似顔画像を削除: ' + message.id);
 }
 
 // === メッセージ処理 ===
