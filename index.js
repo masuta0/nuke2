@@ -218,7 +218,7 @@ async function handleFaceMatch(message) {
     }
 
     try {
-        const logChannel = await client.channels.fetch('1422418574730989638');
+        const logChannel = await client.channels.fetch('1425643752982319227');
         if (logChannel && logChannel.isTextBased()) {
             await logChannel.send({
                 content:
@@ -280,34 +280,46 @@ client.on('messageCreate', async (message) => {
         const args = message.content.slice(1).trim().split(/ +/);
         const cmd = args.shift().toLowerCase();
 
-        switch (cmd) {
-            case 'join':
-                if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
-                if (await joinVoice(message.guild, message.member.voice.channel)) {
-                    message.channel.send(`Joined **${message.member.voice.channel.name}**!`);
-                } else message.reply('Failed to join voice channel');
-                break;
+                // (置換する部分)
+                switch (cmd) {
+                    case 'join':
+                        if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
+                        // joinVoice は VoiceChannel を受け取るように変更したため、 message.member.voice.channel を渡す
+                        if (await joinVoice(message.member.voice.channel)) {
+                            await message.channel.send(`Joined **${message.member.voice.channel.name}**!`);
+                        } else {
+                            await message.reply('Failed to join voice channel');
+                        }
+                        break;
 
-            case 'play':
-                if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
-                try {
-                    await joinVoice(message.guild, message.member.voice.channel);
-                    const musicTitle = await playUrl(message.guild.id, args.join(' '), message.channel, message.member.voice.channel);
-                    await message.channel.send(musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found');
-                } catch {
-                    await message.reply('Error occurred during playback');
-                }
-                break;
+                    case 'play':
+                        if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
+                        try {
+                            // joinVoice は VoiceChannel を受け取る
+                            await joinVoice(message.member.voice.channel);
 
-            case 'stop':
-                message.channel.send(stopMusic(message.guild.id) ? 'Playback stopped and queue cleared' : 'No songs playing');
-                break;
+                            // playUrl / play のシグネチャを (voiceChannel, url, textChannel) に合わせる
+                            // playUrl は utils/music.js で playUrl(...args) が play のエイリアスになっています
+                            const musicTitle = await playUrl(message.member.voice.channel, args.join(' '), message.channel);
 
-            case 'leave':
-                await leaveVoice(message.guild.id);
-                message.channel.send('Left voice channel');
-                break;
+                            await message.channel.send(musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found');
+                        } catch (err) {
+                            console.error('play command error:', err);
+                            await message.reply('Error occurred during playback');
+                        }
+                        break;
 
+                    case 'stop':
+                        // stopMusic は guildId でも VoiceChannel でも受け付けます（実装に合わせる）
+                        const stopped = stopMusic ? stopMusic(message.guild.id) : false;
+                        message.channel.send(stopped ? 'Playback stopped and queue cleared' : 'No songs playing');
+                        break;
+
+                    case 'leave':
+                        // leaveVoice は guildId か VoiceChannel を受け付ける実装なので guildId を渡すか voice channel を渡す
+                        await leaveVoice(message.guild.id);
+                        message.channel.send('Left voice channel');
+                        break;
             case 'ai':
                 const prompt = args.join(' ').trim();
                 if (!prompt) return message.reply('Usage: !ai <message>');
