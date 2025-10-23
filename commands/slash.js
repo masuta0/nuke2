@@ -11,7 +11,7 @@ const { fetchWeather, loadUserWeatherPref } = require("../utils/weather");
 const verifySetup = require("../utils/verify");
 const { getLevelData, setLevelAndXp, calculateRequiredXp } = require("../utils/level");
 const { quizManager } = require("../utils/quiz");
-const { playMusic, skipMusic, stopMusic, pauseMusic, resumeMusic } = require("../utils/music");
+const music = require("../utils/music");
 const { backupServer, restoreServer, nukeChannel, clearMessages, addRoleToAll, lockChannels } = require("../utils/guild");
 const ticket = require("../utils/ticket");
 const rolePanelCommands = require("./rolepanel");
@@ -77,7 +77,7 @@ const commands = [
     .addRoleOption(opt => opt.setName("role").setDescription("認証後に付与するロール").setRequired(true))
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels),
 
-  // ★ ロールパネル: 新しい rolepanel.js からコマンド定義を展開
+  // ロールパネル
   ...rolePanelCommands.data,
 
   // チケットパネル設置
@@ -101,7 +101,6 @@ async function registerSlashCommands(client) {
 
   try {
     console.log("📌 スラッシュコマンド登録開始");
-    // 新しいコマンドを登録するために、Bot起動時に実行してください
     await rest.put(Routes.applicationCommands(client.user.id), {
       body: commands.map(c => c.toJSON()),
     });
@@ -112,7 +111,7 @@ async function registerSlashCommands(client) {
 }
 
 // ---------------- サーバークールダウン ----------------
-const SERVER_COOLDOWN_TIME = 2; // 秒
+const SERVER_COOLDOWN_TIME = 2;
 const serverCooldowns = new Map();
 
 // ---------------- コマンド実行処理 ----------------
@@ -169,13 +168,10 @@ async function handleSlashCommand(interaction) {
     }
 
     else if (commandName === "quiz") {
-      // クイズは「自分のみ表示（ephemeral）」に変更
       if (quizManager && typeof quizManager.getQuestion === 'function') {
         const q = await quizManager.getQuestion();
         await interaction.reply({ content: `クイズ: ${q.text}`, ephemeral: true });
       } else if (typeof quizManager === 'function') {
-        // 古い実装が関数の場合は、その実装内でレスポンス方法を制御している可能性があるため
-        // 一旦 defer してから実行（関数が interaction を扱えるなら内部で返信するはず）
         await interaction.deferReply({ ephemeral: true });
         await quizManager(interaction, interaction.user);
       } else {
@@ -183,14 +179,77 @@ async function handleSlashCommand(interaction) {
       }
     }
 
-
     else if (commandName === "mplay") {
+      if (!interaction.member?.voice?.channel) {
+        return interaction.reply({ content: "VCに参加してください。", ephemeral: true });
+      }
+
       const url = interaction.options.getString("url");
-      await playMusic(interaction, url);
-    } else if (commandName === "mskip") await skipMusic(interaction);
-    else if (commandName === "mstop") await stopMusic(interaction);
-    else if (commandName === "mpause") await pauseMusic(interaction);
-    else if (commandName === "mresume") await resumeMusic(interaction);
+      await interaction.deferReply({ ephemeral: true });
+
+      try {
+        await music.joinVoice(interaction.member.voice.channel);
+        const title = await music.play(interaction.member.voice.channel, url, interaction.channel);
+        await interaction.editReply({ content: `🎵 再生開始: **${title}**` });
+      } catch (err) {
+        console.error("mplay error:", err);
+        await interaction.editReply({ content: `❌ 再生に失敗しました: ${err.message}` });
+      }
+    } 
+
+    else if (commandName === "mskip") {
+      if (!interaction.member?.voice?.channel) {
+        return interaction.reply({ content: "VCに参加してください。", ephemeral: true });
+      }
+
+      const guildId = interaction.guild.id;
+      const queue = music.queues?.get?.(guildId);
+
+      if (!queue || queue.length === 0) {
+        return interaction.reply({ content: "キューに曲がありません。", ephemeral: true });
+      }
+
+      const player = music.players?.get?.(guildId);
+      if (player) {
+        player.stop(); // これで次の曲に自動移行
+        await interaction.reply({ content: "⏭️ スキップしました。", ephemeral: true });
+      } else {
+        await interaction.reply({ content: "再生中の曲がありません。", ephemeral: true });
+      }
+    } 
+
+    else if (commandName === "mstop") {
+      const stopped = music.stop(interaction.guild.id);
+      if (stopped) {
+        await interaction.reply({ content: "⏹️ 再生を停止しました。", ephemeral: true });
+      } else {
+        await interaction.reply({ content: "再生中の音楽がありません。", ephemeral: true });
+      }
+    } 
+
+    else if (commandName === "mpause") {
+      const guildId = interaction.guild.id;
+      const player = music.players?.get?.(guildId);
+
+      if (!player) {
+        return interaction.reply({ content: "再生中の音楽がありません。", ephemeral: true });
+      }
+
+      player.pause();
+      await interaction.reply({ content: "⏸️ 一時停止しました。", ephemeral: true });
+    } 
+
+    else if (commandName === "mresume") {
+      const guildId = interaction.guild.id;
+      const player = music.players?.get?.(guildId);
+
+      if (!player) {
+        return interaction.reply({ content: "再生中の音楽がありません。", ephemeral: true });
+      }
+
+      player.unpause();
+      await interaction.reply({ content: "▶️ 再開しました。", ephemeral: true });
+    }
 
     else if (commandName === "backup") {
       await interaction.deferReply({ ephemeral: true });
@@ -199,7 +258,6 @@ async function handleSlashCommand(interaction) {
     }
     else if (commandName === "restore") {
       await interaction.deferReply({ ephemeral: true });
-      // 追加オプションで filename を渡す場合は interaction.options.getString("filename") を利用
       await restoreServer(interaction.guild, interaction.channel);
       await interaction.editReply({ content: '✅ リストア処理を実行しました。', ephemeral: true });
     }
@@ -241,7 +299,7 @@ async function handleSlashCommand(interaction) {
       await ticket.sendTicketPanel(interaction);
     }
 
-    // ---------------- invite 系 ----------------
+    // 招待リンク作成
     else if (commandName === "invite") {
       await interaction.deferReply({ ephemeral: true });
       const res = await createInvite(interaction.guild, interaction.channel, interaction.user);
@@ -252,6 +310,7 @@ async function handleSlashCommand(interaction) {
       }
     }
 
+    // 招待数確認
     else if (commandName === "invitecount") {
       await interaction.deferReply({ ephemeral: true });
       const res = await fetchInviteCount(interaction.guild, interaction.user);
@@ -260,60 +319,6 @@ async function handleSlashCommand(interaction) {
       } else {
         await interaction.editReply({ content: `❌ 招待数の取得に失敗しました: ${res.error || '不明なエラー'}`, ephemeral: true });
       }
-    }
-
-    else if (commandName === "invitecount-other") {
-      // もし管理者が他メンバーの招待数を見たい場合の拡張例（コマンド定義は未追加）
-      // const target = interaction.options.getUser("user");
-      // const res = await fetchInviteCount(interaction.guild, target);
-    }
-
-    else if (commandName === "invite") {
-      // (二重定義防止)
-    }
-
-    else if (commandName === "invitecount") {
-      // (二重定義防止)
-    }
-
-    else if (commandName === "invite") {
-      // noop
-    }
-
-    else if (commandName === "invitecount") {
-      // noop
-    }
-
-    else if (commandName === "invite") {
-      // noop
-    }
-
-    else if (commandName === "invitecount") {
-      // noop
-    }
-
-    else if (commandName === "invite") {
-      // noop redundant guard
-    }
-
-    else if (commandName === "invitecount") {
-      // noop redundant guard
-    }
-
-    else if (commandName === "invite") {
-      // noop redundant guard
-    }
-
-    else if (commandName === "invitecount") {
-      // noop redundant guard
-    }
-
-    else if (commandName === "invite") {
-      // noop redundant guard
-    }
-
-    else if (commandName === "invitecount") {
-      // noop redundant guard
     }
 
     else {

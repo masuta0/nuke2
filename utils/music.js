@@ -228,7 +228,11 @@ async function playNext(guildId, textChannel, voiceChannel) {
     player.on('error', err => {
       console.error('Audio player error:', err);
       if (textChannel && typeof textChannel.send === 'function') {
-        textChannel.send(`❌ プレイヤーエラーが発生しました`).catch(()=>{});
+        textChannel.send(`❌ プレイヤーエラーが発生しました`).then(msg => {
+          if (msg && msg.deletable) {
+            setTimeout(() => msg.delete().catch(()=>{}), 30000);
+          }
+        }).catch(()=>{});
       }
       setTimeout(() => playNext(guildId, textChannel, voiceChannel), 1000);
     });
@@ -340,6 +344,7 @@ module.exports = {
   playUrl: async (...args) => play(...args),
   stopMusic: stop,
   players,
+  queues,
   // expose detection for debugging
   _hasYtDlp: hasYtDlp
 };
