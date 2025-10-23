@@ -1,41 +1,29 @@
 // utils/messaging.js
-// 共通の自動削除ユーティリティ
-// autoDeleteMessage(msg, seconds = 20) をエクスポートします。
-// 引数 msg は discord.js の Message オブジェクト（もしくは Promise を返す send()/reply の結果）を想定。
-// seconds は削除までの秒数（デフォルト 20）
+// メッセージ自動削除ユーティリティ
 
-async function resolveMessage(maybePromise) {
-  if (!maybePromise) return null;
-  if (typeof maybePromise.then === 'function') {
-    try {
-      return await maybePromise;
-    } catch (e) {
-      return null;
-    }
-  }
-  return maybePromise;
-}
+/**
+ * 指定秒数後にメッセージを自動削除する
+ * @param {Message} message - 削除するメッセージ
+ * @param {number} seconds - 削除までの秒数（デフォルト: 30秒）
+ */
+async function autoDeleteMessage(message, seconds = 30) {
+  if (!message || !message.deletable) return;
 
-function autoDeleteMessage(maybeMessage, seconds = 20) {
-  // 非同期送信の結果（Promise）を受け取る可能性があるため解決する
-  Promise.resolve(resolveMessage(maybeMessage)).then(msg => {
-    if (!msg) return;
+  setTimeout(async () => {
     try {
-      // Message 型であれば delete() を使う
-      if (typeof msg.delete === 'function') {
-        setTimeout(() => {
-          msg.delete().catch(() => {});
-        }, Math.max(0, Number(seconds)) * 1000);
-        return;
+      if (message.deletable) {
+        await message.delete();
+        console.log(`🗑️ メッセージを自動削除しました (${seconds}秒後)`);
       }
-      // interaction の reply を取得して渡すケースでは既に Message が渡るはず
-      // その他は無視
-    } catch (e) {
-      // 念のためエラーは握りつぶす（ログが欲しければここで console.error）
+    } catch (err) {
+      // メッセージが既に削除されている場合などはエラーを無視
+      if (err.code !== 10008) { // Unknown Message
+        console.error('メッセージ自動削除エラー:', err.message || err);
+      }
     }
-  }).catch(() => {});
+  }, seconds * 1000);
 }
 
 module.exports = {
-  autoDeleteMessage,
+  autoDeleteMessage
 };

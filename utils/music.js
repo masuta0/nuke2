@@ -115,40 +115,59 @@ async function playNext(guildId, textChannel, voiceChannel) {
       } else if (ytdl) {
         // 2) fallback to ytdl-core + ffmpeg
         try {
-          const ytdlStream = ytdl(url, { filter: 'audioonly', highWaterMark: 1 << 25 });
+          // エラーハンドリングを先に設定
+          let ytdlStream;
+          let streamErrorOccurred = false;
+
+          try {
+            const info = await ytdl.getInfo(url);
+            if (!info || !info.videoDetails) {
+              throw new Error('動画情報の取得に失敗しました');
+            }
+
+            ytdlStream = ytdl(url, { 
+              filter: 'audioonly', 
+              highWaterMark: 1 << 25,
+              quality: 'highestaudio'
+            });
+          } catch (infoErr) {
+            console.error('ytdl.getInfo failed:', infoErr);
+            throw new Error(`動画情報の取得に失敗: ${infoErr.message || String(infoErr)}`);
+          }
 
           ytdlStream.on('error', (err) => {
+            if (streamErrorOccurred) return; // 重複エラーを防ぐ
+            streamErrorOccurred = true;
+
             console.error('ytdl stream error:', err);
             const statusCode = err?.statusCode || err?.status || null;
+
             if (statusCode === 410) {
               if (textChannel && typeof textChannel.send === 'function') {
-                textChannel.send('❌ 再生対象の動画は利用できません（削除または利用不可）').catch(()=>{});
+                textChannel.send('❌ この動画は利用できません（削除済みまたはアクセス不可）').catch(()=>{});
+              }
+            } else if (statusCode === 403) {
+              if (textChannel && typeof textChannel.send === 'function') {
+                textChannel.send('❌ この動画へのアクセスが拒否されました').catch(()=>{});
               }
             } else {
               if (textChannel && typeof textChannel.send === 'function') {
-                textChannel.send(`❌ 再生エラーが発生しました: ${err?.message || String(err)}`).catch(()=>{});
+                textChannel.send(`❌ 再生エラー: ${err?.message || String(err)}`).catch(()=>{});
               }
             }
+
+            // 次の曲へ
             setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
           });
-
-          // optional: attempt to get info to improve title
-          try {
-            const info = await ytdl.getInfo(url);
-            if (info && info.videoDetails && info.videoDetails.title) {
-              // update title if needed; queue item already popped
-            }
-          } catch (infoErr) {
-            // ignore
-          }
 
           const ffout = spawnFfmpegForStream(ytdlStream);
           if (!ffout) throw new Error('ffmpeg failed for ytdl-core stream');
           resource = createAudioResource(ffout, { inputType: StreamType.Raw });
+
         } catch (yerr) {
           console.error('ytdl fallback failed:', yerr);
           if (textChannel && typeof textChannel.send === 'function') {
-            textChannel.send(`❌ 再生に失敗しました（ytdl）。次の曲に移ります`).catch(()=>{});
+            textChannel.send(`❌ 再生に失敗しました: ${yerr.message || String(yerr)}`).catch(()=>{});
           }
           setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
           return;
@@ -169,6 +188,9 @@ async function playNext(guildId, textChannel, voiceChannel) {
     player.play(resource);
     player.on('error', err => {
       console.error('Audio player error:', err);
+      if (textChannel && typeof textChannel.send === 'function') {
+        textChannel.send(`❌ プレイヤーエラーが発生しました`).catch(()=>{});
+      }
       setTimeout(() => playNext(guildId, textChannel, voiceChannel), 1000);
     });
     player.on(AudioPlayerStatus.Idle, () => {
@@ -181,10 +203,14 @@ async function playNext(guildId, textChannel, voiceChannel) {
     if (connection) connection.subscribe(player);
     players.set(guildId, player);
 
-    if (textChannel && typeof textChannel.send === 'function') textChannel.send(`🎵 再生開始: **${title || '不明なタイトル'}**`).catch(()=>{});
+    if (textChannel && typeof textChannel.send === 'function') {
+      textChannel.send(`🎵 再生開始: **${title || '不明なタイトル'}**`).catch(()=>{});
+    }
   } catch (err) {
     console.error('再生エラー:', err);
-    if (textChannel && typeof textChannel.send === 'function') textChannel.send(`❌ 再生できませんでした: **${title || '不明なタイトル'}**\n理由: ${err.message || err}`).catch(()=>{});
+    if (textChannel && typeof textChannel.send === 'function') {
+      textChannel.send(`❌ 再生できませんでした: **${title || '不明なタイトル'}**\n理由: ${err.message || err}`).catch(()=>{});
+    }
     setTimeout(() => playNext(guildId, textChannel, voiceChannel), 1000);
   }
 }
@@ -200,11 +226,17 @@ async function playYouTube(channel, url, textChannel) {
       const p = spawnSync('yt-dlp', ['--get-title', '--no-warnings', url], { encoding: 'utf8', timeout: 5000 });
       if (p.status === 0 && p.stdout) title = p.stdout.trim();
     } else if (ytdl) {
-      const info = await ytdl.getInfo(url).catch(()=>null);
-      if (info && info.videoDetails && info.videoDetails.title) title = info.videoDetails.title;
+      try {
+        const info = await ytdl.getInfo(url).catch(()=>null);
+        if (info && info.videoDetails && info.videoDetails.title) {
+          title = info.videoDetails.title;
+        }
+      } catch (e) {
+        console.warn('タイトル取得失敗:', e.message);
+      }
     }
   } catch (e) {
-    // ignore
+    console.warn('タイトル取得でエラー:', e);
   }
 
   if (!queues.has(guildId)) queues.set(guildId, []);

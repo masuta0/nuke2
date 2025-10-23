@@ -33,7 +33,7 @@ const AUTO_DELETE_COMMANDS = [
   "help", "ping", "ai", "クイズ", "英語", "天気"
 ];
 
-const AUTO_DELETE_SECONDS = 20;
+const AUTO_DELETE_SECONDS = 30;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
