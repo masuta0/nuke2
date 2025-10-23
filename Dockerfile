@@ -2,24 +2,31 @@ FROM node:20-bullseye-slim
 
 WORKDIR /app
 
-# 必要パッケージ
-RUN apt-get update && apt-get install -y python3 python3-pip ffmpeg curl && rm -rf /var/lib/apt/lists/*
+# 必要パッケージ（curl と ffmpeg）をインストール、キャッシュ削除
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
 
-# yt-dlp をユーザー領域にインストール
-RUN pip3 install --user -U yt-dlp
+# yt-dlp バイナリを /usr/local/bin に配置（すべてのユーザーで利用可能）
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+  && chmod +x /usr/local/bin/yt-dlp
 
-# PATH を通す
-ENV PATH=/root/.local/bin:$PATH
+# path 確認（冗長だが明示的）
+ENV PATH=/usr/local/bin:$PATH
+ENV NODE_ENV=production
 
-# 依存関係
+# 依存を先にコピーしてキャッシュを活用
 COPY package*.json ./
-RUN npm install --omit=dev --legacy-peer-deps
 
-# ソースコピー
+# 可能なら package-lock.json があると npm ci を使う
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev --legacy-peer-deps; else npm install --omit=dev --legacy-peer-deps; fi
+
+# アプリをコピー
 COPY . .
 
-# ポート
+# セキュリティ: node ユーザーで実行
+USER node
+
 EXPOSE 3000
 
-# 起動
 CMD ["node", "index.js"]
