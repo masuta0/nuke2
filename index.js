@@ -248,10 +248,19 @@ async function handleFaceMatch(message) {
   console.log('🧹 類似顔画像を削除: ' + message.id);
 }
 
-// === メッセージ処理 ===
+// === メッセージ処理（統合版） ===
 client.on('messageCreate', async (message) => {
   try {
     if (message.author.bot) return;
+
+    // DM専用処理
+    if (message.channel.type === ChannelType.DM) {
+      await antiRaid.handleDirectMessage(message);
+      return;
+    }
+
+    // ギルドメッセージのみ以降の処理を行う
+    if (!message.guild) return;
 
     // 添付画像チェック
     for (const attachment of message.attachments.values()) {
@@ -274,21 +283,18 @@ client.on('messageCreate', async (message) => {
       }
     }
 
-    // 通常処理
+    // アンチレイド処理
     await antiRaid.handleMessage(message);
 
     // アクティブロール処理
-    if (message.guild && message.author.id) {
+    if (message.author.id) {
       await addMessage(message.guild.id, message.author.id, client, ACTIVE_ROLE_ID);
     }
 
     // レベルXP加算
     if (message.member) await addXp(message.member);
 
-    // DM チェック
-    if (message.channel.type === ChannelType.DM) return;
-
-    // すべてのプレフィックスコマンドを prefix.js に委譲
+    // プレフィックスコマンド処理
     await handlePrefixMessage(client, message);
 
   } catch (err) {
@@ -314,9 +320,6 @@ client.on('guildBanAdd', onGuildBanAdd);
 client.on('roleUpdate', handleRoleUpdate);
 client.on('messageReactionAdd', handleReactionAdd);
 client.on('guildAuditLogEntryCreate', handleAuditLogEntry);
-
-// DM専用
-client.on('messageCreate', antiRaid.handleDirectMessage);
 
 // === ログイン ===
 client.login(TOKEN);

@@ -115,48 +115,84 @@ async function playNext(guildId, textChannel, voiceChannel) {
       } else if (ytdl) {
         // 2) fallback to ytdl-core + ffmpeg
         try {
-          // エラーハンドリングを先に設定
           let ytdlStream;
           let streamErrorOccurred = false;
 
+          // 先にタイトルだけ取得を試みる（失敗したらスキップ）
+          let videoInfo = null;
           try {
-            const info = await ytdl.getInfo(url);
-            if (!info || !info.videoDetails) {
-              throw new Error('動画情報の取得に失敗しました');
-            }
-
-            ytdlStream = ytdl(url, { 
-              filter: 'audioonly', 
-              highWaterMark: 1 << 25,
-              quality: 'highestaudio'
-            });
+            videoInfo = await ytdl.getInfo(url);
           } catch (infoErr) {
             console.error('ytdl.getInfo failed:', infoErr);
-            throw new Error(`動画情報の取得に失敗: ${infoErr.message || String(infoErr)}`);
+            const statusCode = infoErr?.statusCode || infoErr?.status || null;
+
+            if (statusCode === 410) {
+              if (textChannel && typeof textChannel.send === 'function') {
+                const msg = await textChannel.send('❌ この動画は利用できません（削除済みまたはアクセス不可）').catch(()=>null);
+                if (msg && msg.deletable) {
+                  setTimeout(() => msg.delete().catch(()=>{}), 30000);
+                }
+              }
+            } else if (statusCode === 403) {
+              if (textChannel && typeof textChannel.send === 'function') {
+                const msg = await textChannel.send('❌ この動画へのアクセスが拒否されました').catch(()=>null);
+                if (msg && msg.deletable) {
+                  setTimeout(() => msg.delete().catch(()=>{}), 30000);
+                }
+              }
+            } else {
+              if (textChannel && typeof textChannel.send === 'function') {
+                const msg = await textChannel.send(`❌ 動画情報の取得に失敗しました`).catch(()=>null);
+                if (msg && msg.deletable) {
+                  setTimeout(() => msg.delete().catch(()=>{}), 30000);
+                }
+              }
+            }
+
+            // 次の曲へ
+            setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
+            return;
           }
 
+          if (!videoInfo || !videoInfo.videoDetails) {
+            if (textChannel && typeof textChannel.send === 'function') {
+              const msg = await textChannel.send('❌ 動画情報が取得できませんでした').catch(()=>null);
+              if (msg && msg.deletable) {
+                setTimeout(() => msg.delete().catch(()=>{}), 30000);
+              }
+            }
+            setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
+            return;
+          }
+
+          ytdlStream = ytdl(url, { 
+            filter: 'audioonly', 
+            highWaterMark: 1 << 25,
+            quality: 'highestaudio'
+          });
+
           ytdlStream.on('error', (err) => {
-            if (streamErrorOccurred) return; // 重複エラーを防ぐ
+            if (streamErrorOccurred) return;
             streamErrorOccurred = true;
 
             console.error('ytdl stream error:', err);
             const statusCode = err?.statusCode || err?.status || null;
 
-            if (statusCode === 410) {
-              if (textChannel && typeof textChannel.send === 'function') {
-                textChannel.send('❌ この動画は利用できません（削除済みまたはアクセス不可）').catch(()=>{});
+            if (textChannel && typeof textChannel.send === 'function') {
+              let errorMsg = '❌ 再生エラーが発生しました';
+              if (statusCode === 410) {
+                errorMsg = '❌ この動画は利用できません';
+              } else if (statusCode === 403) {
+                errorMsg = '❌ この動画へのアクセスが拒否されました';
               }
-            } else if (statusCode === 403) {
-              if (textChannel && typeof textChannel.send === 'function') {
-                textChannel.send('❌ この動画へのアクセスが拒否されました').catch(()=>{});
-              }
-            } else {
-              if (textChannel && typeof textChannel.send === 'function') {
-                textChannel.send(`❌ 再生エラー: ${err?.message || String(err)}`).catch(()=>{});
-              }
+
+              textChannel.send(errorMsg).then(msg => {
+                if (msg && msg.deletable) {
+                  setTimeout(() => msg.delete().catch(()=>{}), 30000);
+                }
+              }).catch(()=>{});
             }
 
-            // 次の曲へ
             setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
           });
 
@@ -167,7 +203,10 @@ async function playNext(guildId, textChannel, voiceChannel) {
         } catch (yerr) {
           console.error('ytdl fallback failed:', yerr);
           if (textChannel && typeof textChannel.send === 'function') {
-            textChannel.send(`❌ 再生に失敗しました: ${yerr.message || String(yerr)}`).catch(()=>{});
+            const msg = await textChannel.send(`❌ 再生に失敗しました: ${yerr.message || String(yerr)}`).catch(()=>null);
+            if (msg && msg.deletable) {
+              setTimeout(() => msg.delete().catch(()=>{}), 30000);
+            }
           }
           setTimeout(() => playNext(guildId, textChannel, voiceChannel), 500);
           return;
@@ -204,12 +243,18 @@ async function playNext(guildId, textChannel, voiceChannel) {
     players.set(guildId, player);
 
     if (textChannel && typeof textChannel.send === 'function') {
-      textChannel.send(`🎵 再生開始: **${title || '不明なタイトル'}**`).catch(()=>{});
+      const msg = await textChannel.send(`🎵 再生開始: **${title || '不明なタイトル'}**`).catch(()=>null);
+      if (msg && msg.deletable) {
+        setTimeout(() => msg.delete().catch(()=>{}), 30000);
+      }
     }
   } catch (err) {
     console.error('再生エラー:', err);
     if (textChannel && typeof textChannel.send === 'function') {
-      textChannel.send(`❌ 再生できませんでした: **${title || '不明なタイトル'}**\n理由: ${err.message || err}`).catch(()=>{});
+      const msg = await textChannel.send(`❌ 再生できませんでした: **${title || '不明なタイトル'}**\n理由: ${err.message || err}`).catch(()=>null);
+      if (msg && msg.deletable) {
+        setTimeout(() => msg.delete().catch(()=>{}), 30000);
+      }
     }
     setTimeout(() => playNext(guildId, textChannel, voiceChannel), 1000);
   }
@@ -243,7 +288,12 @@ async function playYouTube(channel, url, textChannel) {
   queues.get(guildId).push({ url, title, isYouTube: true, isAttachment: false });
   const isPlaying = players.get(guildId)?.state?.status === AudioPlayerStatus.Playing;
   if (!isPlaying) playNext(guildId, textChannel, channel);
-  else if (textChannel && typeof textChannel.send === 'function') textChannel.send(`▶️ キューに追加: **${title}**`).catch(()=>{});
+  else if (textChannel && typeof textChannel.send === 'function') {
+    const msg = await textChannel.send(`▶️ キューに追加: **${title}**`).catch(()=>null);
+    if (msg && msg.deletable) {
+      setTimeout(() => msg.delete().catch(()=>{}), 30000);
+    }
+  }
   return title;
 }
 
@@ -255,7 +305,12 @@ async function playAttachment(channel, attachmentUrl, filename, textChannel) {
   queues.get(guildId).push({ url: attachmentUrl, title: filename, isYouTube: false, isAttachment: true });
   const isPlaying = players.get(guildId)?.state?.status === AudioPlayerStatus.Playing;
   if (!isPlaying) playNext(guildId, textChannel, channel);
-  else if (textChannel && typeof textChannel.send === 'function') textChannel.send(`▶️ キューに追加: **${filename}**`).catch(()=>{});
+  else if (textChannel && typeof textChannel.send === 'function') {
+    const msg = await textChannel.send(`▶️ キューに追加: **${filename}**`).catch(()=>null);
+    if (msg && msg.deletable) {
+      setTimeout(() => msg.delete().catch(()=>{}), 30000);
+    }
+  }
   return filename;
 }
 
