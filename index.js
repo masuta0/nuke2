@@ -13,7 +13,7 @@ const {
   ChannelType,
 } = require('discord.js');
 
-const music = require('./utils/music'); // joinVoice, play, stop, leaveVoice, playUrl alias, _hasYtDlp
+const music = require('./utils/music');
 const { initFaceRecognition, isSimilarFace, registerFace } = require('./utils/face');
 const { registerSlashCommands, handleSlashCommand, handleButtonInteraction } = require('./commands/slash');
 const handlePrefixMessage = require('./commands/prefix');
@@ -288,61 +288,9 @@ client.on('messageCreate', async (message) => {
     // DM チェック
     if (message.channel.type === ChannelType.DM) return;
 
-    // プレフィックスコマンド
-    if (!message.content.startsWith('!')) return;
-    const args = message.content.slice(1).trim().split(/ +/);
-    const cmd = args.shift().toLowerCase();
+    // すべてのプレフィックスコマンドを prefix.js に委譲
+    await handlePrefixMessage(client, message);
 
-    switch (cmd) {
-      case 'join':
-        if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
-        if (await music.joinVoice(message.member.voice.channel)) {
-          await message.channel.send(`Joined **${message.member.voice.channel.name}**!`);
-        } else {
-          await message.reply('Failed to join voice channel');
-        }
-        break;
-
-      case 'play':
-        if (!message.member?.voice?.channel) return message.reply('Please join a voice channel');
-        try {
-          // joinVoice expects a VoiceChannel
-          await music.joinVoice(message.member.voice.channel);
-
-          // play / playUrl is (voiceChannel, url, textChannel)
-          const musicTitle = await music.play(message.member.voice.channel, args.join(' '), message.channel);
-          await message.channel.send(musicTitle ? `Added to queue: **${musicTitle}**` : 'Song not found');
-        } catch (err) {
-          console.error('play command error:', err);
-          await message.reply('Error occurred during playback');
-        }
-        break;
-
-      case 'stop':
-        message.channel.send(music.stopMusic ? (await music.stopMusic(message.guild.id) ? 'Playback stopped and queue cleared' : 'No songs playing') : (music.stop ? (music.stop(message.guild.id) ? 'Playback stopped and queue cleared' : 'No songs playing') : 'No songs playing'));
-        break;
-
-      case 'leave':
-        await music.leaveVoice(message.guild.id);
-        message.channel.send('Left voice channel');
-        break;
-
-      case 'ai':
-        const prompt = args.join(' ').trim();
-        if (!prompt) return message.reply('Usage: !ai <message>');
-        const replyMsg = await message.reply('AI thinking...');
-        try {
-          const aiResponse = await chat(prompt, message.author.id);
-          await replyMsg.edit(aiResponse || 'Failed to get AI response.');
-        } catch {
-          await replyMsg.edit('Error occurred while communicating with AI.');
-        }
-        break;
-
-      default:
-        await handlePrefixMessage(client, message);
-        break;
-    }
   } catch (err) {
     console.error('messageCreate processing error:', err);
   }
